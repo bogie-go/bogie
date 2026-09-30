@@ -1,6 +1,6 @@
 # Go on Rails — design
 
-Status: **draft for review**, 2026-09-28. Nothing here is built.
+Status: **draft for review**, revised 2026-09-30. Nothing here is built.
 
 The tool is called **Bogie** (§11): the wheeled frame under a rail car that
 carries it along the track. The command is `bogie`.
@@ -9,8 +9,11 @@ carries it along the track. The command is `bogie`.
 
 ## 0. The one-line version
 
-A CLI that scaffolds a Rails-shaped Go service out of tools the Go ecosystem
-already ships, and builds only the parts that have no equivalent.
+**The Go service next to your Rails app.** A CLI that scaffolds it out of tools
+the Go ecosystem already ships, and builds only the parts that have no
+equivalent. Not a framework, not full-stack, not a Rails replacement: the one
+network-facing service a Rails shop eventually needs, with Rails conventions
+and generators that wire.
 
     go install github.com/<org>/bogie@latest
     bogie new blog
@@ -54,7 +57,7 @@ Use whatever the Go ecosystem provides. Wire it once. Build only what is missing
 | HTTP router | **Gin** | ecosystem |
 | Query layer (ActiveRecord) | **sqlc** + pgx/v5 | ecosystem |
 | Migrations | **goose**, SQL files | ecosystem |
-| Background jobs (ActiveJob) | asynq (Redis) — *open, see §12* | ecosystem |
+| Background jobs (ActiveJob) | **River** (Postgres, pgx/v5), opt-in via `--jobs` — decided §12.2 | ecosystem |
 | Credentials | `roonglit/credentials` | ecosystem (ours) |
 | Deploy | **Kamal 2** | ecosystem |
 | Lint / test | golangci-lint, `go test` | ecosystem |
@@ -98,14 +101,14 @@ app/
   services/<name>/            ctx first, knows nothing about HTTP
   models/                     sqlc output + the store
   views/                      wire contracts; domain structs never double as wire structs
-  jobs/
+  domain/                     THE DOMAIN — imports nothing third-party (§12.10)
+  jobs/                       only with --jobs: one River worker per file, typed args
 config/                       encrypted credentials → validated struct, no globals
 db/
   migrate/                    goose SQL, timestamped, go:embed
   queries/                    sqlc input
-  seeds/
+  seeds/                      goose SQL in its own version table, also go:embed
 lib/logger/
-spec/{factories,fixtures,support}
 docs/
 Makefile · Dockerfile · docker-compose.yml · config/deploy.yml · .golangci.yml
 ```
@@ -115,12 +118,17 @@ The rules ship in `AGENTS.md` and are enforced where a linter can enforce them
 
 1. `ctx context.Context` first for anything doing I/O.
 2. Interfaces are declared by the consumer.
-3. `app/<domain>` imports nothing third-party.
+3. `app/domain` imports nothing third-party.
 4. Constructors return `(T, error)`; only `main` exits.
 5. `*gin.Context` never travels below `app/controllers`.
 6. No `util/`, `helpers/`, `common/`.
 
 `.golangci.yml` disables ST1003 for the underscore package names, exactly as kchat does.
+
+**No `spec/`.** kchat created `spec/{factories,fixtures,support}` from Rails
+habit and never used it: all 37 of its test files sit beside the code, stdlib
+`testing` only, no mocking library. A vestigial Rails directory teaches the
+wrong lesson about where Go tests go, so the scaffold does not create one.
 
 ---
 
@@ -143,9 +151,14 @@ So `bogie db migrate` is a thin proxy for `go run . db migrate` inside the app, 
 `make db-migrate` calls the same thing. **Development runs the code production
 runs** (kchat Makefile, comment above `db-create`).
 
+Seeds go through the binary too. kchat's `make db-seed` shells out to the goose
+CLI with a URL pulled from a second tool, so it is the one path that can drift
+from what the server resolves. The scaffold embeds `db/seeds` beside
+`db/migrate` and `db seed` is a subcommand like the rest.
+
 Commands, v1:
 
-    bogie new NAME [--db=postgres] [--redis] [--deploy=kamal]
+    bogie new NAME [--db=postgres] [--jobs] [--deploy=kamal]   # --jobs adds River; no extra datastore
     bogie g migration add_slug_to_posts slug:string
     bogie g model post title:string body:text
     bogie g controller posts index show create
@@ -270,9 +283,39 @@ notes rather than reinventing.
 
 ---
 
-## 9. Extracting from kchat
+## 9. Extracting from kchat and line-connect
 
-kchat is the reference implementation, not the template. Extraction, in order:
+kchat is the reference implementation, not the template. Extraction is pinned
+to kchat commit `485b80f` (2026-09-14) so the M4 diff has a fixed target; kchat
+keeps moving. Reviewed 2026-09-30 against that commit, these are the findings
+the scaffold fixes rather than copies:
+
+- **Positional root wiring.** `controllers.NewServer` takes five controllers
+  as ordered arguments (`app/application.go`, `app/controllers/application.go`).
+  Adding one changes a signature. Scaffold: named fields plus markers (§5).
+- **`spec/` is empty** (three `.gitkeep`s). Scaffold: no `spec/` (§3).
+- **Seeds bypass the binary.** Scaffold: `db seed` subcommand (§4).
+- **sqlc is a global install.** goose and credentials are already under the
+  `tool` directive; sqlc is not. Scaffold: pin all three.
+- **The README drifted from the code within two days** (describes `cmd/` and
+  `internal/`, says "no `app/`"; the code has used `app/` since the first
+  commit). This is the drift `AGENTS.md` plus `bogie doctor` exist to prevent.
+- **`config.Load` already runs env-only** when no credentials file exists
+  (`source = "environment only (no credentials file)"`), so §12.3 is mostly
+  answered.
+
+A second repository, **line-connect** (`klangtech/line-connect/backend`,
+~1,070 commits), has asynq jobs in production and was the candidate source for
+`app/jobs`. Reviewed 2026-09-30: what is worth keeping is the *shape*, one
+`task_<name>.go` per task, `schedule_<name>.go` for periodic work, a worker
+heartbeat, and a `critical` queue above `default`. What is not worth keeping
+is the code: a `TaskDistributor` interface with one method per task, a
+`TaskProcessor` interface with one method per task, hand-written JSON
+marshalling in every task, zerolog, and a `log.Fatal` in a constructor. That
+boilerplate is what asynq's untyped `[]byte` payload invites, and it is the
+reason jobs moved to River (§12.2). The scaffold ports the shape, not the code.
+
+Extraction, in order:
 
 1. Copy the skeleton: `config`, `lib/logger`, `app/services/database`,
    `app/services/migrate`, `app/middlewares`, `cli.go`, the Makefile, the
@@ -283,21 +326,29 @@ kchat is the reference implementation, not the template. Extraction, in order:
    service, controller, test — so a new app has a working shape to copy.
 4. Turn the positional root wiring into named fields with markers (§5).
 5. Convert the global `sqlc` install to a pinned tool.
-6. **Later:** regenerate a clean app with the tool and diff it against kchat.
+6. Add River behind `--jobs`: its schema as a goose migration in
+   `db/migrate` (River publishes the SQL; `river migrate-get`), one
+   `river.Worker[Args]` per file in `app/jobs`, registered on the
+   `river.Workers` bundle with a `// bogie:jobs` marker, and `worker` as a
+   role of the app binary exactly as kchat does. `g job send_welcome` writes
+   the args struct, the worker, a test, and the registration line.
+7. **Later:** regenerate a clean app with the tool and diff it against kchat.
    Where they disagree, one of them is wrong.
 
-Do this in the new repository, not in kchat. kchat keeps shipping.
+Do this in the new repository, not in kchat or line-connect. Both keep shipping.
 
 ---
 
 ## 10. Prior art
 
-Found by search on 2026-09-28. Not audited; star counts and details are as
-reported by GitHub and package pages at the time.
+Found by search on 2026-09-28, rechecked 2026-09-30. Not audited; star counts
+and details are as reported by GitHub and package pages at the time.
 
 | Project | Shape | Why not join it |
 | --- | --- | --- |
-| [Andurel](https://github.com/mbvlabs/andurel) | scaffold-only, `new`/`generate`/`db`; MIT; ~224 stars | Echo, Fx, Templ + Datastar, River, Postgres-only. Closest in spirit; author calls it "still very exploratory". Ours is Gin, sqlc, Rails-shaped. |
+| [Andurel](https://github.com/mbvlabs/andurel) | scaffold-only, v2, `new`/`generate`/`db`/`doctor`/`upgrade`/`skill`, JSON discovery, ships an `AGENTS.md`; MIT; 224 stars, one maintainer, five commits on 2026-09-29 alone | Full-stack and heavy: Echo, Uber Fx DI, Templ + Datastar or Inertia with React/Vue/Svelte, River, Tailwind, its own typed-SQL tool. Owns the "Rails-like Go framework for humans and agents" slot. A Rails shop that already has a Rails app does not want a second full-stack framework. |
+| [go-blueprint](https://github.com/Melkeydev/go-blueprint) | `create` only; 9,000 stars | Proves demand for `new`. No generators, no wiring, no agent layer. |
+| [goforge](https://github.com/VictorTarnovski/goforge) | `new` + `generate domain` with auto-wiring, `.agents/rules`, `AGENTS.md`; 0 stars, 4 commits | Nearly our thesis, `internal/` layout, Cobra, OIDC. Evidence the idea is in the air and that shipping it quietly gets nothing. |
 | [Buffalo](https://github.com/gobuffalo/buffalo) | full framework with its own runtime, ORM and templates | Wrong shape. |
 | [Goravel](https://github.com/goravel/goravel) | Laravel clone | Wrong audience. |
 | [Gon](https://github.com/mickamy/gon) | `g scaffold` only, clean architecture, Echo | Generators only; no `new`. |
@@ -309,8 +360,11 @@ file recording the generator version (`bogie.toml`).
 
 Worth reading before building: geng, since it targets Gin, and Autostrada.
 
-Positioning: **the thin, Rails-shaped one.** Not more features than Andurel —
-a clearer mapping from what a Rails developer knows to what the Go code does.
+Positioning: **the Go service next to your Rails app.** Not "a Rails-like Go
+framework"; Andurel holds that and does it well. Bogie competes on being thin,
+API-only, and on the mapping from what a Rails developer knows to what the Go
+code does (`docs/FROM_RAILS.md`). Every feature Andurel has and Bogie drops is
+a point in Bogie's favour, not against it.
 
 ---
 
@@ -378,13 +432,29 @@ best metaphor for a scaffold, but a common word), **Ballast**, **Turnout**,
 
 ## 12. Open questions and risks
 
-1. **Views.** kchat renders no HTML. Rails developers will expect them. v1 could
-   be API-only, or add `templ` / `html/template`. Leaning API-only.
-2. **Jobs.** kchat uses asynq (Redis). River (Postgres-backed) needs no second
-   datastore. Both are ecosystem tools; which is the default?
-3. **`roonglit/credentials`.** Ours, small, and now on the critical path of an
-   open-source tool. Either commit to maintaining it publicly or offer a plain
-   env-var mode.
+1. **Views.** ~~Open~~ **Decided 2026-09-30: API-only.** No HTML in v1. The
+   Rails app renders; that is the whole premise.
+2. **Jobs.** ~~Open~~ **Decided 2026-09-30: River, opt-in via `--jobs`.**
+   asynq (v0.26.0, 2026-02) and River (release 2026-08-31, 4.6k stars) are
+   both maintained. River wins on the tool's own principles:
+   - **Postgres-only is already decided (§12.4).** River uses the pgx/v5 pool
+     the app already has. asynq adds Redis: a Kamal accessory, a URL in
+     credentials, a second thing to be down.
+   - **Transactional enqueue** is what a Rails developer expects from
+     ActiveJob with Solid Queue: the job row commits with the business row or
+     not at all. With Redis the enqueue can race the commit.
+   - **Typed args via generics** (`river.Worker[SendWelcomeArgs]`) remove the
+     marshal/unmarshal and interface-per-task boilerplate that line-connect's
+     asynq layer needed (§9). Less code for an agent to get wrong.
+   - Andurel chose River too. Weak evidence on its own, but it means the
+     ecosystem is converging and a Rails developer will find examples.
+   Costs accepted: River is younger (2023); it needs its own tables, shipped
+   as the scaffold's first goose migration; it polls Postgres, which is fine
+   at the scale a Rails shop's side service runs at; it has no asynqmon, but
+   River UI exists. Revisit only if a deployment needs Redis-class throughput.
+3. **`roonglit/credentials`.** Mostly answered: `config.Load` already falls back
+   to environment-only when no file exists. Ship credentials as the default,
+   document env-only, and commit to maintaining the library publicly.
 4. **Postgres-only.** sqlc supports others, but goose dialects, type mapping and
    tests multiply. Postgres only in v1.
 5. **Gin's future.** A single dependency behind the controller layer, and rule 5
@@ -396,13 +466,21 @@ best metaphor for a scaffold, but a common word), **Ballast**, **Turnout**,
 8. **Telemetry.** None. State it in the README; an install-and-run tool that
    phones home costs trust.
 9. **License and governance.** MIT, single maintainer initially. Say so.
+10. **The domain package name.** ~~Open~~ **Decided 2026-09-30: `app/domain/`,
+    fixed.** kchat calls it `app/omnichat`, a product name no generated app
+    would share. A fixed name is greppable, the templates never need the app
+    name, and the generators always know where the domain lives.
+11. **Migrate at boot.** kchat applies migrations before opening the pool,
+    which is right for one container and a race for two starting together.
+    Keep it as the default with a flag to disable, and a comment saying why.
 
 ---
 
 ## 13. Milestones
 
-- **M0 — decide.** ~~Name~~ (Bogie, §11); claim the GitHub org and domain;
-  answers to §12.1–12.3; read geng and Autostrada.
+- **M0 — decide.** ~~Name~~ (Bogie, §11); ~~claim the GitHub org~~; register
+  the domain; ~~answers to §12.1–12.3~~ and ~~§12.10~~ (decided 2026-09-30);
+  read geng and Autostrada; draft the launch essay (done, in review).
 - **M1 — skeleton.** Repo, `bogie new` producing an app that builds, migrates and
   serves; CI scaffold job green.
 - **M2 — generators.** `g migration`, `g model`, `g controller`, `g service`,
