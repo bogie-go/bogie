@@ -239,7 +239,16 @@ Attribute types for `g model` / `g migration` map Rails-style names to Postgres
 types: `string`→`text`, `text`→`text`, `integer`→`integer`, `bigint`→`bigint`,
 `boolean`→`boolean`, `datetime`→`timestamptz`, `uuid`→`uuid`, `jsonb`→`jsonb`,
 `references`→`uuid` with a foreign key. `g model` writes the migration, a starter
-`db/queries/<table>.sql` (get, list, create, update, delete) and runs `sqlc generate`.
+`db/queries/<table>.sql` (get, list, create, update, delete), the domain type
+and the store's conversion methods, and runs `sqlc generate`. Built
+2026-10-02, with three rules learned on the way: every generated column is
+NOT NULL with a type-appropriate default, so sqlc emits plain Go types and the
+domain carries no pointers; a generator runs sqlc immediately, because the
+migrations are the schema sqlc compiles against and a new file changes the
+models before it is applied; and a migration's version is moved forward a
+second at a time past any existing one, since goose refuses duplicates and two
+generators in one second would make them. Output is pinned by golden files,
+and `bin/ci` runs every generator into a fresh app and that app's pipeline.
 
 Templates are `go:embed`ded and rendered with `text/template`. `bogie.toml` records
 the Bogie version that generated the app so a later `bogie app:update` knows what

@@ -118,13 +118,35 @@ prefix), and one file per action.
 Never delete a marker. The generators stop and name the file if one is
 missing; they do not guess.
 
-### Add a table
+### Add a model
 
-1. `make g_migration_create_comments` writes a timestamped file in
-   `db/migrate`. Fill in the Up and a Down that really undoes it.
-2. `make db-migrate` applies it. `make db-rollback` checks the Down.
-3. Queries go in `db/queries/<table>.sql` and `make sqlc` compiles them into
-   `app/models`; a wrong column name fails there, not in production.
+    bogie g model comment body:text post:references score:integer
+
+writes the `create_comments` migration, `db/queries/comments.sql` with get,
+list, create, update and delete, `app/domain/comment.go` with the type and an
+empty `Validate`, and `app/models/comments.go`, the store methods that convert
+sqlc's row type to `domain.Comment` and map no-rows to `domain.ErrNotFound`;
+then it runs sqlc. Types: string, text, integer, bigint, boolean, datetime,
+uuid, jsonb, references; `:index` or `:uniq` after a type. `post:references`
+is the column `post_id` with a foreign key and an index.
+
+Every generated column is NOT NULL with a type-appropriate default, so sqlc
+emits plain Go types rather than pointers. A column that truly needs null is
+one edit to the migration.
+
+### Change a table
+
+    bogie g migration add_slug_to_posts slug:string:uniq
+    bogie g migration remove_draft_from_posts draft:boolean
+
+`create_<table>`, `add_<x>_to_<table>` and `remove_<x>_from_<table>` get their
+SQL written; any other name gets an empty Up and Down to fill in. The
+migrations are what sqlc compiles against, so the generator runs sqlc
+immediately and `app/models/*.sql.go` changes before the migration is ever
+applied. `bogie db:migrate` applies it; `bogie db:rollback` checks the Down.
+Queries go in `db/queries/<table>.sql`; `make sqlc` recompiles them, and a
+wrong column name fails there, not in production. The generated files are
+committed; `bin/ci` fails if they are stale.
 
 The schema is owned here and applied at boot; there is no schema dump. The
 `posts` table is the example every new app starts with. Delete it, with its

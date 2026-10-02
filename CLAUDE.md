@@ -24,6 +24,8 @@ architecture. The README summarises it.
     make test           go test -race -cover ./...   (the tool only)
     make scaffold       generate an app in a temp dir and build/vet/test it
     go run . new NAME   try the generator; add --pretend to see the plan
+    go test ./internal/generate -update   rewrite the generators' golden files
+                        after an intended output change; review the diff
 
 Templates live in `templates/app`. A `.tmpl` suffix means text/template with
 `scaffold.Vars`; a `dot_` path segment becomes a dotfile; files under `bin/`
