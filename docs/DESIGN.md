@@ -58,7 +58,7 @@ Use whatever the Go ecosystem provides. Wire it once. Build only what is missing
 | Query layer (ActiveRecord) | **sqlc** + pgx/v5 | ecosystem |
 | Migrations | **goose**, SQL files | ecosystem |
 | Background jobs (ActiveJob) | **River** (Postgres, pgx/v5), opt-in via `--jobs` — decided §12.2 | ecosystem |
-| Credentials | `roonglit/credentials` | ecosystem (ours) |
+| Credentials | `bogie-go/credentials` | ecosystem (ours) |
 | Deploy | **Kamal 2** | ecosystem |
 | Lint / test | golangci-lint, `go test` | ecosystem |
 | CI | **`bin/ci`**, run locally, Rails 8.1 style; `gh signoff` records the green run on the commit | **gap** (a port) |
@@ -305,7 +305,7 @@ Both are carried over from kchat unchanged in shape:
 kchat's own note applies: an edit to `deploy.yml` without a matching edit to the
 overlay changes both. The generated `deploy.yml` says so in a comment.
 
-`roonglit/credentials` is our own library. Publishing bogie means it must be
+`bogie-go/credentials` is our own library. Publishing bogie means it must be
 public, versioned and maintained, or replaced. See §12.
 
 ---
@@ -524,9 +524,13 @@ best metaphor for a scaffold, but a common word), **Ballast**, **Turnout**,
    as the scaffold's first goose migration; it polls Postgres, which is fine
    at the scale a Rails shop's side service runs at; it has no asynqmon, but
    River UI exists. Revisit only if a deployment needs Redis-class throughput.
-3. **`roonglit/credentials`.** Mostly answered: `config.Load` already falls back
-   to environment-only when no file exists. Ship credentials as the default,
-   document env-only, and commit to maintaining the library publicly.
+3. **`bogie-go/credentials`.** ~~Open~~ **Decided 2026-10-02.** The library
+   moved from `roonglit/credentials` into the `bogie-go` organisation and is
+   public, tagged v1.5.0 under the new path with the code unchanged from
+   1.4.0. Named in the plural because Rails says `credentials:edit`,
+   `credentials.yml.enc`, and so does the package and command inside it.
+   `config.Load` already falls back to environment-only when no file exists,
+   so credentials ship as the default and env-only is documented.
 4. **Postgres-only.** sqlc supports others, but goose dialects, type mapping and
    tests multiply. Postgres only in v1.
 5. **Gin's future.** A single dependency behind the controller layer, and rule 5
