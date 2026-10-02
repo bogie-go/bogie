@@ -5,6 +5,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -13,8 +14,15 @@ import (
 
 const usage = `Usage: bogie <command> [arguments]
 
-Commands:
+Generate:
   new NAME        generate a new service in ./NAME
+
+Inside an app (found by its bogie.toml, from any subdirectory):
+  server          run it            (go run . serve)
+  test [PKGS]     run the tests     (go test -race -cover ./...)
+  lint            gofmt, vet, golangci-lint
+  ci              every check, locally, then sign off (bin/ci)
+
   version         print the version
   help            this text
 
@@ -31,6 +39,8 @@ func main() {
 	switch os.Args[1] {
 	case "new":
 		err = commands.New(os.Args[2:], os.Stdout)
+	case "server", "test", "lint", "ci":
+		err = commands.Proxy(os.Args[1], os.Args[2:], os.Stdout)
 	case "version":
 		fmt.Println(commands.Version)
 	case "help", "-h", "--help":
@@ -38,6 +48,11 @@ func main() {
 	default:
 		fmt.Fprintf(os.Stderr, "bogie: unknown command %q\n\n%s", os.Args[1], usage)
 		os.Exit(2)
+	}
+	var exit *commands.ExitError
+	if errors.As(err, &exit) {
+		// The app already said what went wrong; repeat only its status.
+		os.Exit(exit.Code)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "bogie:", err)

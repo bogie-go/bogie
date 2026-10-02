@@ -4,7 +4,10 @@ The Go service next to the Rails app. Generated with
 [Bogie](https://github.com/bogie-go/bogie); the layout is Rails-shaped on
 purpose and `AGENTS.md` says how to work in it.
 
-    make server
+    bogie server              # or: make server
     curl localhost:8080/healthz
+    bogie test                # or: make test
+    bin/ci                    # every check, locally; green signs off the commit
 
-`make help` lists the rest.
+`make help` lists the rest. `bogie` only adds the Rails spelling and works
+from any subdirectory; every command runs the app's own code.

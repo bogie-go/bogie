@@ -92,7 +92,7 @@ func New(args []string, out io.Writer) error {
 	}
 
 	if !*pretend {
-		say("\nNext:\n  cd %s\n  make server\n  curl localhost:8080/healthz\n", name)
+		say("\nNext:\n  cd %s\n  bogie server\n  curl localhost:8080/healthz\n", name)
 	}
 	return nil
 }
