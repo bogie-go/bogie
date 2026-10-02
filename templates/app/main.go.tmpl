@@ -1,0 +1,65 @@
+// Command {{.Name}} is the Go service next to the Rails app.
+//
+// ONE BINARY, several roles, selected by the first argument. Serving is the
+// first; migrating the schema and draining a queue arrive as further roles of
+// this same executable, never as a second binary, so a deploy cannot ship a
+// web container built from one commit and a worker built from another.
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"{{.Module}}/app"
+)
+
+const usage = `Usage: {{.Name}} [command]
+
+Commands:
+  serve               the HTTP server (default)
+
+With no command this serves, which is what the container does.
+`
+
+func main() {
+	// main is the only place that exits. Everything below returns errors.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	command, args := "serve", []string{}
+	if len(os.Args) > 1 {
+		command, args = os.Args[1], os.Args[2:]
+	}
+
+	var run func(context.Context, []string) error
+	switch command {
+	case "serve":
+		run = runServe
+	case "help", "-h", "--help":
+		fmt.Print(usage)
+		return
+	default:
+		// NOT an error. The container may be started with flags this binary does
+		// not know, and refusing to boot over an unrecognised argument is a worse
+		// failure than ignoring it. But say so, so a typo is visible in the log.
+		fmt.Fprintf(os.Stderr, "{{.Name}}: unknown command %q; serving instead\n\n%s\n", command, usage)
+		run = runServe
+	}
+
+	if err := run(ctx, args); err != nil {
+		fmt.Fprintln(os.Stderr, "{{.Name}}:", err)
+		os.Exit(1)
+	}
+}
+
+// runServe is the HTTP server.
+func runServe(ctx context.Context, _ []string) error {
+	application, err := app.NewApplication(ctx)
+	if err != nil {
+		return err
+	}
+	return application.Start(ctx)
+}

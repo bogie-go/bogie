@@ -1,0 +1,57 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tool:
+    name: the tool
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - run: go vet ./...
+      - run: go test -race -cover ./...
+
+  # What stops the templates rotting: generate an app and hold it to the same
+  # bar the design holds every generated app to.
+  scaffold:
+    name: a generated app
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: ["1.24", "stable"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+      - name: bogie new
+        run: |
+          go build -o "$RUNNER_TEMP/bogie" .
+          cd "$RUNNER_TEMP"
+          ./bogie new blog --module=example.com/blog
+      - name: build, vet, format
+        working-directory: ${{ runner.temp }}/blog
+        run: |
+          go build ./...
+          go vet ./...
+          test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - name: test
+        working-directory: ${{ runner.temp }}/blog
+        run: go test -race -cover ./...
+      - name: lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          working-directory: ${{ runner.temp }}/blog
+      - name: it serves
+        working-directory: ${{ runner.temp }}/blog
+        run: |
+          BLOG_ENV=test go run . serve &
+          for i in $(seq 1 30); do curl -fs localhost:8080/healthz && break; sleep 1; done
+          test "$(curl -fs localhost:8080/healthz)" = ok

@@ -1,0 +1,26 @@
+// Package logger builds the process logger: one *slog.Logger, passed where it
+// is needed. No package-level logger and no init().
+package logger
+
+import (
+	"log/slog"
+	"os"
+)
+
+// New returns a logger at the given level. Production writes JSON for the log
+// shipper; everything else writes text for a person.
+func New(level, env string) *slog.Logger {
+	var lvl slog.Level
+	// Config has already validated the level; an unknown one would mean a
+	// bug there, and info is the right fallback for a logger.
+	_ = lvl.UnmarshalText([]byte(level))
+
+	opts := &slog.HandlerOptions{Level: lvl}
+	var h slog.Handler
+	if env == "production" {
+		h = slog.NewJSONHandler(os.Stderr, opts)
+	} else {
+		h = slog.NewTextHandler(os.Stderr, opts)
+	}
+	return slog.New(h)
+}

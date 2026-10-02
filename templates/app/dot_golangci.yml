@@ -1,0 +1,17 @@
+# One rule is deliberately off: ST1003, which asks for package names without
+# underscores. This app uses posts_controller and friends because the layout
+# follows Rails conventions on purpose, so moving between this repository and
+# the Rails app costs nothing. It is a decision, not an oversight, and
+# everything else staticcheck asks for is enforced: if the linter complains
+# about anything else, the complaint is real.
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - staticcheck
+  settings:
+    staticcheck:
+      checks:
+        - all
+        - -ST1003

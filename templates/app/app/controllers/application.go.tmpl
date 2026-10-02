@@ -1,0 +1,80 @@
+// Package controllers is the HTTP surface. Gin lives here and stops here: no
+// package below imports it, and no *gin.Context travels downward.
+package controllers
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"net/http"
+	"time"
+
+	"github.com/gin-gonic/gin"
+
+	"{{.Module}}/config"
+)
+
+// Server owns the router and its lifecycle, and holds one sub-server per
+// controller package.
+//
+// One NAMED field per controller, never positional constructor arguments, so
+// adding a controller is one line here, one in app/application.go and one in
+// routes.go, and never a changed function signature.
+type Server struct {
+	Config config.Config
+	Router *gin.Engine
+	Log    *slog.Logger
+
+	// bogie:controllers
+}
+
+// NewServer builds the server. Routes are mounted by SetupRoutes, which the
+// caller runs once every controller field is assigned.
+func NewServer(cfg config.Config, log *slog.Logger) *Server {
+	// Opt IN to debug rather than opting in to release, so an unknown
+	// environment behaves like a deployed one: the safe direction to be wrong.
+	switch cfg.Env {
+	case config.EnvDevelopment:
+		gin.SetMode(gin.DebugMode)
+	case config.EnvTest:
+		gin.SetMode(gin.TestMode)
+	default:
+		gin.SetMode(gin.ReleaseMode)
+	}
+
+	return &Server{Config: cfg, Router: gin.New(), Log: log}
+}
+
+// Start serves until ctx is cancelled, then drains.
+//
+// The grace period matters: a request cut off mid-flight by a deploy is
+// retried by whoever sent it, and an unnecessary retry storm on every deploy
+// is worth not having.
+func (s *Server) Start(ctx context.Context) error {
+	srv := &http.Server{
+		Addr:              s.Config.Addr,
+		Handler:           s.Router,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		s.Log.Info("http listening", "addr", s.Config.Addr, "env", s.Config.Env)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- err
+		}
+	}()
+
+	select {
+	case err := <-errCh:
+		return err
+	case <-ctx.Done():
+		s.Log.Info("draining", "grace", s.Config.ShutdownGrace)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), s.Config.ShutdownGrace)
+		defer cancel()
+		return srv.Shutdown(shutdownCtx)
+	}
+}

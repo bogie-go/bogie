@@ -1,0 +1,27 @@
+package controllers
+
+import (
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"{{.Module}}/config"
+)
+
+func TestHealthz(t *testing.T) {
+	cfg := config.Config{Env: config.EnvTest, Addr: ":0", LogLevel: "info"}
+	s := NewServer(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	s.SetupRoutes()
+
+	rec := httptest.NewRecorder()
+	s.Router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+
+	if rec.Code != http.StatusOK || rec.Body.String() != "ok" {
+		t.Fatalf("GET /healthz = %d %q, want 200 ok", rec.Code, rec.Body.String())
+	}
+	if rec.Header().Get("X-Request-Id") == "" {
+		t.Error("no X-Request-Id header: the middleware chain is not mounted")
+	}
+}

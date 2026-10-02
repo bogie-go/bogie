@@ -1,0 +1,61 @@
+// Package middlewares holds the cross-cutting request filters: the Go
+// equivalent of Rails before_action, used the same way. Declared once in
+// routes.go, never scattered through handlers.
+package middlewares
+
+import (
+	"log/slog"
+	"net/http"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+)
+
+// RequestIDHeader is echoed back so a client can correlate a report with a log
+// line.
+const RequestIDHeader = "X-Request-Id"
+
+// RequestID assigns an id to every request and puts it in the context, so it
+// reaches the logger and, later, the trace.
+func RequestID() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id := c.GetHeader(RequestIDHeader)
+		if id == "" {
+			id = uuid.NewString()
+		}
+		c.Set("request_id", id)
+		c.Header(RequestIDHeader, id)
+		c.Next()
+	}
+}
+
+// Logger records one structured line per request.
+func Logger(log *slog.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
+		c.Next()
+
+		log.LogAttrs(c.Request.Context(), slog.LevelInfo, "request",
+			slog.String("method", c.Request.Method),
+			slog.String("path", c.FullPath()),
+			slog.Int("status", c.Writer.Status()),
+			slog.Duration("took", time.Since(start)),
+			slog.String("request_id", c.GetString("request_id")),
+		)
+	}
+}
+
+// Recover turns a panic into a 500 and a log line rather than a dead process.
+func Recover(log *slog.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		defer func() {
+			if r := recover(); r != nil {
+				log.ErrorContext(c.Request.Context(), "panic recovered",
+					"panic", r, "path", c.FullPath(), "request_id", c.GetString("request_id"))
+				c.AbortWithStatus(http.StatusInternalServerError)
+			}
+		}()
+		c.Next()
+	}
+}

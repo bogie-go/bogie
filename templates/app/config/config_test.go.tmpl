@@ -1,0 +1,38 @@
+package config
+
+import "testing"
+
+func TestLoadDefaults(t *testing.T) {
+	t.Setenv("{{.EnvPrefix}}_ENV", "test")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Env != EnvTest || cfg.Addr != ":8080" || cfg.LogLevel != "info" || cfg.ShutdownGrace.Seconds() != 10 {
+		t.Errorf("defaults = %+v", cfg)
+	}
+}
+
+// The set is closed on purpose: staging reads perfectly naturally and would
+// otherwise fall through to production behaviour silently.
+func TestLoadRefusesUnknownEnv(t *testing.T) {
+	for _, env := range []string{"staging", "prod", "Production", ""} {
+		t.Setenv("{{.EnvPrefix}}_ENV", env)
+		if env == "" {
+			// Unset means development, which is allowed.
+			continue
+		}
+		if _, err := Load(); err == nil {
+			t.Errorf("{{.EnvPrefix}}_ENV=%q accepted; want a refusal to boot", env)
+		}
+	}
+}
+
+func TestLoadRefusesBadDuration(t *testing.T) {
+	t.Setenv("{{.EnvPrefix}}_ENV", "test")
+	t.Setenv("{{.EnvPrefix}}_SHUTDOWN_GRACE", "soon")
+	if _, err := Load(); err == nil {
+		t.Error("SHUTDOWN_GRACE=soon accepted")
+	}
+}

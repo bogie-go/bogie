@@ -1,0 +1,91 @@
+// Package config loads and validates settings.
+//
+// No globals and no init(): Load returns a struct, main passes it where it is
+// needed. Every field is validated once, at startup, so a missing setting is a
+// refusal to boot rather than a nil dereference an hour later.
+//
+// Settings come from the environment, prefixed {{.EnvPrefix}}_.
+package config
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"slices"
+	"time"
+)
+
+// Env is a CLOSED set, mirroring RAILS_ENV. There is deliberately no staging:
+// a staging deployment is production behaviour reading staging settings.
+// Closing the set matters because every behavioural switch reads Env, and
+// {{.EnvPrefix}}_ENV=staging would otherwise fall through to production
+// behaviour silently. So would a typo.
+const (
+	EnvDevelopment = "development"
+	EnvTest        = "test"
+	EnvProduction  = "production"
+)
+
+var envs = []string{EnvDevelopment, EnvTest, EnvProduction}
+var logLevels = []string{"debug", "info", "warn", "error"}
+
+// Config is everything {{.Name}} needs to run.
+type Config struct {
+	// Env selects runtime behaviour: gin mode, log format, strictness.
+	Env string
+	// Addr is the listen address, {{.EnvPrefix}}_ADDR, default :8080.
+	Addr string
+	// LogLevel is {{.EnvPrefix}}_LOG_LEVEL: debug, info, warn or error.
+	LogLevel string
+	// ShutdownGrace is how long Start waits for in-flight requests on
+	// SIGTERM, {{.EnvPrefix}}_SHUTDOWN_GRACE, default 10s.
+	ShutdownGrace time.Duration
+}
+
+// Load reads configuration and validates it.
+func Load() (Config, error) {
+	cfg := Config{
+		Env:      envOr("{{.EnvPrefix}}_ENV", EnvDevelopment),
+		Addr:     envOr("{{.EnvPrefix}}_ADDR", ":8080"),
+		LogLevel: envOr("{{.EnvPrefix}}_LOG_LEVEL", "info"),
+	}
+
+	grace := envOr("{{.EnvPrefix}}_SHUTDOWN_GRACE", "10s")
+	d, err := time.ParseDuration(grace)
+	if err != nil {
+		return Config{}, fmt.Errorf("config: {{.EnvPrefix}}_SHUTDOWN_GRACE=%q is not a duration", grace)
+	}
+	cfg.ShutdownGrace = d
+
+	return cfg, cfg.validate()
+}
+
+func (c Config) validate() error {
+	if !slices.Contains(envs, c.Env) {
+		return fmt.Errorf("config: {{.EnvPrefix}}_ENV=%q; must be one of %v", c.Env, envs)
+	}
+	if !slices.Contains(logLevels, c.LogLevel) {
+		return fmt.Errorf("config: {{.EnvPrefix}}_LOG_LEVEL=%q; must be one of %v", c.LogLevel, logLevels)
+	}
+	if c.Addr == "" {
+		return fmt.Errorf("config: {{.EnvPrefix}}_ADDR is empty")
+	}
+	return nil
+}
+
+// Production reports whether this process runs with production behaviour.
+func (c Config) Production() bool { return c.Env == EnvProduction }
+
+// PrintTo writes the effective settings, for the boot log. Straight to the
+// writer, because slog would escape the newlines into one unreadable line.
+func (c Config) PrintTo(w io.Writer) {
+	fmt.Fprintf(w, "{{.Name}}: env=%s addr=%s log_level=%s shutdown_grace=%s\n",
+		c.Env, c.Addr, c.LogLevel, c.ShutdownGrace)
+}
+
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}

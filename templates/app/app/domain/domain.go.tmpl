@@ -1,0 +1,8 @@
+// Package domain is the application's own vocabulary: the types and rules that
+// would still be true if HTTP, Postgres and Gin all disappeared.
+//
+// It imports nothing third-party. If holding that becomes hard, the boundary
+// is in the wrong place and you will know immediately. Ids are strings here
+// and become uuid at the store boundary; that conversion living in app/models
+// is what lets this package stay dependency-free.
+package domain

@@ -1,0 +1,27 @@
+MAKEFLAGS += --no-print-directory
+
+.PHONY: help build server test vet fmt lint tidy
+
+help: ## every task
+	@grep -E '^[a-z_%-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+
+build: ## compile the binary
+	go build -o bin/{{.Name}} .
+
+server: ## run the HTTP server
+	go run . serve
+
+test: ## run the suite with coverage
+	go test -race -cover ./...
+
+vet: ## stdlib static analysis
+	go vet ./...
+
+fmt: ## format
+	gofmt -s -w .
+
+lint: vet ## everything CI checks
+	@test -z "$$(gofmt -l .)" || { gofmt -l .; exit 1; }
+
+tidy: ## prune and verify the module graph
+	go mod tidy && go mod verify
