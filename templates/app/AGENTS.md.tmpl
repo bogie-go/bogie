@@ -22,9 +22,10 @@ layout. Underscored package names such as `posts_controller` are deliberate;
     make lint           gofmt check, go vet, golangci-lint
     bin/ci              every check, run locally; green ends with gh signoff
 
-`bogie server`, `bogie test`, `bogie lint`, `bogie ci`, `bogie db ...` and
-`bogie migrate ...` are the same commands, runnable from any subdirectory. The
-tool adds the Rails spelling and nothing else; the app never imports it.
+`bogie` runs the same commands from any subdirectory, spelled as Rails spells
+them: `bogie db:prepare`, `db:migrate`, `db:rollback`, `db:seed`,
+`credentials:edit -e production`, `server`, `test`. The tool adds the Rails
+spelling and nothing else; the app never imports it.
 
 CI runs here, not on a hosted runner: `bin/ci` is the whole pipeline (Rails
 8.1's bin/ci, ported), and a green run on a clean tree records a signoff

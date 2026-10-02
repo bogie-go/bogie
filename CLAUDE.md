@@ -32,6 +32,11 @@ generated app's `.golangci.yml`, which bin/ci enforces.
 
 ## Decisions already made (do not re-litigate; change `docs/DESIGN.md` first if they must change)
 
+- **As close to Rails as possible, for the Rails developer's convenience.**
+  Every command is spelled exactly as Rails spells it, colons included:
+  `db:migrate`, `db:rollback`, `credentials:edit`, `app:update`; `server`,
+  `generate`, `new` with spaces, because that is Rails's own mix. Vocabulary,
+  layout and file names follow Rails wherever Rails has a word for the thing.
 - **Glue, then gaps.** For every Rails concept, use the ecosystem tool listed in
   DESIGN.md §2 and wire it once. Only build what is missing. New features must
   pass: is there an ecosystem tool? If yes, wire it; if no, is the gap big enough
@@ -45,7 +50,7 @@ generated app's `.golangci.yml`, which bin/ci enforces.
   pinned to commit 485b80f; extraction order and the findings it fixes are in
   DESIGN.md §9. kchat is reference code, never edited from this repo.
 - **Two CLIs.** The installed `bogie` tool knows templates and layout (`new`,
-  `g`, `d`, `doctor`, `upgrade`). The generated app's own binary knows config
+  `g`, `d`, `doctor`, `app:update`). The generated app's own binary knows config
   and the database (`serve`, `worker`, `db …`, `migrate …`) because it must also
   run inside the deployed container. `bogie db migrate` is a thin proxy for
   `go run . db migrate`; development runs the code production runs.

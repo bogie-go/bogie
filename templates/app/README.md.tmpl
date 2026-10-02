@@ -5,11 +5,12 @@ The Go service next to the Rails app. Generated with
 purpose and `AGENTS.md` says how to work in it.
 
     make up                   # postgres on :5440, via docker compose
-    bogie db prepare          # create, migrate, seed
+    bogie db:prepare          # create, migrate, seed
     bogie server              # migrates, then serves; or: make server
     curl localhost:8080/healthz
     bogie test                # or: make test
     bin/ci                    # every check, locally; green signs off the commit
 
-`make help` lists the rest. `bogie` only adds the Rails spelling and works
-from any subdirectory; every command runs the app's own code.
+`make help` lists the rest. `bogie` spells every command the way Rails does,
+`db:migrate`, `db:rollback`, `credentials:edit`, and works from any
+subdirectory; every command runs the app's own code.

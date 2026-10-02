@@ -8,28 +8,32 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/bogie-go/bogie/internal/commands"
 )
 
 const usage = `Usage: bogie <command> [arguments]
 
-Generate:
-  new NAME        generate a new service in ./NAME
+Every command is spelled the way Rails spells it.
+
+  new NAME                 generate a new service in ./NAME
 
 Inside an app (found by its bogie.toml, from any subdirectory):
-  server          run it            (go run . serve)
-  test [PKGS]     run the tests     (go test -race -cover ./...)
-  lint            gofmt, vet, golangci-lint
-  ci              every check, locally, then sign off (bin/ci)
-  db CMD          create | drop --yes | prepare | seed (go run . db CMD)
-  migrate CMD     up | down --yes | status | version   (go run . migrate CMD)
-  credentials CMD edit | show | get [-e ENV]           (go tool credentials CMD)
+  server                   run it; migrates at boot
+  test [PKGS]              go test -race -cover ./...
+  lint                     gofmt, vet, golangci-lint
+  ci                       every check, locally, then sign off (bin/ci)
 
-  version         print the version
-  help            this text
+  db:create  db:drop  db:prepare  db:reset  db:seed  db:seed:rollback
+  db:migrate  db:migrate:status  db:migrate:redo  db:rollback  db:version
+  credentials:edit  credentials:show  credentials:get   [-e ENVIRONMENT]
 
-Run "bogie <command> -h" for a command's flags.
+  version                  print the version
+  help                     this text
+
+The app's own binary spells these with spaces (` + "`blog db prepare`" + `), and
+that form works here too: bogie db prepare, bogie migrate status.
 `
 
 func main() {
@@ -44,11 +48,21 @@ func main() {
 		err = commands.New(os.Args[2:], os.Stdout)
 	case "server", "test", "lint", "ci", "db", "migrate", "credentials":
 		err = commands.Proxy(os.Args[1], os.Args[2:], os.Stdout)
+	case "db:create", "db:drop", "db:prepare", "db:setup", "db:reset", "db:seed", "db:seed:rollback",
+		"db:migrate", "db:migrate:status", "db:migrate:redo", "db:rollback", "db:version",
+		"credentials:edit", "credentials:show", "credentials:get":
+		err = commands.Proxy(os.Args[1], os.Args[2:], os.Stdout)
 	case "version":
 		fmt.Println(commands.Version)
 	case "help", "-h", "--help":
 		fmt.Print(usage)
 	default:
+		// A colon means a Rails-style task; let the proxy name the nearest
+		// one rather than printing the whole usage.
+		if strings.Contains(os.Args[1], ":") {
+			err = commands.Proxy(os.Args[1], os.Args[2:], os.Stdout)
+			break
+		}
 		fmt.Fprintf(os.Stderr, "bogie: unknown command %q\n\n%s", os.Args[1], usage)
 		os.Exit(2)
 	}

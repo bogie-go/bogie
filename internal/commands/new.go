@@ -18,7 +18,7 @@ import (
 var Version = "dev"
 
 // LayoutVersion is written to the generated bogie.toml so a later
-// `bogie upgrade` knows which templates produced the app.
+// `bogie app:update` knows which templates produced the app.
 const LayoutVersion = "0.1.0"
 
 // A name becomes a Go module path segment, a package name, an env prefix and a

@@ -145,7 +145,7 @@ wrong lesson about where Go tests go, so the scaffold does not create one.
 | --- | --- | --- |
 | Where it runs | a developer's laptop | laptop **and** the deployed container |
 | Knows about | templates, the layout | config, database, the running app |
-| Commands | `new`, `g`, `d`, `doctor`, `upgrade` | `serve`, `worker`, `db …`, `migrate …` |
+| Commands | `new`, `g`, `d`, `doctor`, `app:update`, and the `db:*` / `credentials:*` tasks as proxies | `serve`, `worker`, `db …`, `migrate …` |
 
 The runtime commands cannot live only in `bogie`: on a deployed host there is no
 generator, but there must be a way to migrate and roll back. kchat already does
@@ -172,12 +172,22 @@ Commands, v1:
     bogie g service publish_post
     bogie d controller posts            # destroy what g created
     bogie server | worker | test | lint
-    bogie db create | drop --yes | prepare          # the app's own `db` subcommand
-    bogie migrate up | down --yes | status | version  # the app's own `migrate` subcommand
-    bogie credentials edit [-e production]
+    bogie db:create | db:drop | db:prepare | db:reset | db:seed
+    bogie db:migrate | db:migrate:status | db:rollback | db:migrate:redo | db:version
+    bogie credentials:edit [-e production] | credentials:show
     bogie doctor                        # layout and markers intact? tools pinned?
 
-Later: `g job`, `g mailer`, `upgrade` (§5a), `deploy`.
+**Spelling, decided 2026-10-02: every command is spelled exactly as Rails
+spells it.** Rails mixes two forms, colons for its Rake-derived tasks
+(`db:migrate`, `credentials:edit`, `app:update`) and spaces for commands
+(`server`, `generate`, `new`), and Bogie copies the mix rather than tidying it,
+so a Rails developer never translates. The app's own binary stays a plain Go
+CLI with spaces (`blog db prepare`, what `docker exec` runs), and the tool
+accepts that form too. Tasks that destroy pass `--yes` on the developer's
+behalf, as `rails db:rollback` asks nothing either; the binary in a container
+keeps asking, because there a mistake is not undoable.
+
+Later: `g job`, `g mailer`, `app:update` (§5a), `deploy`.
 
 Output follows Rails: `create` / `insert` / `skip` / `conflict` per file, `--pretend`
 for a dry run, and never overwrite without `--force`.
@@ -232,25 +242,22 @@ types: `string`→`text`, `text`→`text`, `integer`→`integer`, `bigint`→`bi
 `db/queries/<table>.sql` (get, list, create, update, delete) and runs `sqlc generate`.
 
 Templates are `go:embed`ded and rendered with `text/template`. `bogie.toml` records
-the Bogie version that generated the app so a later `bogie upgrade` knows what
+the Bogie version that generated the app so a later `bogie app:update` knows what
 it is upgrading from (§5a).
 
 ---
 
-## 5a. `bogie upgrade`: moving an app to a newer layout
+## 5a. `bogie app:update`: moving an app to a newer layout
 
 Decided 2026-10-02. Rails has `rails app:update`: re-run the generator over the
 app for the files Rails owns, then prompt per conflicting file. Bogie does the
 same job, two differences in how.
 
-**The name is `upgrade`, not `app:update`.** The colon in `app:update` is
-Rake's namespace syntax, not Rails vocabulary, and Bogie already spells the
-same things with spaces (`bogie db migrate`). One colon command would make the
-surface inconsistent with itself. "Update" in Go already means `go get -u`,
-dependencies; moving the app's own files to a newer layout is an upgrade, the
-word Andurel, Cargo and Homebrew use. `docs/FROM_RAILS.md` maps
-`rails app:update` → `bogie upgrade`, and typing the Rails spelling gets an
-unknown-command message that suggests it.
+**The name is `app:update`, as in Rails.** An earlier draft chose `upgrade`
+on the grounds that the colon is Rake syntax and Bogie used spaces. That was
+reversed the same day when the command surface adopted Rails's spelling
+wholesale (§4): the rule that holds together is "spell it as Rails does", and
+`rails app:update` is what a Rails developer will type.
 
 **It is a three-way merge, not a two-way prompt.** `app:update` does not know
 what a file looked like when Rails generated it, so every edit the user ever
@@ -270,17 +277,17 @@ report names those files. It does not guess, the same rule the generators
 follow for a missing marker (§5).
 
 ```
-bogie upgrade            refuses on a dirty git tree, so the result is one reviewable diff
-                         renders base and theirs, merges into ours
-                         one line per file: identical / updated / merged / conflict / create
-                         writes the new version to bogie.toml, then runs bogie doctor
-bogie upgrade --pretend  the report only; nothing written
+bogie app:update            refuses on a dirty git tree, so the result is one reviewable diff
+                            renders base and theirs, merges into ours
+                            one line per file: identical / updated / merged / conflict / create
+                            writes the new version to bogie.toml, then runs bogie doctor
+bogie app:update --pretend  the report only; nothing written
 ```
 
 Files the templates never produced are not touched, so everything `bogie g`
 and the user wrote is safe by construction. That includes `config/master.key`
 and `config/credentials.yml.enc`, which `new` makes outside the templates
-because the key is random; `upgrade` never looks at them. Templates render deterministically
+because the key is random; `app:update` never looks at them. Templates render deterministically
 from `(version, name, module)` and nothing else, which is what makes base
 reproducible; `new` must never consult the clock, the environment or the
 machine.
@@ -581,5 +588,5 @@ best metaphor for a scaffold, but a common word), **Ballast**, **Turnout**,
 - **M4 — dogfood.** Regenerate the kchat skeleton with the tool and diff (§9.6).
 - **M5 — publish.** README, Homebrew tap, first tagged release. Before the tag:
   version from the git tag via ldflags, recorded as-is in `bogie.toml` (§5a).
-- **M6 — upgrade.** `bogie upgrade` as a three-way merge (§5a); the first
-  feature after the first release, because it needs two versions to exist.
+- **M6 — app:update.** `bogie app:update` as a three-way merge (§5a); the
+  first feature after the first release, because it needs two versions to exist.

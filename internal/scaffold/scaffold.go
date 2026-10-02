@@ -23,7 +23,7 @@ type Vars struct {
 	Module string
 	// EnvPrefix is Name upper-cased: BLOG_ENV, BLOG_ADDR.
 	EnvPrefix string
-	// LayoutVersion is recorded in bogie.toml for a later `bogie upgrade`.
+	// LayoutVersion is recorded in bogie.toml for a later `bogie app:update`.
 	LayoutVersion string
 }
 
