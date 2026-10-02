@@ -12,7 +12,8 @@ equivalent: a `rails new`-style project generator and generators that also
 NOT a Rails-like Go framework; Andurel holds that slot.
 
 `docs/DESIGN.md` is the source of truth; read it before changing the
-architecture. The README summarises it.
+architecture. `docs/STATUS.md` is where things stand, how to set up a machine,
+and what is next; read it first in a new session. The README summarises both.
 
 ## Commands
 

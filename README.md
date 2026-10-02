@@ -42,10 +42,13 @@ you delete the tool tomorrow the app does not notice.
 
 ## Status
 
-**Design phase. Nothing here is built yet.** [`docs/DESIGN.md`](docs/DESIGN.md)
-has the full design, the reasoning behind each choice, what the reference
-service got wrong, and the questions still open. It is published now because
-the design is the part we want argued with.
+**Pre-release.** `bogie new`, the generators, `destroy`, `doctor` and the
+Rails-spelled `db:*` and `credentials:*` tasks work; see
+[`docs/STATUS.md`](docs/STATUS.md) for exactly what, how to set up a machine,
+and what comes next. [`docs/DESIGN.md`](docs/DESIGN.md) has the full design,
+the reasoning behind each choice, what the reference service got wrong, and
+the questions still open. Until the first tagged release, install from a
+clone: `go install .`
 
 No telemetry, now or later.
 
