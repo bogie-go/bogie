@@ -33,8 +33,11 @@ func New(args []string, out io.Writer) error {
 	force := fs.Bool("force", false, "overwrite files that differ")
 	pretend := fs.Bool("pretend", false, "report what would be written and write nothing")
 	skipTidy := fs.Bool("skip-tidy", false, "do not run go mod tidy in the new app")
+	// Everything the command says goes through say; a failed write to the
+	// terminal has nowhere to be reported, so the result is dropped.
+	say := func(format string, a ...any) { _, _ = fmt.Fprintf(out, format, a...) }
 	fs.Usage = func() {
-		fmt.Fprintln(out, "Usage: bogie new NAME [--module=PATH] [--force] [--pretend] [--skip-tidy]")
+		say("Usage: bogie new NAME [--module=PATH] [--force] [--pretend] [--skip-tidy]\n")
 		fs.PrintDefaults()
 	}
 	// Flags may come after NAME, as in `bogie new blog --module=...`, which
@@ -70,7 +73,7 @@ func New(args []string, out io.Writer) error {
 		EnvPrefix:     strings.ToUpper(name),
 		LayoutVersion: LayoutVersion,
 	}
-	report := func(a scaffold.Action) { fmt.Fprintf(out, "%12s  %s\n", a.Op, name+"/"+a.Path) }
+	report := func(a scaffold.Action) { say("%12s  %s\n", a.Op, name+"/"+a.Path) }
 	if _, err := scaffold.Render(templates.App, "app", name, vars, scaffold.Options{
 		Force: *force, Pretend: *pretend, Report: report,
 	}); err != nil {
@@ -78,7 +81,7 @@ func New(args []string, out io.Writer) error {
 	}
 
 	if !*pretend && !*skipTidy {
-		fmt.Fprintf(out, "%12s  go mod tidy\n", "run")
+		say("%12s  go mod tidy\n", "run")
 		cmd := exec.Command("go", "mod", "tidy")
 		cmd.Dir = name
 		cmd.Stdout = out
@@ -89,7 +92,7 @@ func New(args []string, out io.Writer) error {
 	}
 
 	if !*pretend {
-		fmt.Fprintf(out, "\nNext:\n  cd %s\n  make server\n  curl localhost:8080/healthz\n", name)
+		say("\nNext:\n  cd %s\n  make server\n  curl localhost:8080/healthz\n", name)
 	}
 	return nil
 }

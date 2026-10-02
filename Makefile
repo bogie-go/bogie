@@ -1,6 +1,6 @@
 MAKEFLAGS += --no-print-directory
 
-.PHONY: help build test vet fmt lint scaffold
+.PHONY: help build test vet fmt lint ci scaffold
 
 help: ## every task
 	@grep -E '^[a-z_%-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -17,8 +17,12 @@ vet: ## stdlib static analysis
 fmt: ## format
 	gofmt -s -w .
 
-lint: vet ## everything CI checks on the tool
+lint: vet ## gofmt check + golangci-lint
 	@test -z "$$(gofmt -l .)" || { gofmt -l .; exit 1; }
+	golangci-lint run ./...
+
+ci: ## every check, locally; green ends with gh signoff (bin/ci)
+	@bin/ci
 
 # The CI scaffold job, locally: generate an app into a temp dir and hold it to
 # the bar every generated app must meet.

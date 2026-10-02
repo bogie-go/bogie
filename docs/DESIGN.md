@@ -61,6 +61,7 @@ Use whatever the Go ecosystem provides. Wire it once. Build only what is missing
 | Credentials | `roonglit/credentials` | ecosystem (ours) |
 | Deploy | **Kamal 2** | ecosystem |
 | Lint / test | golangci-lint, `go test` | ecosystem |
+| CI | **`bin/ci`**, run locally, Rails 8.1 style; `gh signoff` records the green run on the commit | **gap** (a port) |
 | Task runner | `make` | ecosystem |
 | Logging | `log/slog` | stdlib |
 | Tool versions | Go 1.25+ (what gin v1.12 needs); `tool` directive in `go.mod` | ecosystem |
@@ -274,10 +275,19 @@ notes rather than reinventing.
 
 1. **Golden files** for each generator: given `g controller posts index show`,
    the produced tree and every inserted line match a checked-in expectation.
-2. **A scaffold job in CI**: run `bogie new`, then in the result run `go build`,
-   `go vet`, `sqlc generate`, `golangci-lint`, `go test`, and `bogie g` of every
-   generator followed by the same. Against a real Postgres. On the Go versions
-   we claim to support. This is what stops templates rotting.
+2. **A scaffold step in `bin/ci`**: run `bogie new`, then run the generated
+   app's own `bin/ci` (`go build`, `go vet`, `golangci-lint`, `go test`, and
+   later `sqlc generate` against a real Postgres), then start it and ask for
+   `/healthz`; later, `bogie g` of every generator followed by the same. This
+   is what stops templates rotting.
+
+   **CI runs locally, not on a hosted runner.** Rails 8.1 moved CI to
+   `bin/ci`, a script that runs every check on the developer's machine, with
+   `gh signoff` recording a green run as a commit status that branch
+   protection can require. Bogie follows that: the tool has a `bin/ci`, every
+   generated app ships one, and there is no `.github/workflows`. The one tool
+   Go does not bring with it, golangci-lint, is looked for on PATH and its
+   absence fails the step loudly rather than skipping it.
 3. **Marker-removal tests**: delete each marker, expect a named error and no
    partial write.
 

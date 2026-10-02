@@ -1,0 +1,101 @@
+#!/bin/sh
+# bin/ci: continuous integration for the bogie tool, run here.
+#
+# Rails 8.1's bin/ci, ported: every check in one file, run on the machine you
+# already have. Every step runs even when an earlier one failed; the run fails
+# if any step did; a green run on a clean tree ends with `gh signoff`.
+#
+# The last steps are what stops the templates rotting: generate an app into a
+# temp dir and run ITS bin/ci, then start it and ask it for /healthz.
+set -u
+cd "$(dirname "$0")/.." || exit 1
+
+failed=0
+started=$(date +%s)
+
+step() {
+  name=$1
+  command=$2
+  printf '\n\033[1m== %s\033[0m\n' "$name"
+  t=$(date +%s)
+  case "$command" in
+    lint|signoff|scaffold|serves) "$command" ;;
+    *) sh -c "$command" ;;
+  esac
+  if [ $? -eq 0 ]; then
+    printf '\033[32m   ok\033[0m  %s (%ss)\n' "$name" "$(( $(date +%s) - t ))"
+  else
+    printf '\033[31m FAIL\033[0m  %s (%ss)\n' "$name" "$(( $(date +%s) - t ))"
+    failed=1
+  fi
+}
+
+lint() {
+  if command -v golangci-lint >/dev/null 2>&1; then
+    golangci-lint run ./...
+  elif [ -x "$(go env GOPATH)/bin/golangci-lint" ]; then
+    "$(go env GOPATH)/bin/golangci-lint" run ./...
+  else
+    echo "golangci-lint is not installed. Install it with:"
+    echo "  go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest"
+    return 1
+  fi
+}
+
+# The generated app, held to its own bar. Kept in $CI_APP_DIR so the serve
+# step below can use it and a failure can be inspected afterwards.
+CI_APP_DIR=$(mktemp -d)
+scaffold() {
+  go build -o "$CI_APP_DIR/bogie" . || return 1
+  (cd "$CI_APP_DIR" && ./bogie new blog --module=example.com/blog) || return 1
+  echo "generated app: $CI_APP_DIR/blog"
+  "$CI_APP_DIR/blog/bin/ci"
+}
+
+serves() {
+  [ -d "$CI_APP_DIR/blog" ] || { echo "no generated app to start"; return 1; }
+  cd "$CI_APP_DIR/blog" || return 1
+  BLOG_ENV=test BLOG_ADDR=:18080 go run . serve >"$CI_APP_DIR/serve.log" 2>&1 &
+  pid=$!
+  i=0
+  until curl -fs localhost:18080/healthz >/dev/null 2>&1; do
+    i=$((i + 1))
+    if [ $i -ge 60 ]; then kill $pid 2>/dev/null; cat "$CI_APP_DIR/serve.log"; return 1; fi
+    sleep 0.5
+  done
+  body=$(curl -fs localhost:18080/healthz)
+  kill $pid 2>/dev/null; wait $pid 2>/dev/null
+  cd "$OLDPWD" || return 1
+  [ "$body" = ok ] || { echo "GET /healthz = $body"; return 1; }
+  echo "GET /healthz = ok"
+}
+
+signoff() {
+  if [ -n "$(git status --porcelain)" ]; then
+    echo "working tree has uncommitted changes; commit them and run bin/ci again to sign off"
+    return 0
+  fi
+  if ! gh extension list 2>/dev/null | grep -q signoff; then
+    echo "gh signoff is not installed (gh extension install basecamp/gh-signoff); green, but not recorded"
+    return 0
+  fi
+  gh signoff
+}
+
+step "Setup: modules"               "go mod download && go mod verify"
+step "Style: gofmt"                 "test -z \"\$(gofmt -l .)\" || { gofmt -l .; exit 1; }"
+step "Style: go vet"                "go vet ./..."
+step "Style: golangci-lint"         "lint"
+step "Tests: the tool"              "go test -race -cover ./..."
+step "Generated app: its own bin/ci" "scaffold"
+step "Generated app: serves"        "serves"
+
+printf '\n'
+if [ "$failed" -eq 0 ]; then
+  printf '\033[32mAll systems go\033[0m in %ss. Ready for merge and deploy.\n' "$(( $(date +%s) - started ))"
+  step "Signoff" "signoff"
+  exit "$failed"
+else
+  printf '\033[31mCI failed\033[0m in %ss. Do not merge or deploy. Generated app left at %s\n' "$(( $(date +%s) - started ))" "$CI_APP_DIR"
+  exit 1
+fi

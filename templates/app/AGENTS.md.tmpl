@@ -13,7 +13,13 @@ layout. Underscored package names such as `posts_controller` are deliberate;
     make help           every task
     make server         run the HTTP server (go run . serve)
     make test           go test -race -cover ./...
-    make lint           what CI runs: go vet plus a gofmt check
+    make lint           gofmt check, go vet, golangci-lint
+    bin/ci              every check, run locally; green ends with gh signoff
+
+CI runs here, not on a hosted runner: `bin/ci` is the whole pipeline (Rails
+8.1's bin/ci, ported), and a green run on a clean tree records a signoff
+status on the commit. Run it before you push. Add a new check as one line at
+the bottom of `bin/ci`.
 
 Configuration is read from the environment, prefixed `{{.EnvPrefix}}_`.
 `{{.EnvPrefix}}_ENV` is a closed set: `development`, `test`, `production`.

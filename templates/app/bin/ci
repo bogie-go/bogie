@@ -1,0 +1,88 @@
+#!/bin/sh
+# bin/ci: continuous integration, run here.
+#
+# Every check that must pass before a commit is merged or deployed, in one
+# file, run on the machine you already have rather than a slower one you rent.
+# This is Rails 8.1's bin/ci, ported. Every step runs even when an earlier one
+# failed, so one run reports everything; the run as a whole fails if any step
+# did. A green run on a clean tree ends with `gh signoff`, which records a
+# "signoff" status on the commit for branch protection to require.
+#
+#   bin/ci            run everything
+#   make ci           the same
+#
+# The steps are listed at the bottom. Add one line per new check.
+set -u
+cd "$(dirname "$0")/.." || exit 1
+
+failed=0
+started=$(date +%s)
+
+step() {
+  name=$1
+  command=$2
+  printf '\n\033[1m== %s\033[0m\n' "$name"
+  t=$(date +%s)
+  # A step is either a shell function defined in this file or a command line.
+  case "$command" in
+    lint|signoff) "$command" ;;
+    *) sh -c "$command" ;;
+  esac
+  if [ $? -eq 0 ]; then
+    printf '\033[32m   ok\033[0m  %s (%ss)\n' "$name" "$(( $(date +%s) - t ))"
+  else
+    printf '\033[31m FAIL\033[0m  %s (%ss)\n' "$name" "$(( $(date +%s) - t ))"
+    failed=1
+  fi
+}
+
+# golangci-lint is the one tool Go does not bring with it. It is looked for on
+# PATH, then in GOPATH/bin, and its absence fails the step loudly rather than
+# skipping it: a check that silently does not run looks exactly like one that
+# passed.
+lint() {
+  if command -v golangci-lint >/dev/null 2>&1; then
+    golangci-lint run ./...
+  elif [ -x "$(go env GOPATH)/bin/golangci-lint" ]; then
+    "$(go env GOPATH)/bin/golangci-lint" run ./...
+  else
+    echo "golangci-lint is not installed. Install it with:"
+    echo "  go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest"
+    return 1
+  fi
+}
+
+# Signoff records the green run on the commit. Only on a clean tree: signing a
+# commit while the tree holds unrun changes would vouch for code nobody tested.
+signoff() {
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "not a git repository; nothing to sign off"
+    return 0
+  fi
+  if [ -n "$(git status --porcelain)" ]; then
+    echo "working tree has uncommitted changes; commit them and run bin/ci again to sign off"
+    return 0
+  fi
+  if ! gh extension list 2>/dev/null | grep -q signoff; then
+    echo "gh signoff is not installed (gh extension install basecamp/gh-signoff); green, but not recorded"
+    return 0
+  fi
+  gh signoff
+}
+
+step "Setup: modules"          "go mod download && go mod verify"
+step "Style: gofmt"            "test -z \"\$(gofmt -l .)\" || { gofmt -l .; exit 1; }"
+step "Style: go vet"           "go vet ./..."
+step "Style: golangci-lint"    "lint"
+step "Build"                   "go build ./..."
+step "Tests"                   "go test -race -cover ./..."
+
+printf '\n'
+if [ "$failed" -eq 0 ]; then
+  printf '\033[32mAll systems go\033[0m in %ss. Ready for merge and deploy.\n' "$(( $(date +%s) - started ))"
+  step "Signoff" "signoff"
+  exit "$failed"
+else
+  printf '\033[31mCI failed\033[0m in %ss. Do not merge or deploy.\n' "$(( $(date +%s) - started ))"
+  exit 1
+fi

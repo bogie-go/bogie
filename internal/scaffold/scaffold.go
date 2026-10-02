@@ -157,8 +157,17 @@ func write(abs, rel string, content []byte, opts Options) (Action, error) {
 	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 		return Action{}, err
 	}
-	if err := os.WriteFile(abs, content, 0o644); err != nil {
+	if err := os.WriteFile(abs, content, mode(rel)); err != nil {
 		return Action{}, err
 	}
 	return Action{op, rel}, nil
+}
+
+// mode gives scripts under bin/ the executable bit. go:embed keeps no file
+// modes, so the convention carries it: bin/ holds things you run.
+func mode(rel string) os.FileMode {
+	if strings.HasPrefix(rel, "bin/") {
+		return 0o755
+	}
+	return 0o644
 }

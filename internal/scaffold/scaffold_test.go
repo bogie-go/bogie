@@ -13,6 +13,7 @@ var src = fstest.MapFS{
 	"app/dot_gitignore.tmpl":     {Data: []byte("/bin/\n")},
 	"app/config/env.txt":         {Data: []byte("{{.Name}} is copied verbatim, not rendered\n")},
 	"app/lib/dot_keep/x.go.tmpl": {Data: []byte("package keep\n")},
+	"app/bin/ci":                 {Data: []byte("#!/bin/sh\n")},
 }
 
 var vars = Vars{Name: "blog", Module: "example.com/blog", EnvPrefix: "BLOG", LayoutVersion: "0.1.0"}
@@ -32,7 +33,7 @@ func TestRenderCreatesEveryFile(t *testing.T) {
 		t.Fatalf("Render: %v", err)
 	}
 	got := ops(actions)
-	for _, p := range []string{"main.go", ".gitignore", "config/env.txt", "lib/.keep/x.go"} {
+	for _, p := range []string{"main.go", ".gitignore", "config/env.txt", "lib/.keep/x.go", "bin/ci"} {
 		if got[p] != OpCreate {
 			t.Errorf("%s: op = %q, want create", p, got[p])
 		}
@@ -45,6 +46,14 @@ func TestRenderCreatesEveryFile(t *testing.T) {
 	b, _ = os.ReadFile(filepath.Join(dest, "config/env.txt"))
 	if string(b) != "{{.Name}} is copied verbatim, not rendered\n" {
 		t.Errorf("non-.tmpl file was rendered: %q", b)
+	}
+
+	info, err := os.Stat(filepath.Join(dest, "bin/ci"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&0o111 == 0 {
+		t.Errorf("bin/ci mode = %v, want executable", info.Mode())
 	}
 }
 
@@ -121,8 +130,8 @@ func TestRenderPretendWritesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Render --pretend: %v", err)
 	}
-	if len(actions) != 4 || len(reported) != 4 {
-		t.Errorf("reported %d actions, want 4", len(reported))
+	if len(actions) != 5 || len(reported) != 5 {
+		t.Errorf("reported %d actions, want 5", len(reported))
 	}
 	entries, _ := os.ReadDir(dest)
 	if len(entries) != 0 {

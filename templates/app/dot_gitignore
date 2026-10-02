@@ -1,4 +1,6 @@
-/bin/
+# Build output. bin/ci is a script and stays.
+/bin/*
+!/bin/ci
 *.test
 *.out
 .DS_Store

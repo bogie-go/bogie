@@ -36,6 +36,9 @@ you delete the tool tomorrow the app does not notice.
   `AGENTS.md` with the rules, the commands, and a recipe per task. An agent
   that runs `bogie g controller` gets the registration right every time.
 - **Extracted from a service in production**, not designed on a whiteboard.
+- **CI runs on your machine.** `bin/ci` is the whole pipeline, as in Rails
+  8.1, and a green run signs off the commit with `gh signoff`. The generated
+  app ships one too. No hosted runner.
 
 ## Status
 

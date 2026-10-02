@@ -11,10 +11,24 @@ equivalent: a `rails new`-style project generator and generators that also
 *wire* new code in. The generated app never imports bogie. It is deliberately
 NOT a Rails-like Go framework; Andurel holds that slot.
 
-**Status: design phase. There is no Go code, `go.mod`, Makefile, or test suite
-yet.** `docs/DESIGN.md` is the source of truth; read it before proposing or
-writing any code. The README summarises it. This file will need a Commands
-section once the module exists.
+`docs/DESIGN.md` is the source of truth; read it before changing the
+architecture. The README summarises it.
+
+## Commands
+
+    bin/ci              every check, locally: gofmt, vet, golangci-lint, the
+                        tool's tests, then `bogie new` into a temp dir, the
+                        generated app's own bin/ci, and a /healthz check.
+                        Green on a clean tree ends with `gh signoff`. There
+                        is no hosted CI; run this before pushing.
+    make test           go test -race -cover ./...   (the tool only)
+    make scaffold       generate an app in a temp dir and build/vet/test it
+    go run . new NAME   try the generator; add --pretend to see the plan
+
+Templates live in `templates/app`. A `.tmpl` suffix means text/template with
+`scaffold.Vars`; a `dot_` path segment becomes a dotfile; files under `bin/`
+are written executable. The rendered Go must be gofmt-clean and pass the
+generated app's `.golangci.yml`, which bin/ci enforces.
 
 ## Decisions already made (do not re-litigate; change `docs/DESIGN.md` first if they must change)
 

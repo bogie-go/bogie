@@ -1,0 +1,13 @@
+# The tool's own linter config: the standard set plus every staticcheck rule.
+# The generated app's config (templates/app/dot_golangci.yml) differs in one
+# rule, ST1003, because the app has underscored package names on purpose.
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - staticcheck
+  settings:
+    staticcheck:
+      checks:
+        - all
