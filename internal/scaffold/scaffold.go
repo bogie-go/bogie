@@ -25,6 +25,8 @@ type Vars struct {
 	EnvPrefix string
 	// LayoutVersion is recorded in bogie.toml for a later `bogie app:update`.
 	LayoutVersion string
+	// Jobs adds River: the worker role, app/jobs, the schema at boot.
+	Jobs bool
 }
 
 // Op is what happened to one file.
@@ -77,6 +79,11 @@ func Render(src fs.FS, root, dest string, vars Vars, opts Options) ([]Action, er
 		content, err := render(src, p, vars)
 		if err != nil {
 			return err
+		}
+		// A template that renders to nothing but whitespace is a file the
+		// options left out, such as app/jobs without --jobs.
+		if len(bytes.TrimSpace(content)) == 0 {
+			return nil
 		}
 		act, err := write(filepath.Join(dest, filepath.FromSlash(out)), out, content, opts)
 		if err != nil {

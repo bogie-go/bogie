@@ -33,6 +33,7 @@ func TestPlanSpellsCommandsAsRailsDoes(t *testing.T) {
 		// Rails commands, space-spelled
 		{"server", nil, "go run . serve"},
 		{"server", []string{"--help"}, "go run . serve --help"},
+		{"worker", nil, "go run . worker"},
 		{"test", nil, "go test -race -cover ./..."},
 		{"test", []string{"./config/..."}, "go test -race -cover ./config/..."},
 		{"lint", nil, "make lint"},

@@ -205,3 +205,14 @@ func TestModelWithOneAttribute(t *testing.T) {
 		}
 	}
 }
+
+func TestJob(t *testing.T) {
+	files, wires, err := Job("send_welcome")
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden(t, "job_send_welcome", files)
+	if len(wires) != 1 || wires[0].Marker != "jobs" || wires[0].Line != "registered += add(workers, &SendWelcomeWorker{Log: log})" {
+		t.Errorf("wires = %+v", wires)
+	}
+}

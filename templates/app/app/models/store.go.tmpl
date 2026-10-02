@@ -39,3 +39,9 @@ func (s *Store) Close() { s.pool.Close() }
 
 // Ping reports whether the database answers.
 func (s *Store) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }
+{{if .Jobs}}
+// Pool is the connection pool, for River and nothing else: the job queue
+// shares the database so an enqueue can ride a business transaction. Every
+// other caller goes through the methods above.
+func (s *Store) Pool() *pgxpool.Pool { return s.pool }
+{{end -}}

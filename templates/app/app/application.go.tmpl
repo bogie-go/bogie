@@ -7,9 +7,14 @@ import (
 	"context"
 	"log/slog"
 	"os"
-
+{{if .Jobs}}
+	"github.com/jackc/pgx/v5"
+	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+{{end}}
 	"{{.Module}}/app/controllers"
-	"{{.Module}}/app/controllers/posts_controller"
+	"{{.Module}}/app/controllers/posts_controller"{{if .Jobs}}
+	"{{.Module}}/app/jobs"{{end}}
 	"{{.Module}}/app/models"
 	"{{.Module}}/app/services/migrate"
 	"{{.Module}}/app/services/posts"
@@ -22,7 +27,15 @@ type Application struct {
 	Config config.Config
 	Log    *slog.Logger
 	Store  *models.Store
-	Server *controllers.Server
+	Server *controllers.Server{{if .Jobs}}
+
+	// Jobs enqueues background jobs from anywhere and, in the worker
+	// process, works them. Never started by serve, so there it only inserts.
+	Jobs *river.Client[pgx.Tx]
+	// jobsRegistered is false until the first `bogie g job`: River refuses
+	// an empty bundle, so until then the client is insert-only and the
+	// worker idles.
+	jobsRegistered bool{{end}}
 }
 
 // NewApplication loads configuration and opens every connection. It returns an
@@ -55,7 +68,25 @@ func NewApplication(ctx context.Context) (*Application, error) {
 	if err != nil {
 		return nil, err
 	}
-
+{{if .Jobs}}
+	// River runs on the same Postgres, so a job enqueued in a transaction
+	// commits with the business row or not at all. The workers are
+	// registered in app/jobs; `bogie g job` adds one.
+	workers, jobsRegistered := jobs.Workers(log)
+	riverConfig := &river.Config{Logger: log}
+	if jobsRegistered {
+		// Queues and Workers go together: a client with either alone is
+		// refused, and one with neither is insert-only.
+		riverConfig.Queues = map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 10}}
+		riverConfig.Workers = workers
+	} else {
+		log.WarnContext(ctx, "no jobs registered yet: the queue accepts inserts and the worker has nothing to do (bogie g job NAME)")
+	}
+	queue, err := river.NewClient(riverpgxv5.New(store.Pool()), riverConfig)
+	if err != nil {
+		return nil, err
+	}
+{{end}}
 	server := controllers.NewServer(cfg, log)
 
 	// Each controller is built here, with its dependencies, and assigned to
@@ -66,7 +97,7 @@ func NewApplication(ctx context.Context) (*Application, error) {
 	// bogie:wire
 	server.SetupRoutes()
 
-	return &Application{Config: cfg, Log: log, Store: store, Server: server}, nil
+	return &Application{Config: cfg, Log: log, Store: store, Server: server{{if .Jobs}}, Jobs: queue, jobsRegistered: jobsRegistered{{end}}}, nil
 }
 
 // Start serves HTTP until ctx is cancelled.
@@ -75,7 +106,29 @@ func (a *Application) Start(ctx context.Context) error {
 	return a.Server.Start(ctx)
 }
 
-// Close releases connections.
+{{if .Jobs}}// StartWorker works the queue until ctx is cancelled, then drains.
+func (a *Application) StartWorker(ctx context.Context) error {
+	defer a.Close()
+	if !a.jobsRegistered {
+		a.Log.Info("worker idle: no jobs registered yet", "env", a.Config.Env)
+		<-ctx.Done()
+		return nil
+	}
+	if err := a.Jobs.Start(ctx); err != nil {
+		return err
+	}
+	a.Log.Info("worker started", "env", a.Config.Env)
+	<-ctx.Done()
+
+	// In-flight jobs get the same grace a request does; after that River
+	// marks what is still running as retryable and returns.
+	a.Log.Info("worker draining", "grace", a.Config.App.ShutdownGrace)
+	stopCtx, cancel := context.WithTimeout(context.Background(), a.Config.App.ShutdownGrace)
+	defer cancel()
+	return a.Jobs.Stop(stopCtx)
+}
+
+{{end}}// Close releases connections.
 func (a *Application) Close() {
 	if a.Store != nil {
 		a.Store.Close()

@@ -434,12 +434,17 @@ Extraction, in order:
    service, controller, test — so a new app has a working shape to copy.
 4. Turn the positional root wiring into named fields with markers (§5).
 5. Convert the global `sqlc` install to a pinned tool.
-6. Add River behind `--jobs`: its schema as a goose migration in
-   `db/migrate` (River publishes the SQL; `river migrate-get`), one
-   `river.Worker[Args]` per file in `app/jobs`, registered on the
-   `river.Workers` bundle with a `// bogie:jobs` marker, and `worker` as a
-   role of the app binary exactly as kchat does. `g job send_welcome` writes
-   the args struct, the worker, a test, and the registration line.
+6. Add River behind `--jobs`: one `river.Worker[Args]` per file in
+   `app/jobs`, registered on the `river.Workers` bundle with a
+   `// bogie:jobs` marker, and `worker` as a role of the app binary exactly
+   as kchat does. `g job send_welcome` writes the args struct, the worker, a
+   test, and the registration line. Built 2026-10-02. River's schema is
+   applied by `migrate` through `rivermigrate` rather than copied into
+   `db/migrate` as first planned: River versions its own tables in
+   `river_migration` and ships the SQL with the library, so a River upgrade
+   brings its schema change with it instead of needing a hand-copied
+   migration. The web process holds a client it never starts, so it only
+   inserts; the worker process starts the same client. River v0.48.0.
 7. **Later:** regenerate a clean app with the tool and diff it against kchat.
    Where they disagree, one of them is wrong.
 
@@ -599,9 +604,9 @@ best metaphor for a scaffold, but a common word), **Ballast**, **Turnout**,
   read geng and Autostrada; draft the launch essay (done, in review).
 - **M1 — skeleton.** Repo, `bogie new` producing an app that builds, migrates,
   seeds, reads its credentials and serves; `bin/ci` green. **Done 2026-10-02.**
-- **M2 — generators.** ~~`g migration`, `g model`, `g controller`,
-  `g service`, `d`, markers, `doctor`, golden tests~~ (done 2026-10-02);
-  marker-removal tests (§8.3); River behind `--jobs` and `g job`.
+- **M2 — generators.** `g migration`, `g model`, `g controller`,
+  `g service`, `g job`, `d`, markers, `doctor`, golden tests, marker-removal
+  tests, River behind `--jobs`. **Done 2026-10-02.**
 - **M3 — agent layer.** `AGENTS.md`, recipes, `docs/FROM_RAILS.md`, a lint rule
   or test that catches an unregistered controller.
 - **M4 — dogfood.** Regenerate the kchat skeleton with the tool and diff (§9.6).

@@ -22,6 +22,7 @@ file you added to the package by hand stays.
 
   bogie d controller comments
   bogie d service publish_post
+  bogie d job send_welcome
   bogie d model comment
   bogie d migration add_slug_to_posts
 `
@@ -88,6 +89,9 @@ func Destroy(args []string, out io.Writer) error {
 		}
 	case "service":
 		files, err = generate.Service(module, name)
+	case "job":
+		files, _, err = generate.Job(name)
+		wires = generate.JobWirePrefix(name)
 	case "model":
 		files, err = generate.Model(module, name, nil, time.Time{})
 		// sqlc writes a file per query file and never removes one whose

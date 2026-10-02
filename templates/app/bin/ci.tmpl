@@ -85,7 +85,8 @@ step "Style: gofmt"            "test -z \"\$(gofmt -l .)\" || { gofmt -l .; exit
 step "Style: go vet"           "go vet ./..."
 step "Style: golangci-lint"    "lint"
 step "Build"                   "go build ./..."
-step "Tests"                   "go test -race -cover ./..."
+step "Tests"                   "go test -race -cover ./..."{{if .Jobs}}
+step "Worker: boots and drains" "go build -o bin/{{.Name}} . && timeout -s TERM 6 ./bin/{{.Name}} worker; s=\$?; test \$s -eq 124 || test \$s -eq 0"{{end}}
 
 printf '\n'
 if [ "$failed" -eq 0 ]; then

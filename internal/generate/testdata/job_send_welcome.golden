@@ -1,0 +1,57 @@
+==> app/jobs/send_welcome.go
+package jobs
+
+import (
+	"context"
+	"log/slog"
+
+	"github.com/riverqueue/river"
+)
+
+// SendWelcomeArgs is what a send_welcome job carries. It is stored as JSON in the job row,
+// so keep it to ids and small values; the worker loads what it needs.
+type SendWelcomeArgs struct {
+	// ID string `json:"id"`
+}
+
+// Kind names the job in the database. Never change it once jobs are queued;
+// a queued job of the old kind would have no worker.
+func (SendWelcomeArgs) Kind() string { return "send_welcome" }
+
+// SendWelcomeWorker does the work. Enqueue one with:
+//
+//	app.Jobs.Insert(ctx, jobs.SendWelcomeArgs{}, nil)
+//
+// Dependencies go here as fields, declared as the smallest interface this
+// worker uses (rule 2), and are passed on the registration line in jobs.go.
+type SendWelcomeWorker struct {
+	river.WorkerDefaults[SendWelcomeArgs]
+	Log *slog.Logger
+}
+
+// Work runs one job. Return an error to have River retry it with backoff;
+// return nil when it is done. ctx is cancelled when the worker drains.
+func (w *SendWelcomeWorker) Work(ctx context.Context, job *river.Job[SendWelcomeArgs]) error {
+	w.Log.InfoContext(ctx, "send_welcome: not implemented yet", "job", job.ID)
+	return nil
+}
+==> app/jobs/send_welcome_test.go
+package jobs
+
+import (
+	"context"
+	"io"
+	"log/slog"
+	"testing"
+
+	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/rivertype"
+)
+
+func TestSendWelcomeWork(t *testing.T) {
+	w := &SendWelcomeWorker{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	job := &river.Job[SendWelcomeArgs]{JobRow: &rivertype.JobRow{ID: 1}, Args: SendWelcomeArgs{}}
+	if err := w.Work(context.Background(), job); err != nil {
+		t.Fatalf("Work: %v", err)
+	}
+}

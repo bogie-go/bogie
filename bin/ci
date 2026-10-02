@@ -19,7 +19,7 @@ step() {
   printf '\n\033[1m== %s\033[0m\n' "$name"
   t=$(date +%s)
   case "$command" in
-    lint|signoff|scaffold|generators|serves|teardown) "$command" ;;
+    lint|signoff|scaffold|generators|serves|teardown|jobs|teardown_jobs) "$command" ;;
     *) sh -c "$command" ;;
   esac
   if [ $? -eq 0 ]; then
@@ -96,6 +96,28 @@ serves() {
   echo "GET /healthz = ok"
 }
 
+# A second app, with --jobs: the worker role, River, g job and d job, and
+# that app's own bin/ci, which boots the worker. Same app name, so it reuses
+# the compose project the first one tore down.
+CI_JOBS_DIR=$(mktemp -d)
+jobs() {
+  (cd "$CI_JOBS_DIR" && "$CI_APP_DIR/bogie" new blog --module=example.com/blog --jobs) || return 1
+  cd "$CI_JOBS_DIR/blog" || return 1
+  b="$CI_APP_DIR/bogie"
+  "$b" g job send_welcome || return 1
+  "$b" g job send_welcome || return 1
+  "$b" doctor || return 1
+  cd "$OLDPWD" || return 1
+  "$CI_JOBS_DIR/blog/bin/ci" || return 1
+  cd "$CI_JOBS_DIR/blog" && "$b" d job send_welcome && "$b" doctor && cd "$OLDPWD" || return 1
+  "$CI_JOBS_DIR/blog/bin/ci"
+}
+
+teardown_jobs() {
+  [ -f "$CI_JOBS_DIR/blog/docker-compose.yml" ] || { echo "nothing to tear down"; return 0; }
+  (cd "$CI_JOBS_DIR/blog" && docker compose down -v --remove-orphans)
+}
+
 # The generated app's bin/ci started a compose stack named blog-service.
 # Stop it and drop its volume so a run leaves nothing behind and the next one
 # starts from an empty database, which is the state every new app starts in.
@@ -106,7 +128,7 @@ teardown() {
 
 # A green run leaves nothing in /tmp; a failed one keeps the app for a look.
 cleanup() {
-  if [ "$failed" -eq 0 ]; then rm -rf "$CI_APP_DIR"; fi
+  if [ "$failed" -eq 0 ]; then rm -rf "$CI_APP_DIR" "$CI_JOBS_DIR"; fi
 }
 
 signoff() {
@@ -130,6 +152,8 @@ step "Generated app: its own bin/ci" "scaffold"
 step "Generators: into that app"    "generators"
 step "Generated app: serves"        "serves"
 step "Generated app: tear down"     "teardown"
+step "With --jobs: scaffold, g job, d job, its own bin/ci" "jobs"
+step "With --jobs: tear down"       "teardown_jobs"
 
 printf '\n'
 cleanup

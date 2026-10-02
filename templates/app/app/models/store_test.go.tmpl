@@ -37,8 +37,10 @@ func testStore(t *testing.T) *Store {
 
 	// Every table of the app's, in one statement, CASCADE for the foreign
 	// keys between them. goose's version tables are left alone.
+	// goose's version tables are left alone, and so is River's schema,
+	// which keeps its own migration record.
 	rows, err := store.pool.Query(ctx,
-		"SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename NOT IN ('goose_db_version', 'seed_db_version')")
+		"SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename NOT IN ('goose_db_version', 'seed_db_version') AND tablename NOT LIKE 'river_%'")
 	if err != nil {
 		t.Fatal(err)
 	}

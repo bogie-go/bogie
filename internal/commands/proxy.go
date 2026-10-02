@@ -90,6 +90,8 @@ func plan(command string, args []string) ([][]string, error) {
 	switch command {
 	case "server":
 		argv = []string{"go", "run", ".", "serve"}
+	case "worker":
+		argv = []string{"go", "run", ".", "worker"}
 	case "test":
 		argv = []string{"go", "test", "-race", "-cover"}
 		if len(args) == 0 {

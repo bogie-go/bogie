@@ -39,11 +39,15 @@ func Doctor(out io.Writer) error {
 
 	check("bogie.toml", exists(Marker))
 
-	for _, m := range []struct{ file, marker string }{
+	markerFiles := []struct{ file, marker string }{
 		{"app/controllers/application.go", "controllers"},
 		{"app/application.go", "wire"},
 		{"app/controllers/routes.go", "routes"},
-	} {
+	}
+	if exists("app/jobs/jobs.go") == nil {
+		markerFiles = append(markerFiles, struct{ file, marker string }{"app/jobs/jobs.go", "jobs"})
+	}
+	for _, m := range markerFiles {
 		src, err := read(m.file)
 		if err == nil {
 			err = markers.Check(src, m.file, m.marker)

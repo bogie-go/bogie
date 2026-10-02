@@ -29,6 +29,10 @@ build: ## compile the binary
 
 server: ## run the HTTP server
 	go run . serve
+{{if .Jobs}}
+worker: ## work the job queue
+	go run . worker
+{{end}}
 
 test: ## run the suite with coverage, in the test environment (needs: make up)
 	{{.EnvPrefix}}_ENV=test go test -race -cover ./...

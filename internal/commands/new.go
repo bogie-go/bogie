@@ -33,11 +33,12 @@ func New(args []string, out io.Writer) error {
 	force := fs.Bool("force", false, "overwrite files that differ")
 	pretend := fs.Bool("pretend", false, "report what would be written and write nothing")
 	skipTidy := fs.Bool("skip-tidy", false, "do not run go mod tidy in the new app")
+	jobs := fs.Bool("jobs", false, "add background jobs: River on the same Postgres, a worker role, app/jobs and g job")
 	// Everything the command says goes through say; a failed write to the
 	// terminal has nowhere to be reported, so the result is dropped.
 	say := func(format string, a ...any) { _, _ = fmt.Fprintf(out, format, a...) }
 	fs.Usage = func() {
-		say("Usage: bogie new NAME [--module=PATH] [--force] [--pretend] [--skip-tidy]\n")
+		say("Usage: bogie new NAME [--module=PATH] [--jobs] [--force] [--pretend] [--skip-tidy]\n")
 		fs.PrintDefaults()
 	}
 	// Flags may come after NAME, as in `bogie new blog --module=...`, which
@@ -72,6 +73,7 @@ func New(args []string, out io.Writer) error {
 		Module:        *module,
 		EnvPrefix:     strings.ToUpper(name),
 		LayoutVersion: LayoutVersion,
+		Jobs:          *jobs,
 	}
 	report := func(a scaffold.Action) { say("%12s  %s\n", a.Op, name+"/"+a.Path) }
 	if _, err := scaffold.Render(templates.App, "app", name, vars, scaffold.Options{

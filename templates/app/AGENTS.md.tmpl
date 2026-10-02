@@ -56,7 +56,7 @@ nobody's secrets and can never open the development database.
 
 ## Layout
 
-    main.go                      dispatches on the first argument: serve | migrate | db
+    main.go                      dispatches on the first argument: serve |{{if .Jobs}} worker |{{end}} migrate | db
     cli.go                       the migrate and db subcommands
     app/
       application.go             wiring: migrate at boot, config, connections, controllers
@@ -65,7 +65,8 @@ nobody's secrets and can never open the development database.
         routes.go                the whole routing table
         welcome.go               the development page at /; gone once a route claims /
         <name>_controller/       server.go · routes.go · one file per action
-      middlewares/               request id · logging · recover
+      middlewares/               request id · logging · recover{{if .Jobs}}
+      jobs/                      River workers, one file per job, registered above // bogie:jobs{{end}}
       services/<name>/           ctx first, knows nothing about HTTP
       services/database/         db create and drop, through the maintenance database
       services/migrate/          goose over the embedded migrations and seeds
@@ -120,7 +121,20 @@ a form. Give the controller its dependencies as a small interface in
 comments` removes all of it, registration included. `bogie doctor` checks the
 markers are intact and every controller package is mounted.
 
-### Add a service
+{{if .Jobs}}### Add a background job
+
+    bogie g job send_welcome
+
+writes `app/jobs/send_welcome.go`, an Args type with a `Kind` and a Worker with
+`Work(ctx, job)`, and registers it above `// bogie:jobs` in `app/jobs/jobs.go`.
+Jobs run on River, on the same Postgres: enqueue with
+`app.Jobs.Insert(ctx, jobs.SendWelcomeArgs{...}, nil)`, or inside a
+transaction with `InsertTx`, so the job commits with the row or not at all.
+`bogie worker` (or `make worker`) works the queue; it is its own process so a
+backlog never slows a request. Args are stored as JSON: carry ids, not
+records. River's schema is applied by `migrate`, not by db/migrate.
+
+{{end}}### Add a service
 
     bogie g service publish_post
 

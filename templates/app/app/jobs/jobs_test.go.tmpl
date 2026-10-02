@@ -1,0 +1,15 @@
+{{if .Jobs}}package jobs
+
+import (
+	"io"
+	"log/slog"
+	"testing"
+)
+
+func TestWorkersBuild(t *testing.T) {
+	workers, _ := Workers(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if workers == nil {
+		t.Fatal("no workers bundle")
+	}
+}
+{{end -}}

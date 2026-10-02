@@ -71,8 +71,14 @@ generated app's `.golangci.yml`, which bin/ci enforces.
   `datetime`→`timestamptz`, `references`→`uuid` + FK, etc.) is in §5.
 - **API-only, no views.** Decided 2026-09-30.
 - **Jobs are River, opt-in via `--jobs`.** Not asynq: no Redis, transactional
-  enqueue, typed args. Reasoning in §12.2. Seeds and migrations both go through
-  the app binary (`db seed`, `db migrate`), never the goose CLI directly.
+  enqueue, typed args. Reasoning in §12.2. River's schema is applied by the
+  app's `migrate` through rivermigrate, not copied into db/migrate. Seeds and
+  migrations both go through the app binary (`db seed`, `db migrate`), never
+  the goose CLI directly.
+- **Templates are conditional with `{{if .Jobs}}`.** A template that renders
+  to only whitespace produces no file. Mind the newlines around `{{end}}`:
+  the rendered Go must stay gofmt-clean, and bin/ci checks both the plain and
+  the --jobs app.
 - **Agent-first.** Generated apps ship an `AGENTS.md` (with `CLAUDE.md` as
   symlink/include) containing the six layout rules, commands, and per-task
   recipes that each start with `bogie g …`. Template comments should say what a

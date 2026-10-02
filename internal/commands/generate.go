@@ -29,6 +29,8 @@ Generators:
                                     one file per action, REGISTERED: a field,
                                     a wire line and a mount above each marker
   service NAME                      app/services/<name>/, ctx first, no HTTP
+  job NAME                          app/jobs/<name>.go, a River job, REGISTERED
+                                    above bogie:jobs (apps made with --jobs)
 
 Attributes are field:type, with :index or :uniq after the type. Types:
   string text integer bigint boolean datetime uuid jsonb references
@@ -38,6 +40,7 @@ A references field names the other model: post:references is post_id.
   bogie g migration add_slug_to_posts slug:string:uniq
   bogie g controller comments index show create
   bogie g service publish_post
+  bogie g job send_welcome
 `
 
 // Generate handles `bogie generate` and `bogie g`, in the app around the
@@ -108,6 +111,14 @@ func generateIn(root string, args []string, out io.Writer) error {
 		files, err = generate.Service(module, name)
 		if err != nil {
 			return fmt.Errorf("generate service: %w", err)
+		}
+	case "job":
+		if _, err := os.Stat(filepath.Join(root, "app", "jobs", "jobs.go")); err != nil {
+			return fmt.Errorf("generate job: this app has no app/jobs; it was generated without --jobs (AGENTS.md says what --jobs adds, if you want to add it by hand)")
+		}
+		files, wires, err = generate.Job(name)
+		if err != nil {
+			return fmt.Errorf("generate job: %w", err)
 		}
 	case "migration", "model":
 		runSqlc = true

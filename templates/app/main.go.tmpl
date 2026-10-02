@@ -19,7 +19,8 @@ import (
 const usage = `Usage: {{.Name}} [command]
 
 Commands:
-  serve               the HTTP server (default)
+  serve               the HTTP server (default){{if .Jobs}}
+  worker              work the job queue{{end}}
   migrate <command>   inspect or move the embedded schema
   db <command>        create, drop or prepare the database itself
 
@@ -48,7 +49,9 @@ func main() {
 	var run func(context.Context, []string) error
 	switch command {
 	case "serve":
-		run = runServe
+		run = runServe{{if .Jobs}}
+	case "worker":
+		run = runWorker{{end}}
 	case "migrate":
 		run = runMigrate
 	case "db":
@@ -78,3 +81,17 @@ func runServe(ctx context.Context, _ []string) error {
 	}
 	return application.Start(ctx)
 }
+{{if .Jobs}}
+// runWorker works the job queue.
+//
+// Its own process rather than a goroutine in the server: a backlog of jobs
+// must never slow a request, and the two scale on different signals. Same
+// binary, because they share a schema and must never disagree about it.
+func runWorker(ctx context.Context, _ []string) error {
+	application, err := app.NewApplication(ctx)
+	if err != nil {
+		return err
+	}
+	return application.StartWorker(ctx)
+}
+{{end}}

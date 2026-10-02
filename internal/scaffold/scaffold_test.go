@@ -14,6 +14,7 @@ var src = fstest.MapFS{
 	"app/config/env.txt":         {Data: []byte("{{.Name}} is copied verbatim, not rendered\n")},
 	"app/lib/dot_keep/x.go.tmpl": {Data: []byte("package keep\n")},
 	"app/bin/ci":                 {Data: []byte("#!/bin/sh\n")},
+	"app/jobs/jobs.go.tmpl":      {Data: []byte("{{if .Jobs}}package jobs\n{{end}}")},
 }
 
 var vars = Vars{Name: "blog", Module: "example.com/blog", EnvPrefix: "BLOG", LayoutVersion: "0.1.0"}
@@ -38,6 +39,12 @@ func TestRenderCreatesEveryFile(t *testing.T) {
 			t.Errorf("%s: op = %q, want create", p, got[p])
 		}
 	}
+	if _, ok := got["jobs/jobs.go"]; ok {
+		t.Error("a template that rendered to nothing was written")
+	}
+	if _, err := os.Stat(filepath.Join(dest, "jobs")); err == nil {
+		t.Error("an empty directory was made for a skipped file")
+	}
 
 	b, _ := os.ReadFile(filepath.Join(dest, "main.go"))
 	if string(b) != "package main // blog at example.com/blog\n" {
@@ -54,6 +61,19 @@ func TestRenderCreatesEveryFile(t *testing.T) {
 	}
 	if info.Mode()&0o111 == 0 {
 		t.Errorf("bin/ci mode = %v, want executable", info.Mode())
+	}
+}
+
+func TestRenderWritesAnOptionalFileWhenAsked(t *testing.T) {
+	dest := t.TempDir()
+	withJobs := vars
+	withJobs.Jobs = true
+	actions, err := Render(src, "app", dest, withJobs, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ops(actions)["jobs/jobs.go"] != OpCreate {
+		t.Error("jobs/jobs.go not written with Jobs set")
 	}
 }
 
