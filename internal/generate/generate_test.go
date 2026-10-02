@@ -139,6 +139,12 @@ func TestInflections(t *testing.T) {
 			t.Errorf("Singular(%q) = %q, want %q", p, got, s)
 		}
 	}
+	snakes := map[string]string{"Post": "post", "BlogPost": "blog_post", "AddSlugToPosts": "add_slug_to_posts", "post": "post", "blog_post": "blog_post"}
+	for s, want := range snakes {
+		if got := Snake(s); got != want {
+			t.Errorf("Snake(%q) = %q, want %q", s, got, want)
+		}
+	}
 	camels := map[string]string{"post_id": "PostID", "image_url": "ImageUrl", "id": "ID", "created_at": "CreatedAt"}
 	for s, c := range camels {
 		if got := Camel(s); got != c {

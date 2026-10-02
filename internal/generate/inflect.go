@@ -79,6 +79,24 @@ func Camel(s string) string {
 	return strings.Join(parts, "")
 }
 
+// Snake turns a name as a Rails developer might type it, Post, BlogPost or
+// AddSlugToPosts, into the snake_case every generator works in. Already
+// snake_case input comes back unchanged.
+func Snake(s string) string {
+	var b strings.Builder
+	for i, r := range s {
+		if r >= 'A' && r <= 'Z' {
+			if i > 0 && s[i-1] != '_' {
+				b.WriteByte('_')
+			}
+			b.WriteRune(r + ('a' - 'A'))
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
 // lowerCamel is Camel with a lower first letter, for local variables.
 func lowerCamel(s string) string {
 	c := Camel(s)

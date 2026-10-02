@@ -69,7 +69,9 @@ func Generate(args []string, out io.Writer) error {
 		say(generateUsage)
 		return fmt.Errorf("generate %s: NAME is required", generator)
 	}
-	name, attrArgs := positional[0], positional[1:]
+	// Post, BlogPost and AddSlugToPosts are what Rails fingers type; every
+	// generator works in snake_case.
+	name, attrArgs := generate.Snake(positional[0]), positional[1:]
 
 	root, err := appRoot(".")
 	if err != nil {
