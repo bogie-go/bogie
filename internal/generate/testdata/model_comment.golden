@@ -1,0 +1,168 @@
+==> db/migrate/20261002093000_create_comments.sql
+-- +goose Up
+CREATE TABLE comments (
+    id         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+    body       text        NOT NULL DEFAULT '',
+    post_id    uuid        NOT NULL REFERENCES posts (id),
+    score      integer     NOT NULL DEFAULT 0,
+    published_at timestamptz NOT NULL,
+    meta       jsonb       NOT NULL DEFAULT '{}',
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX comments_post_id_idx ON comments (post_id);
+
+-- +goose Down
+DROP TABLE comments;
+==> db/queries/comments.sql
+-- name: GetComment :one
+SELECT * FROM comments WHERE id = $1;
+
+-- name: ListComments :many
+SELECT * FROM comments ORDER BY created_at DESC, id DESC LIMIT $1;
+
+-- name: CreateComment :one
+INSERT INTO comments (body, post_id, score, published_at, meta) VALUES ($1, $2, $3, $4, $5) RETURNING *;
+
+-- name: UpdateComment :one
+UPDATE comments SET body = $2, post_id = $3, score = $4, published_at = $5, meta = $6, updated_at = now() WHERE id = $1 RETURNING *;
+
+-- name: DeleteComment :execrows
+DELETE FROM comments WHERE id = $1;
+==> app/domain/comment.go
+package domain
+
+import (
+	"encoding/json"
+	"time"
+)
+
+// Comment is a comment. Imports nothing third-party: ids are strings here and
+// become uuid at the store boundary.
+type Comment struct {
+	ID          string
+	Body        string
+	PostID      string
+	Score       int32
+	PublishedAt time.Time
+	Meta        json.RawMessage
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// Validate is the model's validations, as Rails would put them. Wrap every
+// failure in ErrInvalid so a controller can answer 422 without knowing the
+// rule:
+//
+//	return fmt.Errorf("%w: title is required", ErrInvalid)
+func (c Comment) Validate() error {
+	return nil
+}
+==> app/models/comments.go
+package models
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"example.com/blog/app/domain"
+)
+
+// Comments, as the domain sees them. Each method converts domain.Comment to and from
+// the row type sqlc generated, and maps pgx's "no rows" to domain.ErrNotFound
+// so callers never import pgx to ask a question.
+
+// CreateComment inserts a comment and returns it with its id and timestamps.
+func (s *Store) CreateComment(ctx context.Context, c domain.Comment) (domain.Comment, error) {
+	postID, err := parseUUID(c.PostID)
+	if err != nil {
+		return domain.Comment{}, fmt.Errorf("%w: post_id is not a uuid", domain.ErrInvalid)
+	}
+	row, err := s.q.CreateComment(ctx, CreateCommentParams{Body: c.Body, PostID: postID, Score: c.Score, PublishedAt: pgtype.Timestamptz{Time: c.PublishedAt, Valid: true}, Meta: c.Meta})
+	if err != nil {
+		return domain.Comment{}, fmt.Errorf("models: create comment: %w", err)
+	}
+	return commentFromRow(row), nil
+}
+
+// GetComment finds one comment. An id that is not a uuid is simply not found.
+func (s *Store) GetComment(ctx context.Context, id string) (domain.Comment, error) {
+	uid, err := parseUUID(id)
+	if err != nil {
+		return domain.Comment{}, domain.ErrNotFound
+	}
+	row, err := s.q.GetComment(ctx, uid)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return domain.Comment{}, domain.ErrNotFound
+	case err != nil:
+		return domain.Comment{}, fmt.Errorf("models: get comment %s: %w", id, err)
+	}
+	return commentFromRow(row), nil
+}
+
+// ListComments returns the newest comments first, at most limit of them.
+func (s *Store) ListComments(ctx context.Context, limit int32) ([]domain.Comment, error) {
+	rows, err := s.q.ListComments(ctx, limit)
+	if err != nil {
+		return nil, fmt.Errorf("models: list comments: %w", err)
+	}
+	out := make([]domain.Comment, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, commentFromRow(r))
+	}
+	return out, nil
+}
+
+// UpdateComment writes a comment's columns and returns the stored row.
+func (s *Store) UpdateComment(ctx context.Context, c domain.Comment) (domain.Comment, error) {
+	uid, err := parseUUID(c.ID)
+	if err != nil {
+		return domain.Comment{}, domain.ErrNotFound
+	}
+	postID, err := parseUUID(c.PostID)
+	if err != nil {
+		return domain.Comment{}, fmt.Errorf("%w: post_id is not a uuid", domain.ErrInvalid)
+	}
+	row, err := s.q.UpdateComment(ctx, UpdateCommentParams{ID: uid, Body: c.Body, PostID: postID, Score: c.Score, PublishedAt: pgtype.Timestamptz{Time: c.PublishedAt, Valid: true}, Meta: c.Meta})
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return domain.Comment{}, domain.ErrNotFound
+	case err != nil:
+		return domain.Comment{}, fmt.Errorf("models: update comment %s: %w", c.ID, err)
+	}
+	return commentFromRow(row), nil
+}
+
+// DeleteComment removes a comment, and says so if there was none.
+func (s *Store) DeleteComment(ctx context.Context, id string) error {
+	uid, err := parseUUID(id)
+	if err != nil {
+		return domain.ErrNotFound
+	}
+	n, err := s.q.DeleteComment(ctx, uid)
+	if err != nil {
+		return fmt.Errorf("models: delete comment %s: %w", id, err)
+	}
+	if n == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+func commentFromRow(r Comment) domain.Comment {
+	return domain.Comment{
+		ID:          uuidString(r.ID),
+		Body:        r.Body,
+		PostID:      uuidString(r.PostID),
+		Score:       r.Score,
+		PublishedAt: r.PublishedAt.Time,
+		Meta:        r.Meta,
+		CreatedAt:   r.CreatedAt.Time,
+		UpdatedAt:   r.UpdatedAt.Time,
+	}
+}

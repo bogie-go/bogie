@@ -1,0 +1,14 @@
+==> db/migrate/20261002093000_add_slug_to_posts.sql
+-- +goose Up
+ALTER TABLE posts ADD COLUMN slug text NOT NULL DEFAULT '' UNIQUE;
+ALTER TABLE posts ADD COLUMN draft boolean NOT NULL DEFAULT false;
+
+-- +goose Down
+ALTER TABLE posts DROP COLUMN slug;
+ALTER TABLE posts DROP COLUMN draft;
+==> db/migrate/20261002093000_remove_draft_from_posts.sql
+-- +goose Up
+ALTER TABLE posts DROP COLUMN draft;
+
+-- +goose Down
+ALTER TABLE posts ADD COLUMN draft boolean NOT NULL DEFAULT false;

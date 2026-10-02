@@ -19,7 +19,7 @@ step() {
   printf '\n\033[1m== %s\033[0m\n' "$name"
   t=$(date +%s)
   case "$command" in
-    lint|signoff|scaffold|serves|teardown) "$command" ;;
+    lint|signoff|scaffold|generators|serves|teardown) "$command" ;;
     *) sh -c "$command" ;;
   esac
   if [ $? -eq 0 ]; then
@@ -49,6 +49,18 @@ scaffold() {
   go build -o "$CI_APP_DIR/bogie" . || return 1
   (cd "$CI_APP_DIR" && ./bogie new blog --module=example.com/blog) || return 1
   echo "generated app: $CI_APP_DIR/blog"
+  "$CI_APP_DIR/blog/bin/ci"
+}
+
+# Every generator, run into that app, and the app's own bin/ci again: the
+# generated code must build, lint, match sqlc and pass the app's tests, with
+# the database rolled back and forward over the new migrations.
+generators() {
+  [ -d "$CI_APP_DIR/blog" ] || { echo "no generated app"; return 1; }
+  cd "$CI_APP_DIR/blog" || return 1
+  "$CI_APP_DIR/bogie" g model comment body:text post:references score:integer published_at:datetime meta:jsonb || return 1
+  "$CI_APP_DIR/bogie" g migration add_slug_to_posts slug:string:index || return 1
+  cd "$OLDPWD" || return 1
   "$CI_APP_DIR/blog/bin/ci"
 }
 
@@ -96,6 +108,7 @@ step "Style: go vet"                "go vet ./..."
 step "Style: golangci-lint"         "lint"
 step "Tests: the tool"              "go test -race -cover ./..."
 step "Generated app: its own bin/ci" "scaffold"
+step "Generators: into that app"    "generators"
 step "Generated app: serves"        "serves"
 step "Generated app: tear down"     "teardown"
 

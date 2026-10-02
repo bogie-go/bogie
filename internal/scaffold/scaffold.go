@@ -100,6 +100,37 @@ func Render(src fs.FS, root, dest string, vars Vars, opts Options) ([]Action, er
 	return actions, nil
 }
 
+// File is one file to write, with its path relative to dest.
+type File struct {
+	Path    string
+	Content []byte
+}
+
+// Write puts files under dest with the same per-file semantics as Render:
+// create, identical, conflict or force, every file considered, ErrConflict
+// at the end if any differed without Force.
+func Write(dest string, files []File, opts Options) ([]Action, error) {
+	var actions []Action
+	conflicts := 0
+	for _, f := range files {
+		act, err := write(filepath.Join(dest, filepath.FromSlash(f.Path)), f.Path, f.Content, opts)
+		if err != nil {
+			return actions, err
+		}
+		if act.Op == OpConflict {
+			conflicts++
+		}
+		actions = append(actions, act)
+		if opts.Report != nil {
+			opts.Report(act)
+		}
+	}
+	if conflicts > 0 {
+		return actions, fmt.Errorf("%d %w", conflicts, ErrConflict)
+	}
+	return actions, nil
+}
+
 // OutputPath maps a template path to the file it produces: a trailing .tmpl is
 // dropped, and a path segment beginning with dot_ becomes a dotfile.
 //

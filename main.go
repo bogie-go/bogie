@@ -20,6 +20,7 @@ Every command is spelled the way Rails spells it.
   new NAME                 generate a new service in ./NAME
 
 Inside an app (found by its bogie.toml, from any subdirectory):
+  generate, g GENERATOR    migration | model   (bogie g -h for details)
   server, s                run it; migrates at boot
   test, t [PKGS]           go test -race -cover ./...
   lint                     gofmt, vet, golangci-lint
@@ -48,6 +49,8 @@ func main() {
 	switch command {
 	case "new":
 		err = commands.New(os.Args[2:], os.Stdout)
+	case "generate":
+		err = commands.Generate(os.Args[2:], os.Stdout)
 	case "server", "test", "lint", "ci", "db", "migrate", "credentials":
 		err = commands.Proxy(command, os.Args[2:], os.Stdout)
 	case "db:create", "db:drop", "db:prepare", "db:setup", "db:reset", "db:seed", "db:seed:rollback",

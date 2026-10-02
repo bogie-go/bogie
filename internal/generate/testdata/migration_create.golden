@@ -1,0 +1,15 @@
+==> db/migrate/20261002093000_create_comments.sql
+-- +goose Up
+CREATE TABLE comments (
+    id         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+    body       text        NOT NULL DEFAULT '',
+    post_id    uuid        NOT NULL REFERENCES posts (id),
+    score      integer     NOT NULL DEFAULT 0,
+    published_at timestamptz NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX comments_post_id_idx ON comments (post_id);
+
+-- +goose Down
+DROP TABLE comments;

@@ -1,0 +1,142 @@
+==> db/migrate/20261002093000_create_pings.sql
+-- +goose Up
+CREATE TABLE pings (
+    id         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- +goose Down
+DROP TABLE pings;
+==> db/queries/pings.sql
+-- name: GetPing :one
+SELECT * FROM pings WHERE id = $1;
+
+-- name: ListPings :many
+SELECT * FROM pings ORDER BY created_at DESC, id DESC LIMIT $1;
+
+-- name: CreatePing :one
+INSERT INTO pings DEFAULT VALUES RETURNING *;
+
+-- name: UpdatePing :one
+UPDATE pings SET updated_at = now() WHERE id = $1 RETURNING *;
+
+-- name: DeletePing :execrows
+DELETE FROM pings WHERE id = $1;
+==> app/domain/ping.go
+package domain
+
+import (
+	"time"
+)
+
+// Ping is a ping. Imports nothing third-party: ids are strings here and
+// become uuid at the store boundary.
+type Ping struct {
+	ID        string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// Validate is the model's validations, as Rails would put them. Wrap every
+// failure in ErrInvalid so a controller can answer 422 without knowing the
+// rule:
+//
+//	return fmt.Errorf("%w: title is required", ErrInvalid)
+func (p Ping) Validate() error {
+	return nil
+}
+==> app/models/pings.go
+package models
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/jackc/pgx/v5"
+
+	"example.com/blog/app/domain"
+)
+
+// Pings, as the domain sees them. Each method converts domain.Ping to and from
+// the row type sqlc generated, and maps pgx's "no rows" to domain.ErrNotFound
+// so callers never import pgx to ask a question.
+
+// CreatePing inserts a ping and returns it with its id and timestamps.
+func (s *Store) CreatePing(ctx context.Context, p domain.Ping) (domain.Ping, error) {
+	row, err := s.q.CreatePing(ctx)
+	if err != nil {
+		return domain.Ping{}, fmt.Errorf("models: create ping: %w", err)
+	}
+	return pingFromRow(row), nil
+}
+
+// GetPing finds one ping. An id that is not a uuid is simply not found.
+func (s *Store) GetPing(ctx context.Context, id string) (domain.Ping, error) {
+	uid, err := parseUUID(id)
+	if err != nil {
+		return domain.Ping{}, domain.ErrNotFound
+	}
+	row, err := s.q.GetPing(ctx, uid)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return domain.Ping{}, domain.ErrNotFound
+	case err != nil:
+		return domain.Ping{}, fmt.Errorf("models: get ping %s: %w", id, err)
+	}
+	return pingFromRow(row), nil
+}
+
+// ListPings returns the newest pings first, at most limit of them.
+func (s *Store) ListPings(ctx context.Context, limit int32) ([]domain.Ping, error) {
+	rows, err := s.q.ListPings(ctx, limit)
+	if err != nil {
+		return nil, fmt.Errorf("models: list pings: %w", err)
+	}
+	out := make([]domain.Ping, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, pingFromRow(r))
+	}
+	return out, nil
+}
+
+// UpdatePing writes a ping's columns and returns the stored row.
+func (s *Store) UpdatePing(ctx context.Context, p domain.Ping) (domain.Ping, error) {
+	uid, err := parseUUID(p.ID)
+	if err != nil {
+		return domain.Ping{}, domain.ErrNotFound
+	}
+	row, err := s.q.UpdatePing(ctx, uid)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return domain.Ping{}, domain.ErrNotFound
+	case err != nil:
+		return domain.Ping{}, fmt.Errorf("models: update ping %s: %w", p.ID, err)
+	}
+	return pingFromRow(row), nil
+}
+
+// DeletePing removes a ping, and says so if there was none.
+func (s *Store) DeletePing(ctx context.Context, id string) error {
+	uid, err := parseUUID(id)
+	if err != nil {
+		return domain.ErrNotFound
+	}
+	n, err := s.q.DeletePing(ctx, uid)
+	if err != nil {
+		return fmt.Errorf("models: delete ping %s: %w", id, err)
+	}
+	if n == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+func pingFromRow(r Ping) domain.Ping {
+	return domain.Ping{
+		ID:        uuidString(r.ID),
+		CreatedAt: r.CreatedAt.Time,
+		UpdatedAt: r.UpdatedAt.Time,
+	}
+}

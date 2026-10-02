@@ -35,7 +35,8 @@ func testStore(t *testing.T) *Store {
 		t.Fatalf("%v\nIs the database up? Run: make up", err)
 	}
 	t.Cleanup(store.Close)
-	if _, err := store.pool.Exec(ctx, "TRUNCATE posts"); err != nil {
+	// CASCADE, so a table that references posts does not stop the test.
+	if _, err := store.pool.Exec(ctx, "TRUNCATE posts CASCADE"); err != nil {
 		t.Fatal(err)
 	}
 	return store
