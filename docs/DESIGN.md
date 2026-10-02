@@ -173,8 +173,7 @@ Commands, v1:
     bogie credentials edit [-e production]
     bogie doctor                        # layout and markers intact? tools pinned?
 
-Later: `g job`, `g mailer`, `upgrade` (re-render templates, show a diff),
-`deploy`.
+Later: `g job`, `g mailer`, `upgrade` (§5a), `deploy`.
 
 Output follows Rails: `create` / `insert` / `skip` / `conflict` per file, `--pretend`
 for a dry run, and never overwrite without `--force`.
@@ -229,7 +228,63 @@ types: `string`→`text`, `text`→`text`, `integer`→`integer`, `bigint`→`bi
 `db/queries/<table>.sql` (get, list, create, update, delete) and runs `sqlc generate`.
 
 Templates are `go:embed`ded and rendered with `text/template`. `bogie.toml` records
-the layout version so a later `bogie upgrade` knows what it is upgrading from.
+the Bogie version that generated the app so a later `bogie upgrade` knows what
+it is upgrading from (§5a).
+
+---
+
+## 5a. `bogie upgrade`: moving an app to a newer layout
+
+Decided 2026-10-02. Rails has `rails app:update`: re-run the generator over the
+app for the files Rails owns, then prompt per conflicting file. Bogie does the
+same job, two differences in how.
+
+**The name is `upgrade`, not `app:update`.** The colon in `app:update` is
+Rake's namespace syntax, not Rails vocabulary, and Bogie already spells the
+same things with spaces (`bogie db migrate`). One colon command would make the
+surface inconsistent with itself. "Update" in Go already means `go get -u`,
+dependencies; moving the app's own files to a newer layout is an upgrade, the
+word Andurel, Cargo and Homebrew use. `docs/FROM_RAILS.md` maps
+`rails app:update` → `bogie upgrade`, and typing the Rails spelling gets an
+unknown-command message that suggests it.
+
+**It is a three-way merge, not a two-way prompt.** `app:update` does not know
+what a file looked like when Rails generated it, so every edit the user ever
+made surfaces as a conflict. Bogie knows, because `bogie.toml` records the
+exact version that generated the app:
+
+| side | what it is | where it comes from |
+| --- | --- | --- |
+| base | what the old Bogie generated | `go run github.com/bogie-go/bogie@<old> new <name> --module=<module>` into a temp dir; no old templates shipped in the binary |
+| theirs | what the current Bogie generates | the embedded templates, rendered to a temp dir |
+| ours | the file on disk, with the user's edits | the app |
+
+`git merge-file ours base theirs`, per file. A file never touched updates
+silently. A file the user edited in one place while the template changed in
+another merges cleanly. Only a real overlap leaves conflict markers, and the
+report names those files. It does not guess, the same rule the generators
+follow for a missing marker (§5).
+
+```
+bogie upgrade            refuses on a dirty git tree, so the result is one reviewable diff
+                         renders base and theirs, merges into ours
+                         one line per file: identical / updated / merged / conflict / create
+                         writes the new version to bogie.toml, then runs bogie doctor
+bogie upgrade --pretend  the report only; nothing written
+```
+
+Files the templates never produced are not touched, so everything `bogie g`
+and the user wrote is safe by construction. Templates render deterministically
+from `(version, name, module)` and nothing else, which is what makes base
+reproducible; `new` must never consult the clock, the environment or the
+machine.
+
+**When.** After the first tagged release; it needs two versions to exist.
+Two prerequisites land in M5 before that tag, or the first upgrade is
+impossible: the tool's version comes from the git tag at build time (ldflags),
+not the `"dev"` constant; and `bogie.toml` records that exact version, not a
+separate layout number. One version, one source of truth. A `"dev"` build
+falls back to a two-way report with every differing file marked `conflict`.
 
 ---
 
@@ -505,4 +560,7 @@ best metaphor for a scaffold, but a common word), **Ballast**, **Turnout**,
 - **M3 — agent layer.** `AGENTS.md`, recipes, `docs/FROM_RAILS.md`, a lint rule
   or test that catches an unregistered controller.
 - **M4 — dogfood.** Regenerate the kchat skeleton with the tool and diff (§9.6).
-- **M5 — publish.** README, Homebrew tap, first tagged release.
+- **M5 — publish.** README, Homebrew tap, first tagged release. Before the tag:
+  version from the git tag via ldflags, recorded as-is in `bogie.toml` (§5a).
+- **M6 — upgrade.** `bogie upgrade` as a three-way merge (§5a); the first
+  feature after the first release, because it needs two versions to exist.
