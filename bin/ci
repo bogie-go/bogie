@@ -90,6 +90,11 @@ teardown() {
   (cd "$CI_APP_DIR/blog" && docker compose down -v --remove-orphans)
 }
 
+# A green run leaves nothing in /tmp; a failed one keeps the app for a look.
+cleanup() {
+  if [ "$failed" -eq 0 ]; then rm -rf "$CI_APP_DIR"; fi
+}
+
 signoff() {
   if [ -n "$(git status --porcelain)" ]; then
     echo "working tree has uncommitted changes; commit them and run bin/ci again to sign off"
@@ -113,6 +118,7 @@ step "Generated app: serves"        "serves"
 step "Generated app: tear down"     "teardown"
 
 printf '\n'
+cleanup
 if [ "$failed" -eq 0 ]; then
   printf '\033[32mAll systems go\033[0m in %ss. Ready for merge and deploy.\n' "$(( $(date +%s) - started ))"
   step "Signoff" "signoff"
