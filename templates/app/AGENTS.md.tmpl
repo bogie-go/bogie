@@ -11,14 +11,18 @@ layout. Underscored package names such as `posts_controller` are deliberate;
 ## Commands
 
     make help           every task
-    make server         run the HTTP server (go run . serve)
+    make up             postgres on :5440 (docker compose), healthy before it returns
+    make db-prepare     create + migrate, like rails db:prepare
+    make db-migrate     apply pending migrations; db-rollback, db-migrate-status, db-reset as in Rails
+    make g_migration_<name>   author a migration (go tool goose)
+    make server         run the HTTP server (go run . serve); migrates at boot
     make test           go test -race -cover ./...
     make lint           gofmt check, go vet, golangci-lint
     bin/ci              every check, run locally; green ends with gh signoff
 
-`bogie server`, `bogie test`, `bogie lint` and `bogie ci` are the same four,
-runnable from any subdirectory. The tool adds the Rails spelling and nothing
-else; the app never imports it.
+`bogie server`, `bogie test`, `bogie lint`, `bogie ci`, `bogie db ...` and
+`bogie migrate ...` are the same commands, runnable from any subdirectory. The
+tool adds the Rails spelling and nothing else; the app never imports it.
 
 CI runs here, not on a hosted runner: `bin/ci` is the whole pipeline (Rails
 8.1's bin/ci, ported), and a green run on a clean tree records a signoff
@@ -31,9 +35,10 @@ Staging is `production` behaviour with staging settings, never its own value.
 
 ## Layout
 
-    main.go                      dispatches on the first argument: serve
+    main.go                      dispatches on the first argument: serve | migrate | db
+    cli.go                       the migrate and db subcommands
     app/
-      application.go             wiring: config, connections, controllers
+      application.go             wiring: migrate at boot, config, connections, controllers
       controllers/
         application.go           root Server, one NAMED field per controller
         routes.go                the whole routing table
@@ -41,10 +46,15 @@ Staging is `production` behaviour with staging settings, never its own value.
         <name>_controller/       server.go · routes.go · one file per action
       middlewares/               request id · logging · recover
       services/<name>/           ctx first, knows nothing about HTTP
+      services/database/         db create and drop, through the maintenance database
+      services/migrate/          goose over the embedded migrations
       models/                    sqlc output plus the store
       views/                     wire contracts; domain structs never double as wire structs
       domain/                    THE DOMAIN; imports nothing third-party
     config/                      env → validated struct, no globals
+    db/
+      migrations.go              go:embed of migrate/*.sql
+      migrate/                   goose SQL, timestamped; the example posts table to start
     lib/logger/
 
 Tests live beside the code they test, stdlib `testing` only.
@@ -85,3 +95,15 @@ prefix), and one file per action.
 
 Never delete a marker. The generators stop and name the file if one is
 missing; they do not guess.
+
+### Add a table
+
+1. `make g_migration_create_comments` writes a timestamped file in
+   `db/migrate`. Fill in the Up and a Down that really undoes it.
+2. `make db-migrate` applies it. `make db-rollback` checks the Down.
+3. Queries go in `db/queries/<table>.sql` and `make sqlc` compiles them into
+   `app/models`; a wrong column name fails there, not in production.
+
+The schema is owned here and applied at boot; there is no schema dump. The
+`posts` table is the example every new app starts with. Delete it, with its
+queries and controller, once you have your own.

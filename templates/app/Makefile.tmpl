@@ -1,9 +1,25 @@
 MAKEFLAGS += --no-print-directory
 
-.PHONY: help build server test vet fmt lint ci tidy
+.PHONY: help up down reset logs psql build server test vet fmt lint ci tidy db-create db-drop db-prepare db-reset db-migrate db-migrate-down db-rollback db-migrate-to db-rollback-to db-migrate-status db-version db-migrate-redo g_migration_%
 
 help: ## every task
 	@grep -E '^[a-z_%-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+
+up: ## start postgres (compose) and wait until it is healthy
+	docker compose up -d --wait
+	@echo "ready: postgres on :5440"
+
+down: ## stop it, keeping the data
+	docker compose down
+
+reset: ## stop it and DESTROY the data
+	docker compose down -v
+
+logs: ## tail the containers
+	docker compose logs -f
+
+psql: ## open a shell on the development database
+	docker exec -it {{.Name}}-db psql -U postgres -d {{.Name}}_development
 
 build: ## compile the binary
 	go build -o bin/{{.Name}} .
@@ -29,3 +45,51 @@ ci: ## every check, locally; green ends with gh signoff (bin/ci)
 
 tidy: ## prune and verify the module graph
 	go mod tidy && go mod verify
+
+# The db-* tasks are named after Rails' and go through the binary's own
+# subcommands rather than the goose CLI, so local development runs exactly
+# the code a deployed container runs. None of them names a database: the
+# binary resolves {{.EnvPrefix}}_DATABASE_URL for the current {{.EnvPrefix}}_ENV
+# the way the server does, so `make db-migrate` and `make server` cannot end
+# up pointed at two different databases.
+db-create: ## create the database, like rails db:create; an existing one is fine
+	go run . db create
+
+db-drop: ## DROP the database and every table in it, like rails db:drop
+	go run . db drop --yes
+
+db-prepare: ## create it if needed, then migrate it, like rails db:prepare
+	go run . db prepare
+
+db-reset: ## drop it and rebuild it from the migrations, like rails db:reset
+	@$(MAKE) db-drop
+	@$(MAKE) db-prepare
+
+db-migrate: ## apply pending migrations (deployed containers do this at boot)
+	go run . migrate up
+
+db-migrate-down: ## roll back the last migration; DROPS ITS TABLES
+	go run . migrate down --yes
+
+db-rollback: ## rails' name for db-migrate-down; the same task
+	@$(MAKE) db-migrate-down
+
+db-migrate-to: ## roll back to a version: make db-migrate-to V=20261002000000
+	@test -n "$(V)" || { echo "usage: make db-migrate-to V=<version>   (or db-rollback-to)"; exit 1; }
+	go run . migrate down-to $(V) --yes
+
+db-rollback-to: ## rails' name for db-migrate-to; the same task
+	@$(MAKE) db-migrate-to V=$(V)
+
+db-migrate-status: ## which migrations have run, and which are pending
+	go run . migrate status
+
+db-version: ## the current schema version
+	go run . migrate version
+
+db-migrate-redo: ## roll the last migration back and re-apply it
+	@$(MAKE) db-migrate-down
+	@$(MAKE) db-migrate
+
+g_migration_%: ## author a migration: make g_migration_add_slug_to_posts
+	go tool goose -dir=db/migrate create $* sql

@@ -90,6 +90,7 @@ Taken from kchat's layout (`docs/STRUCTURE.md`), with everything channel-specifi
 ```
 main.go                       dispatches: serve | worker | db | migrate
 cli.go                        the subcommands (see §4)
+docker-compose.yml            postgres on 5440, because the Rails app next door holds 5432
 bogie.toml                      layout version — which templates generated this
 AGENTS.md                     conventions, commands, recipes (§7)
 app/
@@ -167,7 +168,8 @@ Commands, v1:
     bogie g service publish_post
     bogie d controller posts            # destroy what g created
     bogie server | worker | test | lint
-    bogie db create | drop | migrate | rollback | seed | reset | status
+    bogie db create | drop --yes | prepare          # the app's own `db` subcommand
+    bogie migrate up | down --yes | status | version  # the app's own `migrate` subcommand
     bogie credentials edit [-e production]
     bogie doctor                        # layout and markers intact? tools pinned?
 
@@ -481,9 +483,13 @@ best metaphor for a scaffold, but a common word), **Ballast**, **Turnout**,
     fixed.** kchat calls it `app/omnichat`, a product name no generated app
     would share. A fixed name is greppable, the templates never need the app
     name, and the generators always know where the domain lives.
-11. **Migrate at boot.** kchat applies migrations before opening the pool,
-    which is right for one container and a race for two starting together.
-    Keep it as the default with a flag to disable, and a comment saying why.
+11. **Migrate at boot.** ~~Open~~ **Decided 2026-10-02: on by default,
+    `<NAME>_MIGRATE_AT_BOOT=false` to disable.** kchat applies migrations
+    before opening the pool. goose holds a Postgres advisory lock for the
+    run, so two containers booting together serialise rather than race; the
+    second finds nothing to do. The flag exists for a deployment that
+    migrates from one place on purpose. The run is capped at two minutes so
+    a stuck lock fails a deploy loudly instead of hanging it.
 
 ---
 

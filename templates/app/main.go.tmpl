@@ -1,9 +1,9 @@
 // Command {{.Name}} is the Go service next to the Rails app.
 //
-// ONE BINARY, several roles, selected by the first argument. Serving is the
-// first; migrating the schema and draining a queue arrive as further roles of
-// this same executable, never as a second binary, so a deploy cannot ship a
-// web container built from one commit and a worker built from another.
+// ONE BINARY, several roles, selected by the first argument: serving,
+// migrating the schema, creating the database. They share a module and
+// therefore a schema, a config loader and an artifact, so a deploy cannot
+// ship a web container built from one commit and a migration from another.
 package main
 
 import (
@@ -20,8 +20,11 @@ const usage = `Usage: {{.Name}} [command]
 
 Commands:
   serve               the HTTP server (default)
+  migrate <command>   inspect or move the embedded schema
+  db <command>        create, drop or prepare the database itself
 
-With no command this serves, which is what the container does.
+With no command this serves, which is what the container does. Every command
+reads the same {{.EnvPrefix}}_ENV, so they all act on the same database.
 `
 
 func main() {
@@ -38,6 +41,10 @@ func main() {
 	switch command {
 	case "serve":
 		run = runServe
+	case "migrate":
+		run = runMigrate
+	case "db":
+		run = runDB
 	case "help", "-h", "--help":
 		fmt.Print(usage)
 		return

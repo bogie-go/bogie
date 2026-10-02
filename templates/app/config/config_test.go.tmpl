@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestLoadDefaults(t *testing.T) {
 	t.Setenv("{{.EnvPrefix}}_ENV", "test")
@@ -11,6 +14,39 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.Env != EnvTest || cfg.Addr != ":8080" || cfg.LogLevel != "info" || cfg.ShutdownGrace.Seconds() != 10 {
 		t.Errorf("defaults = %+v", cfg)
+	}
+	if cfg.DatabaseURL != "postgres://postgres:postgres@localhost:5440/{{.Name}}_test?sslmode=disable" {
+		t.Errorf("test database = %q; want the compose stack's {{.Name}}_test", cfg.DatabaseURL)
+	}
+	if !cfg.MigrateAtBoot {
+		t.Error("MigrateAtBoot defaults to false; want true")
+	}
+}
+
+// Production carries a real password in its URL, so there is no default to
+// fall through to: the setting is required and its absence refuses to boot.
+func TestLoadRequiresADatabaseInProduction(t *testing.T) {
+	t.Setenv("{{.EnvPrefix}}_ENV", "production")
+	t.Setenv("{{.EnvPrefix}}_DATABASE_URL", "")
+	if _, err := Load(); err == nil {
+		t.Error("production booted without {{.EnvPrefix}}_DATABASE_URL")
+	}
+}
+
+func TestPrintToRedactsThePassword(t *testing.T) {
+	t.Setenv("{{.EnvPrefix}}_ENV", "test")
+	t.Setenv("{{.EnvPrefix}}_DATABASE_URL", "postgres://app:hunter2@db:5432/{{.Name}}")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	cfg.PrintTo(&out)
+	if strings.Contains(out.String(), "hunter2") {
+		t.Errorf("boot log leaks the password: %s", out.String())
+	}
+	if !strings.Contains(out.String(), "app:xxxxx@db") {
+		t.Errorf("boot log does not show the redacted url: %s", out.String())
 	}
 }
 

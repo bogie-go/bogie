@@ -1,0 +1,22 @@
+package database
+
+import "testing"
+
+func TestMaintenance(t *testing.T) {
+	name, admin, err := maintenance("postgres://u:secret@localhost:5440/{{.Name}}_test?sslmode=disable")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name != "{{.Name}}_test" {
+		t.Errorf("name = %q", name)
+	}
+	if admin != "postgres://u:secret@localhost:5440/postgres?sslmode=disable" {
+		t.Errorf("admin url = %q; want the same server's postgres database", admin)
+	}
+}
+
+func TestMaintenanceRefusesAURLWithoutADatabase(t *testing.T) {
+	if _, _, err := maintenance("postgres://localhost:5440/"); err == nil {
+		t.Error("a URL naming no database was accepted")
+	}
+}

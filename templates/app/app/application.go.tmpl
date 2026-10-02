@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"{{.Module}}/app/controllers"
+	"{{.Module}}/app/services/migrate"
 	"{{.Module}}/config"
 	"{{.Module}}/lib/logger"
 )
@@ -33,6 +34,17 @@ func NewApplication(ctx context.Context) (*Application, error) {
 	// the failure it causes rather than after it.
 	if cfg.Env != config.EnvTest {
 		cfg.PrintTo(os.Stderr)
+	}
+
+	// Schema first, then everything that depends on it. The migrations are
+	// embedded in this binary, so the schema a container runs against is
+	// always the one its code was built for. Failing here stops the deploy,
+	// which is the point: serving traffic against a half-applied schema is
+	// worse.
+	if cfg.MigrateAtBoot {
+		if err := migrate.Run(ctx, cfg.DatabaseURL, log); err != nil {
+			return nil, err
+		}
 	}
 
 	server := controllers.NewServer(cfg, log)

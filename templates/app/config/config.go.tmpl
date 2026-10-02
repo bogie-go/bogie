@@ -10,8 +10,10 @@ package config
 import (
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"slices"
+	"strconv"
 	"time"
 )
 
@@ -40,6 +42,14 @@ type Config struct {
 	// ShutdownGrace is how long Start waits for in-flight requests on
 	// SIGTERM, {{.EnvPrefix}}_SHUTDOWN_GRACE, default 10s.
 	ShutdownGrace time.Duration
+	// DatabaseURL is {{.EnvPrefix}}_DATABASE_URL. Development and test default
+	// to the compose stack on 5440 and a database named after the
+	// environment, as database.yml would; production has no default.
+	DatabaseURL string
+	// MigrateAtBoot applies pending migrations before the server binds,
+	// {{.EnvPrefix}}_MIGRATE_AT_BOOT, default true. Set it to false only for
+	// a deployment that migrates from one place on purpose.
+	MigrateAtBoot bool
 }
 
 // Load reads configuration and validates it.
@@ -57,7 +67,26 @@ func Load() (Config, error) {
 	}
 	cfg.ShutdownGrace = d
 
+	cfg.DatabaseURL = envOr("{{.EnvPrefix}}_DATABASE_URL", defaultDatabaseURL(cfg.Env))
+
+	boot := envOr("{{.EnvPrefix}}_MIGRATE_AT_BOOT", "true")
+	cfg.MigrateAtBoot, err = strconv.ParseBool(boot)
+	if err != nil {
+		return Config{}, fmt.Errorf("config: {{.EnvPrefix}}_MIGRATE_AT_BOOT=%q is not a boolean", boot)
+	}
+
 	return cfg, cfg.validate()
+}
+
+// defaultDatabaseURL is the compose stack's database for the environment, and
+// nothing for production, where the URL carries a password and must be given.
+func defaultDatabaseURL(env string) string {
+	switch env {
+	case EnvDevelopment, EnvTest:
+		return "postgres://postgres:postgres@localhost:5440/{{.Name}}_" + env + "?sslmode=disable"
+	default:
+		return ""
+	}
 }
 
 func (c Config) validate() error {
@@ -70,6 +99,12 @@ func (c Config) validate() error {
 	if c.Addr == "" {
 		return fmt.Errorf("config: {{.EnvPrefix}}_ADDR is empty")
 	}
+	if c.DatabaseURL == "" {
+		return fmt.Errorf("config: {{.EnvPrefix}}_DATABASE_URL is required in %s", c.Env)
+	}
+	if _, err := url.Parse(c.DatabaseURL); err != nil {
+		return fmt.Errorf("config: {{.EnvPrefix}}_DATABASE_URL: %w", err)
+	}
 	return nil
 }
 
@@ -80,8 +115,17 @@ func (c Config) Production() bool { return c.Env == EnvProduction }
 // writer, because slog would escape the newlines into one unreadable line. A
 // failed write to stderr at boot has nowhere to be reported, so it is dropped.
 func (c Config) PrintTo(w io.Writer) {
-	_, _ = fmt.Fprintf(w, "{{.Name}}: env=%s addr=%s log_level=%s shutdown_grace=%s\n",
-		c.Env, c.Addr, c.LogLevel, c.ShutdownGrace)
+	_, _ = fmt.Fprintf(w, "{{.Name}}: env=%s addr=%s log_level=%s shutdown_grace=%s database=%s migrate_at_boot=%t\n",
+		c.Env, c.Addr, c.LogLevel, c.ShutdownGrace, redacted(c.DatabaseURL), c.MigrateAtBoot)
+}
+
+// redacted hides the password in a URL; the boot log is not where it belongs.
+func redacted(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "(unparseable)"
+	}
+	return u.Redacted()
 }
 
 func envOr(key, fallback string) string {

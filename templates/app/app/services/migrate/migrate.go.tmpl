@@ -1,0 +1,159 @@
+// Package migrate applies the schema {{.Name}} owns.
+//
+// Running at boot rather than as a separate deploy step is deliberate: the
+// schema and the binary that expects it ship in the same image, so there is no
+// window in which a container serves traffic against a schema it was not
+// built for. Config can turn it off ({{.EnvPrefix}}_MIGRATE_AT_BOOT=false) for
+// a deployment that migrates from one place on purpose.
+package migrate
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"log/slog"
+	"time"
+
+	_ "github.com/jackc/pgx/v5/stdlib" // database/sql driver for goose
+	"github.com/pressly/goose/v3"
+
+	"{{.Module}}/db"
+)
+
+// open connects for a migration command. Separate from the pool the server
+// uses: these run before it exists, or instead of it.
+func open(databaseURL string) (*sql.DB, error) {
+	conn, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("migrate: open: %w", err)
+	}
+	goose.SetBaseFS(db.Migrations)
+	if err := goose.SetDialect("postgres"); err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("migrate: dialect: %w", err)
+	}
+	return conn, nil
+}
+
+// Status prints which migrations have run and which are pending.
+func Status(ctx context.Context, databaseURL string) error {
+	conn, err := open(databaseURL)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = conn.Close() }()
+
+	if err := goose.StatusContext(ctx, conn, "migrate"); err != nil {
+		return fmt.Errorf("migrate: status: %w", err)
+	}
+	return nil
+}
+
+// Version returns the current schema version.
+func Version(ctx context.Context, databaseURL string) (int64, error) {
+	conn, err := open(databaseURL)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = conn.Close() }()
+
+	v, err := goose.GetDBVersionContext(ctx, conn)
+	if err != nil {
+		return 0, fmt.Errorf("migrate: version: %w", err)
+	}
+	return v, nil
+}
+
+// Down rolls back the most recent migration.
+//
+// Destructive by nature: migrations drop tables on the way down. The caller is
+// responsible for having said so explicitly.
+func Down(ctx context.Context, databaseURL string, log *slog.Logger) error {
+	conn, err := open(databaseURL)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = conn.Close() }()
+
+	before, err := goose.GetDBVersionContext(ctx, conn)
+	if err != nil {
+		return fmt.Errorf("migrate: version: %w", err)
+	}
+	if before == 0 {
+		log.InfoContext(ctx, "nothing to roll back", "version", 0)
+		return nil
+	}
+
+	if err := goose.DownContext(ctx, conn, "migrate"); err != nil {
+		return fmt.Errorf("migrate: down: %w", err)
+	}
+
+	after, err := goose.GetDBVersionContext(ctx, conn)
+	if err != nil {
+		return fmt.Errorf("migrate: version after: %w", err)
+	}
+	log.InfoContext(ctx, "schema rolled back", "from", before, "to", after)
+	return nil
+}
+
+// DownTo rolls back until the schema is at version, which may be 0.
+func DownTo(ctx context.Context, databaseURL string, version int64, log *slog.Logger) error {
+	conn, err := open(databaseURL)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = conn.Close() }()
+
+	before, err := goose.GetDBVersionContext(ctx, conn)
+	if err != nil {
+		return fmt.Errorf("migrate: version: %w", err)
+	}
+
+	if err := goose.DownToContext(ctx, conn, "migrate", version); err != nil {
+		return fmt.Errorf("migrate: down-to %d: %w", version, err)
+	}
+	log.InfoContext(ctx, "schema rolled back", "from", before, "to", version)
+	return nil
+}
+
+// Run applies every pending migration.
+//
+// goose takes a Postgres advisory lock for the duration, so this stays correct
+// when several containers boot at once: the second waits, then finds nothing
+// to do, rather than racing the first through the same CREATE TABLE.
+func Run(ctx context.Context, databaseURL string, log *slog.Logger) error {
+	conn, err := open(databaseURL)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = conn.Close() }()
+
+	// A boot-time migration must not hang a deploy indefinitely. If the lock
+	// is still held after this long, something is wrong and failing loudly
+	// beats waiting silently.
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+
+	goose.SetLogger(goose.NopLogger())
+
+	before, err := goose.GetDBVersionContext(ctx, conn)
+	if err != nil {
+		return fmt.Errorf("migrate: current version: %w", err)
+	}
+
+	if err := goose.UpContext(ctx, conn, "migrate"); err != nil {
+		return fmt.Errorf("migrate: up: %w", err)
+	}
+
+	after, err := goose.GetDBVersionContext(ctx, conn)
+	if err != nil {
+		return fmt.Errorf("migrate: version after: %w", err)
+	}
+
+	if before == after {
+		log.InfoContext(ctx, "schema up to date", "version", after)
+	} else {
+		log.InfoContext(ctx, "schema migrated", "from", before, "to", after)
+	}
+	return nil
+}

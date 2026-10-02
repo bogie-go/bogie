@@ -4,7 +4,8 @@ The Go service next to the Rails app. Generated with
 [Bogie](https://github.com/bogie-go/bogie); the layout is Rails-shaped on
 purpose and `AGENTS.md` says how to work in it.
 
-    bogie server              # or: make server
+    make up                   # postgres on :5440, via docker compose
+    bogie server              # migrates, then serves; or: make server
     curl localhost:8080/healthz
     bogie test                # or: make test
     bin/ci                    # every check, locally; green signs off the commit

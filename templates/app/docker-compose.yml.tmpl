@@ -1,0 +1,40 @@
+# Everything {{.Name}} needs to run on its own.
+#
+#   make up        start it (and wait until it is healthy)
+#   make down      stop it, keeping the data
+#   make reset     stop it and DESTROY the data
+#
+# Postgres listens on 5440, not 5432, because the Rails app next door almost
+# certainly holds 5432 already. The same number is the default in
+# config/config.go; change both or neither.
+#
+# The database starts EMPTY on purpose: {{.Name}} owns its schema and applies
+# the migrations embedded in its own binary at boot (make db-prepare, or just
+# make server). Seed data is separate and deliberate.
+#
+# An explicit project name, because Compose would otherwise derive one from the
+# directory, and a Rails app checked out under the same name would share this
+# volume.
+name: {{.Name}}-service
+
+services:
+  db:
+    container_name: {{.Name}}-db
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: {{.Name}}_development
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - pgdata:/var/lib/postgresql/data/pgdata
+    ports:
+      - "5440:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d {{.Name}}_development" ]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  pgdata:

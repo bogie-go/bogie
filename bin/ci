@@ -19,7 +19,7 @@ step() {
   printf '\n\033[1m== %s\033[0m\n' "$name"
   t=$(date +%s)
   case "$command" in
-    lint|signoff|scaffold|serves) "$command" ;;
+    lint|signoff|scaffold|serves|teardown) "$command" ;;
     *) sh -c "$command" ;;
   esac
   if [ $? -eq 0 ]; then
@@ -70,6 +70,14 @@ serves() {
   echo "GET /healthz = ok"
 }
 
+# The generated app's bin/ci started a compose stack named blog-service.
+# Stop it and drop its volume so a run leaves nothing behind and the next one
+# starts from an empty database, which is the state every new app starts in.
+teardown() {
+  [ -f "$CI_APP_DIR/blog/docker-compose.yml" ] || { echo "nothing to tear down"; return 0; }
+  (cd "$CI_APP_DIR/blog" && docker compose down -v --remove-orphans)
+}
+
 signoff() {
   if [ -n "$(git status --porcelain)" ]; then
     echo "working tree has uncommitted changes; commit them and run bin/ci again to sign off"
@@ -89,6 +97,7 @@ step "Style: golangci-lint"         "lint"
 step "Tests: the tool"              "go test -race -cover ./..."
 step "Generated app: its own bin/ci" "scaffold"
 step "Generated app: serves"        "serves"
+step "Generated app: tear down"     "teardown"
 
 printf '\n'
 if [ "$failed" -eq 0 ]; then

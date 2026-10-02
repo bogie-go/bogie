@@ -1,0 +1,14 @@
+// Package db carries the schema {{.Name}} owns.
+//
+// The migrations are embedded rather than copied into an image as files: one
+// binary, one schema, and no way for a container to run a version of the
+// schema that does not match the code expecting it. sqlc compiles the queries
+// against these same files, so there is no schema dump to keep in sync.
+package db
+
+import "embed"
+
+// Migrations holds the goose migration files, applied in filename order.
+//
+//go:embed migrate/*.sql
+var Migrations embed.FS

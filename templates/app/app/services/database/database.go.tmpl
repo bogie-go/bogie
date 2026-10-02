@@ -1,0 +1,128 @@
+// Package database creates and drops the database the migrations run against.
+//
+// Rails has db:create and db:drop. Go projects usually leave that to createdb
+// and dropdb, but those are libpq binaries and nothing else here needs libpq
+// installed; Postgres is a container. So these live in the binary next to
+// migrate, for the same reason migrate does: one artifact, and the command a
+// developer runs is the code a deployed container would run.
+package database
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/url"
+	"strings"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	_ "github.com/jackc/pgx/v5/stdlib" // database/sql driver
+)
+
+// duplicateDatabase is Postgres' SQLSTATE for CREATE DATABASE against a name
+// that is already taken.
+const duplicateDatabase = "42P04"
+
+// maintenance splits a database URL into the name it points at and a URL for
+// the same server's "postgres" database.
+//
+// Neither command can run from inside its own target: CREATE DATABASE has
+// nothing to connect to yet, and DROP DATABASE cannot drop the session's own
+// database. Both go through the maintenance database every server has, naming
+// the target as an identifier instead.
+func maintenance(databaseURL string) (name, adminURL string, err error) {
+	u, err := url.Parse(databaseURL)
+	if err != nil {
+		return "", "", fmt.Errorf("database: parse url: %w", err)
+	}
+	name = strings.TrimPrefix(u.Path, "/")
+	if name == "" {
+		return "", "", fmt.Errorf("database: %s names no database", u.Redacted())
+	}
+
+	admin := *u
+	admin.Path = "/postgres"
+	return name, admin.String(), nil
+}
+
+func connect(adminURL string) (*sql.DB, error) {
+	conn, err := sql.Open("pgx", adminURL)
+	if err != nil {
+		return nil, fmt.Errorf("database: open: %w", err)
+	}
+	return conn, nil
+}
+
+// Create creates the database, and says so if it was already there.
+//
+// Existing is not an error, so this is safe to put in front of a migration,
+// which is what `db prepare` does and what `rails db:prepare` does.
+func Create(ctx context.Context, databaseURL string, log *slog.Logger) error {
+	name, adminURL, err := maintenance(databaseURL)
+	if err != nil {
+		return err
+	}
+	conn, err := connect(adminURL)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = conn.Close() }()
+
+	// The name is an identifier, not a value, so it cannot be a placeholder.
+	// Sanitize quotes it the way Postgres expects.
+	_, err = conn.ExecContext(ctx, "CREATE DATABASE "+pgx.Identifier{name}.Sanitize())
+
+	var pgErr *pgconn.PgError
+	switch {
+	case errors.As(err, &pgErr) && pgErr.Code == duplicateDatabase:
+		log.InfoContext(ctx, "database already exists", "database", name)
+		return nil
+	case err != nil:
+		return fmt.Errorf("database: create %s: %w", name, err)
+	}
+
+	log.InfoContext(ctx, "database created", "database", name)
+	return nil
+}
+
+// Drop drops the database and everything in it.
+//
+// Destructive with no undo: this is not a rollback, it is the whole database.
+// The caller is responsible for having asked.
+func Drop(ctx context.Context, databaseURL string, log *slog.Logger) error {
+	name, adminURL, err := maintenance(databaseURL)
+	if err != nil {
+		return err
+	}
+	conn, err := connect(adminURL)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = conn.Close() }()
+
+	var exists bool
+	if err := conn.QueryRowContext(ctx,
+		"SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)", name,
+	).Scan(&exists); err != nil {
+		return fmt.Errorf("database: looking for %s: %w", name, err)
+	}
+	if !exists {
+		log.InfoContext(ctx, "database does not exist", "database", name)
+		return nil
+	}
+
+	// WITH (FORCE) closes whatever is still connected, usually a server left
+	// running in another window. Without it the drop fails on that one
+	// session, a poor default for a command whose purpose is to get back to
+	// nothing. Postgres 13 and up.
+	if _, err := conn.ExecContext(ctx,
+		"DROP DATABASE "+pgx.Identifier{name}.Sanitize()+" WITH (FORCE)",
+	); err != nil {
+		return fmt.Errorf("database: drop %s: %w", name, err)
+	}
+
+	log.InfoContext(ctx, "database dropped", "database", name)
+	return nil
+}
