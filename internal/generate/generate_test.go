@@ -152,3 +152,41 @@ func TestInflections(t *testing.T) {
 		}
 	}
 }
+
+func TestController(t *testing.T) {
+	files, wires, err := Controller("example.com/blog", "comments", []string{"index", "show", "create", "search"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden(t, "controller_comments", files)
+	if len(wires) != 3 || wires[0].Marker != "controllers" || wires[1].Marker != "wire" || wires[2].Marker != "routes" {
+		t.Errorf("wires = %+v", wires)
+	}
+	if wires[1].Line != "server.Comments = comments_controller.NewServer(log)" {
+		t.Errorf("wire line = %q", wires[1].Line)
+	}
+}
+
+func TestControllerRefusesForms(t *testing.T) {
+	for _, bad := range [][]string{{"new"}, {"edit"}, {"index", "index"}} {
+		if _, _, err := Controller("m", "comments", bad); err == nil {
+			t.Errorf("%v accepted", bad)
+		}
+	}
+}
+
+func TestControllerWithNoActions(t *testing.T) {
+	files, _, err := Controller("example.com/blog", "health", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden(t, "controller_empty", files)
+}
+
+func TestService(t *testing.T) {
+	files, err := Service("example.com/blog", "publish_post")
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden(t, "service_publish_post", files)
+}

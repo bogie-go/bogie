@@ -1,0 +1,149 @@
+==> app/controllers/comments_controller/server.go
+// Package comments_controller is the HTTP surface of comments. One file per action; the
+// routes in routes.go; the dependencies here, as interfaces declared by this
+// package (rule 2), holding only the methods this controller calls.
+package comments_controller
+
+import (
+	"log/slog"
+)
+
+// Server holds the controller's dependencies. Add what the actions need as
+// a small interface declared here, and pass the real thing in from
+// app/application.go, where this controller is wired:
+//
+//	type service interface {
+//		Get(ctx context.Context, id string) (domain.Thing, error)
+//	}
+type Server struct {
+	Log *slog.Logger
+}
+
+// NewServer builds the controller.
+func NewServer(log *slog.Logger) *Server {
+	return &Server{Log: log}
+}
+==> app/controllers/comments_controller/routes.go
+package comments_controller
+
+import "github.com/gin-gonic/gin"
+
+// SetupRoutes mounts the controller under its own prefix. Middleware the
+// whole group needs goes here; the exposure boundary stays visible in
+// app/controllers/routes.go, which calls this.
+func (s *Server) SetupRoutes(router *gin.RouterGroup) {
+	comments := router.Group("/comments")
+	comments.GET("", s.Index)
+	comments.GET("/:id", s.Show)
+	comments.POST("", s.Create)
+	comments.GET("/search", s.Search)
+}
+==> app/controllers/comments_controller/index.go
+package comments_controller
+
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+
+	"example.com/blog/app/views"
+)
+
+// Index handles GET /comments.
+//
+// A handler converts HTTP into domain values, calls one service function,
+// and converts the result back. Nothing below app/controllers sees
+// *gin.Context (rule 5).
+func (s *Server) Index(c *gin.Context) {
+	c.JSON(http.StatusNotImplemented, views.ErrorMessage("comments#index is not implemented yet"))
+}
+==> app/controllers/comments_controller/show.go
+package comments_controller
+
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+
+	"example.com/blog/app/views"
+)
+
+// Show handles GET /comments/:id.
+//
+// A handler converts HTTP into domain values, calls one service function,
+// and converts the result back. Nothing below app/controllers sees
+// *gin.Context (rule 5).
+func (s *Server) Show(c *gin.Context) {
+	c.JSON(http.StatusNotImplemented, views.ErrorMessage("comments#show is not implemented yet"))
+}
+==> app/controllers/comments_controller/create.go
+package comments_controller
+
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+
+	"example.com/blog/app/views"
+)
+
+// Create handles POST /comments.
+//
+// A handler converts HTTP into domain values, calls one service function,
+// and converts the result back. Nothing below app/controllers sees
+// *gin.Context (rule 5).
+func (s *Server) Create(c *gin.Context) {
+	c.JSON(http.StatusNotImplemented, views.ErrorMessage("comments#create is not implemented yet"))
+}
+==> app/controllers/comments_controller/search.go
+package comments_controller
+
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+
+	"example.com/blog/app/views"
+)
+
+// Search handles GET /comments/search.
+//
+// A handler converts HTTP into domain values, calls one service function,
+// and converts the result back. Nothing below app/controllers sees
+// *gin.Context (rule 5).
+func (s *Server) Search(c *gin.Context) {
+	c.JSON(http.StatusNotImplemented, views.ErrorMessage("comments#search is not implemented yet"))
+}
+==> app/controllers/comments_controller/comments_test.go
+package comments_controller
+
+import (
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+)
+
+// Every action is mounted: a route that answers 404 was never registered.
+func TestRoutesAreMounted(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	NewServer(slog.New(slog.NewTextHandler(io.Discard, nil))).SetupRoutes(&router.RouterGroup)
+
+	routes := []struct{ method, path string }{
+		{http.MethodGet, "/comments"},
+		{http.MethodGet, "/comments/1"},
+		{http.MethodPost, "/comments"},
+		{http.MethodGet, "/comments/search"},
+	}
+	for _, r := range routes {
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, httptest.NewRequest(r.method, r.path, nil))
+		if rec.Code == http.StatusNotFound {
+			t.Errorf("%s %s is not mounted", r.method, r.path)
+		}
+	}
+}

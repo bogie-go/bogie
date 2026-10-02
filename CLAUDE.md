@@ -24,6 +24,9 @@ architecture. The README summarises it.
     make test           go test -race -cover ./...   (the tool only)
     make scaffold       generate an app in a temp dir and build/vet/test it
     go run . new NAME   try the generator; add --pretend to see the plan
+    bin/ci              also generates a model, migration, controller and
+                        service into the fresh app, runs its pipeline,
+                        destroys them, and runs it again
     go test ./internal/generate -update   rewrite the generators' golden files
                         after an intended output change; review the diff
 

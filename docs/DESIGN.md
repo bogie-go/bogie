@@ -217,7 +217,16 @@ Options considered
 | B. **Marker comments** | greppable, obvious, easy to test | a deleted marker breaks the generator |
 | C. Generated registry file, wholly owned by bogie | never edits hand-written code | a second source of truth; regenerated files invite merge noise |
 
-**Recommendation: B for v1.**
+**Recommendation: B for v1.** Built 2026-10-02: `g controller` inserts one
+line above each of three markers (`bogie:controllers`, `bogie:wire`,
+`bogie:routes`), adds the import, and formats the file in-process with
+`go/format` so the gofmt check holds; a rerun is a no-op; every marker is
+checked before any file is written, so a missing one means nothing changed.
+`d controller` removes the files and the lines and prunes imports the removal
+left unused. `doctor` checks each marker appears exactly once and that every
+`*_controller` package is mounted. The tool's `bin/ci` generates a controller
+and a service into a fresh app, runs that app's pipeline, destroys them, and
+runs it again.
 
 ```go
 type Server struct {
@@ -590,8 +599,9 @@ best metaphor for a scaffold, but a common word), **Ballast**, **Turnout**,
   read geng and Autostrada; draft the launch essay (done, in review).
 - **M1 — skeleton.** Repo, `bogie new` producing an app that builds, migrates,
   seeds, reads its credentials and serves; `bin/ci` green. **Done 2026-10-02.**
-- **M2 — generators.** `g migration`, `g model`, `g controller`, `g service`,
-  `d`, markers, `doctor`, golden tests.
+- **M2 — generators.** ~~`g migration`, `g model`, `g controller`,
+  `g service`, `d`, markers, `doctor`, golden tests~~ (done 2026-10-02);
+  marker-removal tests (§8.3); River behind `--jobs` and `g job`.
 - **M3 — agent layer.** `AGENTS.md`, recipes, `docs/FROM_RAILS.md`, a lint rule
   or test that catches an unregistered controller.
 - **M4 — dogfood.** Regenerate the kchat skeleton with the tool and diff (§9.6).

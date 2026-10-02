@@ -1,0 +1,55 @@
+==> app/services/publish_post/publish_post.go
+// Package publish_post does one thing for the application. ctx first; it knows
+// nothing about HTTP, so the controller, a job and the test call the same
+// function with the same values.
+package publish_post
+
+import (
+	"context"
+	"log/slog"
+)
+
+// store is the slice of persistence this package uses, declared HERE, next to
+// its caller, rather than imported from models (rule 2). List only the
+// methods this service calls; *models.Store satisfies it without ever
+// mentioning this package, and the fake in the test stays a few lines:
+//
+//	type store interface {
+//		GetPost(ctx context.Context, id string) (domain.Post, error)
+//	}
+type store interface{}
+
+// Service is publish_post.
+type Service struct {
+	store store
+	log   *slog.Logger
+}
+
+// New builds the service.
+func New(store store, log *slog.Logger) *Service {
+	return &Service{store: store, log: log}
+}
+
+// Run does the work. Rename it to say what that is.
+func (s *Service) Run(ctx context.Context) error {
+	s.log.InfoContext(ctx, "publish_post: not implemented yet")
+	return nil
+}
+==> app/services/publish_post/publish_post_test.go
+package publish_post
+
+import (
+	"context"
+	"io"
+	"log/slog"
+	"testing"
+)
+
+type fakeStore struct{}
+
+func TestRun(t *testing.T) {
+	svc := New(fakeStore{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err := svc.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+}

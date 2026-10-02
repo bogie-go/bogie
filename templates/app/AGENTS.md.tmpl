@@ -99,16 +99,34 @@ Tests live beside the code they test, stdlib `testing` only.
 
 ### Add a controller
 
+    bogie g controller comments index show create update destroy
+
 Go has no autoload, so a controller exists only once it is constructed, held
 and mounted. That is three one-line insertions, each above a marker comment,
-and `bogie g controller posts` makes all three:
+and the generator makes all three, idempotently:
 
 1. `app/controllers/application.go`, above `// bogie:controllers`: a named
-   field, `Posts *posts_controller.Server`.
+   field, `Comments *comments_controller.Server`.
 2. `app/application.go`, above `// bogie:wire`: its construction,
-   `server.Posts = posts_controller.NewServer(log)`.
+   `server.Comments = comments_controller.NewServer(log)`.
 3. `app/controllers/routes.go`, above `// bogie:routes`: its mount,
-   `s.Posts.SetupRoutes(&r.RouterGroup)`.
+   `s.Comments.SetupRoutes(&r.RouterGroup)`.
+
+The actions are stubs answering 501 until you fill them in; index, show,
+create, update and destroy get their resourceful routes, any other name is a
+GET under that name, and new and edit are refused because nothing here renders
+a form. Give the controller its dependencies as a small interface in
+`server.go` and pass the real thing on the wire line. `bogie d controller
+comments` removes all of it, registration included. `bogie doctor` checks the
+markers are intact and every controller package is mounted.
+
+### Add a service
+
+    bogie g service publish_post
+
+writes `app/services/publish_post/` with a `Service`, a `store` interface to
+fill with only the methods it calls, a `Run(ctx)` to rename, and a test. It is
+not wired anywhere: the controller that needs it declares what it wants.
 
 The package itself is `app/controllers/posts_controller/` with `server.go`
 (the Server struct, its dependencies as consumer-declared interfaces, and

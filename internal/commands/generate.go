@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/bogie-go/bogie/internal/generate"
+	"github.com/bogie-go/bogie/internal/markers"
 	"github.com/bogie-go/bogie/internal/scaffold"
 )
 
@@ -24,6 +25,10 @@ Generators:
   model NAME [field:type ...]       the migration, db/queries/<table>.sql,
                                     app/domain/<name>.go and the store's
                                     app/models/<table>.go; then runs sqlc
+  controller NAME [action ...]      app/controllers/<name>_controller/ with
+                                    one file per action, REGISTERED: a field,
+                                    a wire line and a mount above each marker
+  service NAME                      app/services/<name>/, ctx first, no HTTP
 
 Attributes are field:type, with :index or :uniq after the type. Types:
   string text integer bigint boolean datetime uuid jsonb references
@@ -31,6 +36,8 @@ A references field names the other model: post:references is post_id.
 
   bogie g model comment body:text post:references
   bogie g migration add_slug_to_posts slug:string:uniq
+  bogie g controller comments index show create
+  bogie g service publish_post
 `
 
 // Generate handles `bogie generate` and `bogie g`.
@@ -81,14 +88,34 @@ func Generate(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	var files []generate.File
+	var wires []generate.Wire
+	runSqlc := false
+	switch generator {
+	case "controller":
+		files, wires, err = generate.Controller(module, name, attrArgs)
+		if err != nil {
+			return fmt.Errorf("generate controller: %w", err)
+		}
+	case "service":
+		files, err = generate.Service(module, name)
+		if err != nil {
+			return fmt.Errorf("generate service: %w", err)
+		}
+	case "migration", "model":
+		runSqlc = true
+	default:
+		say(generateUsage)
+		return fmt.Errorf("generate: no generator named %q", generator)
+	}
+
 	attrs, err := generate.ParseAttrs(attrArgs)
-	if err != nil {
+	if runSqlc && err != nil {
 		return fmt.Errorf("generate %s: %w", generator, err)
 	}
 
 	now := nextStamp(root, time.Now())
 
-	var files []generate.File
 	switch generator {
 	case "migration":
 		f, err := generate.Migration(name, attrs, now)
@@ -101,9 +128,6 @@ func Generate(args []string, out io.Writer) error {
 		if err != nil {
 			return fmt.Errorf("generate model: %w", err)
 		}
-	default:
-		say(generateUsage)
-		return fmt.Errorf("generate: no generator named %q", generator)
 	}
 
 	toWrite := make([]scaffold.File, len(files))
@@ -119,13 +143,29 @@ func Generate(args []string, out io.Writer) error {
 		toWrite[i] = scaffold.File{Path: f.Path, Content: []byte(f.Content)}
 	}
 	report := func(a scaffold.Action) { say("%12s  %s\n", a.Op, a.Path) }
+
+	// Every marker is checked before any file is written: a controller that
+	// cannot be registered is not half-written.
+	for _, w := range wires {
+		src, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(w.File)))
+		if err != nil {
+			return err
+		}
+		if err := markers.Check(src, w.File, w.Marker); err != nil {
+			return fmt.Errorf("generate %s: %w", generator, err)
+		}
+	}
+
 	if _, err := scaffold.Write(root, toWrite, scaffold.Options{Force: *force, Pretend: *pretend, Report: report}); err != nil {
+		return fmt.Errorf("generate %s: %w", generator, err)
+	}
+	if err := wire(root, wires, *pretend, report); err != nil {
 		return fmt.Errorf("generate %s: %w", generator, err)
 	}
 
 	// The migrations are the schema sqlc compiles against, so a new migration
 	// changes the generated models immediately, before it is ever applied.
-	if !*pretend && !*skipSqlc {
+	if runSqlc && !*pretend && !*skipSqlc {
 		say("%12s  sqlc generate\n", "run")
 		cmd := exec.Command("go", "tool", "sqlc", "generate")
 		cmd.Dir = root + "/db"
