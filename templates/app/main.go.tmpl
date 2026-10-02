@@ -37,6 +37,14 @@ func main() {
 		command, args = os.Args[1], os.Args[2:]
 	}
 
+	// `{{.Name}} serve --help` asks a question; answer it instead of booting.
+	for _, a := range args {
+		if a == "-h" || a == "--help" {
+			fmt.Print(usage)
+			return
+		}
+	}
+
 	var run func(context.Context, []string) error
 	switch command {
 	case "serve":
