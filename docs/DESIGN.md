@@ -63,7 +63,7 @@ Use whatever the Go ecosystem provides. Wire it once. Build only what is missing
 | Lint / test | golangci-lint, `go test` | ecosystem |
 | Task runner | `make` | ecosystem |
 | Logging | `log/slog` | stdlib |
-| Tool versions | Go 1.24+ `tool` directive in `go.mod` | ecosystem |
+| Tool versions | Go 1.25+ (what gin v1.12 needs); `tool` directive in `go.mod` | ecosystem |
 | Project generator (`rails new`) | **bogie new** | **gap** |
 | Generators (`rails g`) that also *wire* | **bogie g** | **gap** |
 | One command surface (`rails db:*`, `rails s`) | app binary + `bogie` proxy | **gap** |
