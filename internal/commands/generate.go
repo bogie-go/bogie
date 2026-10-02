@@ -40,8 +40,19 @@ A references field names the other model: post:references is post_id.
   bogie g service publish_post
 `
 
-// Generate handles `bogie generate` and `bogie g`.
+// Generate handles `bogie generate` and `bogie g`, in the app around the
+// working directory.
 func Generate(args []string, out io.Writer) error {
+	root, err := appRoot(".")
+	if err != nil {
+		return err
+	}
+	return generateIn(root, args, out)
+}
+
+// generateIn is Generate with the app root given, so a test can hand it a
+// fixture.
+func generateIn(root string, args []string, out io.Writer) error {
 	say := func(format string, a ...any) { _, _ = fmt.Fprintf(out, format, a...) }
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" {
 		say(generateUsage)
@@ -80,10 +91,6 @@ func Generate(args []string, out io.Writer) error {
 	// generator works in snake_case.
 	name, attrArgs := generate.Snake(positional[0]), positional[1:]
 
-	root, err := appRoot(".")
-	if err != nil {
-		return err
-	}
 	module, err := appModule(root)
 	if err != nil {
 		return err
