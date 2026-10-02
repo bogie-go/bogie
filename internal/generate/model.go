@@ -35,7 +35,56 @@ func Model(module, name string, attrs []Attr, now time.Time) ([]File, error) {
 		{Path: "db/queries/" + table + ".sql", Content: queries(name, table, attrs)},
 		{Path: "app/domain/" + name + ".go", Content: domainType(name, attrs)},
 		{Path: "app/models/" + table + ".go", Content: store(module, name, table, attrs)},
+		{Path: "app/models/" + table + "_test.go", Content: storeTest(module, name, table, attrs)},
 	}, nil
+}
+
+// storeTest is the model's test, against the real test database as every
+// store test is: the not-found cases, which hold for any set of attributes,
+// and a place to put the round trip once the model has values worth
+// inserting.
+func storeTest(module, name, table string, attrs []Attr) string {
+	typ := Camel(name)
+	// Every uuid-typed attribute gets a well-formed value, so the store reaches
+	// the query and answers not-found rather than refusing a malformed id.
+	literal := "ID: id"
+	for _, a := range attrs {
+		if kinds[a.Type].sqlcType == "pgtype.UUID" {
+			literal += fmt.Sprintf(", %s: %q", a.goName(), "00000000-0000-4000-8000-000000000000")
+		}
+	}
+	return fmt.Sprintf(`package models
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	%[3]q
+)
+
+// Whatever the id looks like, a %[2]s that is not there is ErrNotFound, and a
+// caller cannot tell a malformed id from a well-formed one that names nothing.
+func TestUnknown%[4]sAreNotFound(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+
+	for _, id := range []string{"nope", "", "00000000-0000-4000-8000-000000000000"} {
+		if _, err := store.Get%[1]s(ctx, id); !errors.Is(err, domain.ErrNotFound) {
+			t.Errorf("Get%[1]s(%%q): err = %%v, want ErrNotFound", id, err)
+		}
+		if err := store.Delete%[1]s(ctx, id); !errors.Is(err, domain.ErrNotFound) {
+			t.Errorf("Delete%[1]s(%%q): err = %%v, want ErrNotFound", id, err)
+		}
+		if _, err := store.Update%[1]s(ctx, domain.%[1]s{%[5]s}); !errors.Is(err, domain.ErrNotFound) {
+			t.Errorf("Update%[1]s(%%q): err = %%v, want ErrNotFound", id, err)
+		}
+	}
+}
+
+// TODO: a round trip. Create a %[2]s with real values, Get it, List it,
+// Update it, Delete it; see posts_test.go for the shape.
+`, typ, name, module+"/app/domain", Camel(table), literal)
 }
 
 func queries(name, table string, attrs []Attr) string {
@@ -136,9 +185,14 @@ func store(module, name, table string, attrs []Attr) string {
 	fmt.Fprintf(&b, "// Create%s inserts a %s and returns it with its id and timestamps.\n", typ, name)
 	fmt.Fprintf(&b, "func (s *Store) Create%s(ctx context.Context, %s domain.%s) (domain.%s, error) {\n", typ, recv, typ, typ)
 	b.WriteString(referenceChecks(recv, typ, attrs))
-	if len(attrs) == 0 {
+	switch len(attrs) {
+	case 0:
 		fmt.Fprintf(&b, "\trow, err := s.q.Create%s(ctx)\n", typ)
-	} else {
+	case 1:
+		// sqlc makes a Params struct only for two or more parameters; one
+		// is passed as itself.
+		fmt.Fprintf(&b, "\trow, err := s.q.Create%s(ctx, %s)\n", typ, singleParam(recv, attrs[0]))
+	default:
 		fmt.Fprintf(&b, "\trow, err := s.q.Create%s(ctx, Create%sParams{%s})\n", typ, typ, createParams(recv))
 	}
 	fmt.Fprintf(&b, "\tif err != nil {\n\t\treturn domain.%s{}, fmt.Errorf(\"models: create %s: %%w\", err)\n\t}\n", typ, name)
@@ -195,6 +249,14 @@ func store(module, name, table string, attrs []Attr) string {
 	fmt.Fprintf(&b, "\t\t%-*s r.UpdatedAt.Time,\n", width, "UpdatedAt:")
 	b.WriteString("\t}\n}\n")
 	return b.String()
+}
+
+// singleParam is the one argument sqlc's Create takes for a one-column model.
+func singleParam(recv string, a Attr) string {
+	if kinds[a.Type].sqlcType == "pgtype.UUID" {
+		return lowerCamel(a.Name)
+	}
+	return a.toRow(recv + "." + a.goName())
 }
 
 // referenceChecks parses every uuid-typed attribute before the query, so a

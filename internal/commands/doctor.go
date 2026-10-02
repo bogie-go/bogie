@@ -69,15 +69,21 @@ func Doctor(out io.Writer) error {
 		check("config/master.key", nil)
 	}
 
-	// Every app/controllers/<x>_controller package must be mounted in
-	// routes.go, or it exists without serving anything.
+	// Every app/controllers/<x>_controller package must be constructed in
+	// app/application.go and mounted in routes.go, or it exists without
+	// serving anything. A mount with no construction is a nil controller
+	// whose first request panics.
 	routes, _ := read("app/controllers/routes.go")
+	wiring, _ := read("app/application.go")
 	dirs, _ := filepath.Glob(filepath.Join(root, "app", "controllers", "*_controller"))
 	for _, d := range dirs {
 		pkg := filepath.Base(d)
 		field := camelField(strings.TrimSuffix(pkg, "_controller"))
 		var err error
-		if !regexp.MustCompile(`\bs\.` + field + `\.SetupRoutes\(`).Match(routes) {
+		switch {
+		case !regexp.MustCompile(`\bserver\.` + field + `\s*=`).Match(wiring):
+			err = fmt.Errorf("not constructed in app/application.go (expected server.%s = ... above // bogie:wire)", field)
+		case !regexp.MustCompile(`\bs\.` + field + `\.SetupRoutes\(`).Match(routes):
 			err = fmt.Errorf("not mounted in app/controllers/routes.go (expected s.%s.SetupRoutes above // bogie:routes)", field)
 		}
 		check("controller "+pkg+" registered", err)

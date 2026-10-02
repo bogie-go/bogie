@@ -1,21 +1,11 @@
 package domain
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"time"
 	"unicode/utf8"
 )
-
-// ErrNotFound is returned for an id that names nothing. An id that is not
-// even a uuid gets the same answer: it cannot exist, and a caller should not
-// be able to tell the two apart.
-var ErrNotFound = errors.New("not found")
-
-// ErrInvalid wraps every validation failure, so a controller can answer 422
-// with errors.Is and never has to know the individual rules.
-var ErrInvalid = errors.New("invalid")
 
 // Post is the example resource every new app starts with.
 type Post struct {

@@ -15,3 +15,11 @@ linters:
       checks:
         - all
         - -ST1003
+  exclusions:
+    rules:
+      # The store's uuid helpers and test helper exist for the models the
+      # generators write. An app between models, with none yet, would
+      # otherwise be told they are unused.
+      - path: app/models/(uuid|store_test)\.go
+        linters:
+          - unused

@@ -91,8 +91,11 @@ func Destroy(args []string, out io.Writer) error {
 	case "model":
 		files, err = generate.Model(module, name, nil, time.Time{})
 		// sqlc writes a file per query file and never removes one whose
-		// source is gone, so the generated half goes too.
-		files = append(files, generate.File{Path: "app/models/" + generate.Plural(name) + ".sql.go"})
+		// source is gone, so the generated half goes too; and a test the
+		// model was given by hand, as the example has.
+		files = append(files,
+			generate.File{Path: "app/models/" + generate.Plural(name) + ".sql.go"},
+			generate.File{Path: "app/domain/" + name + "_test.go"})
 		runSqlc = true
 	case "migration":
 		var f generate.File
@@ -124,8 +127,11 @@ func Destroy(args []string, out io.Writer) error {
 		if err := os.Remove(abs); err != nil {
 			return err
 		}
-		// Drop the directory once it is empty, and only then.
-		_ = os.Remove(filepath.Dir(abs))
+		// A controller or service package directory goes once it is empty.
+		// The layout's own directories (db/migrate, app/domain, ...) stay.
+		if generator == "controller" || generator == "service" {
+			_ = os.Remove(filepath.Dir(abs))
+		}
 	}
 
 	if err := unwire(root, wires, *pretend, report); err != nil {
@@ -134,6 +140,10 @@ func Destroy(args []string, out io.Writer) error {
 
 	if runSqlc && !*pretend {
 		say("%12s  if that migration was already applied somewhere, bogie db:reset rebuilds the database from the files that remain\n", "note")
+		if !hasQueries(root) {
+			say("%12s  sqlc generate (no query files left; the next g model runs it)\n", "skip")
+			return nil
+		}
 		say("%12s  sqlc generate\n", "run")
 		cmd := exec.Command("go", "tool", "sqlc", "generate")
 		cmd.Dir = root + "/db"

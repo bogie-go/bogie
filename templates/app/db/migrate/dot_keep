@@ -1,0 +1,2 @@
+# Keeps the directory in git and embeddable (go:embed all:migrate) when it
+# holds no migrations yet. goose reads only *.sql.

@@ -165,7 +165,7 @@ func Generate(args []string, out io.Writer) error {
 
 	// The migrations are the schema sqlc compiles against, so a new migration
 	// changes the generated models immediately, before it is ever applied.
-	if runSqlc && !*pretend && !*skipSqlc {
+	if runSqlc && !*pretend && !*skipSqlc && hasQueries(root) {
 		say("%12s  sqlc generate\n", "run")
 		cmd := exec.Command("go", "tool", "sqlc", "generate")
 		cmd.Dir = root + "/db"
@@ -198,6 +198,13 @@ func existingMigration(root, path string) string {
 		}
 	}
 	return ""
+}
+
+// hasQueries reports whether db/queries holds any query file. sqlc refuses to
+// run with none, and an app that has removed its last model has none.
+func hasQueries(root string) bool {
+	matches, _ := filepath.Glob(filepath.Join(root, "db", "queries", "*.sql"))
+	return len(matches) > 0
 }
 
 // nextStamp returns now, moved forward a second at a time until no migration

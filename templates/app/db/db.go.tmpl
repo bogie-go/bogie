@@ -10,13 +10,15 @@ package db
 import "embed"
 
 // Migrations holds the goose migration files, applied in filename order.
+// `all:` so the .keep file counts and an app with no migrations yet still
+// compiles; goose reads only *.sql.
 //
-//go:embed migrate/*.sql
+//go:embed all:migrate
 var Migrations embed.FS
 
 // Seeds holds the goose seed files. They are versioned like migrations but
 // tracked in their own table, so re-seeding never looks like a pending schema
 // change and a seed can be rolled back without touching the schema.
 //
-//go:embed seeds/*.sql
+//go:embed all:seeds
 var Seeds embed.FS

@@ -190,3 +190,18 @@ func TestService(t *testing.T) {
 	}
 	golden(t, "service_publish_post", files)
 }
+
+// sqlc passes a single parameter as itself and only builds a Params struct
+// for two or more, so a one-column model's Create must not name one.
+func TestModelWithOneAttribute(t *testing.T) {
+	files, err := Model("example.com/blog", "thing", attrs(t, "name:string"), at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden(t, "model_thing", files)
+	for _, f := range files {
+		if strings.HasSuffix(f.Path, "things.go") && strings.Contains(f.Content, "CreateThingParams") {
+			t.Error("one-attribute Create names a Params struct sqlc will not generate")
+		}
+	}
+}

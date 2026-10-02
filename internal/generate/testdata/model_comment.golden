@@ -166,3 +166,35 @@ func commentFromRow(r Comment) domain.Comment {
 		UpdatedAt:   r.UpdatedAt.Time,
 	}
 }
+==> app/models/comments_test.go
+package models
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"example.com/blog/app/domain"
+)
+
+// Whatever the id looks like, a comment that is not there is ErrNotFound, and a
+// caller cannot tell a malformed id from a well-formed one that names nothing.
+func TestUnknownCommentsAreNotFound(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+
+	for _, id := range []string{"nope", "", "00000000-0000-4000-8000-000000000000"} {
+		if _, err := store.GetComment(ctx, id); !errors.Is(err, domain.ErrNotFound) {
+			t.Errorf("GetComment(%q): err = %v, want ErrNotFound", id, err)
+		}
+		if err := store.DeleteComment(ctx, id); !errors.Is(err, domain.ErrNotFound) {
+			t.Errorf("DeleteComment(%q): err = %v, want ErrNotFound", id, err)
+		}
+		if _, err := store.UpdateComment(ctx, domain.Comment{ID: id, PostID: "00000000-0000-4000-8000-000000000000"}); !errors.Is(err, domain.ErrNotFound) {
+			t.Errorf("UpdateComment(%q): err = %v, want ErrNotFound", id, err)
+		}
+	}
+}
+
+// TODO: a round trip. Create a comment with real values, Get it, List it,
+// Update it, Delete it; see posts_test.go for the shape.

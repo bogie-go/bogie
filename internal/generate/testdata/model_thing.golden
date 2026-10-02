@@ -1,0 +1,177 @@
+==> db/migrate/20261002093000_create_things.sql
+-- +goose Up
+CREATE TABLE things (
+    id         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+    name       text        NOT NULL DEFAULT '',
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- +goose Down
+DROP TABLE things;
+==> db/queries/things.sql
+-- name: GetThing :one
+SELECT * FROM things WHERE id = $1;
+
+-- name: ListThings :many
+SELECT * FROM things ORDER BY created_at DESC, id DESC LIMIT $1;
+
+-- name: CreateThing :one
+INSERT INTO things (name) VALUES ($1) RETURNING *;
+
+-- name: UpdateThing :one
+UPDATE things SET name = $2, updated_at = now() WHERE id = $1 RETURNING *;
+
+-- name: DeleteThing :execrows
+DELETE FROM things WHERE id = $1;
+==> app/domain/thing.go
+package domain
+
+import (
+	"time"
+)
+
+// Thing is a thing. Imports nothing third-party: ids are strings here and
+// become uuid at the store boundary.
+type Thing struct {
+	ID        string
+	Name      string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// Validate is the model's validations, as Rails would put them. Wrap every
+// failure in ErrInvalid so a controller can answer 422 without knowing the
+// rule:
+//
+//	return fmt.Errorf("%w: title is required", ErrInvalid)
+func (t Thing) Validate() error {
+	return nil
+}
+==> app/models/things.go
+package models
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/jackc/pgx/v5"
+
+	"example.com/blog/app/domain"
+)
+
+// Things, as the domain sees them. Each method converts domain.Thing to and from
+// the row type sqlc generated, and maps pgx's "no rows" to domain.ErrNotFound
+// so callers never import pgx to ask a question.
+
+// CreateThing inserts a thing and returns it with its id and timestamps.
+func (s *Store) CreateThing(ctx context.Context, t domain.Thing) (domain.Thing, error) {
+	row, err := s.q.CreateThing(ctx, t.Name)
+	if err != nil {
+		return domain.Thing{}, fmt.Errorf("models: create thing: %w", err)
+	}
+	return thingFromRow(row), nil
+}
+
+// GetThing finds one thing. An id that is not a uuid is simply not found.
+func (s *Store) GetThing(ctx context.Context, id string) (domain.Thing, error) {
+	uid, err := parseUUID(id)
+	if err != nil {
+		return domain.Thing{}, domain.ErrNotFound
+	}
+	row, err := s.q.GetThing(ctx, uid)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return domain.Thing{}, domain.ErrNotFound
+	case err != nil:
+		return domain.Thing{}, fmt.Errorf("models: get thing %s: %w", id, err)
+	}
+	return thingFromRow(row), nil
+}
+
+// ListThings returns the newest things first, at most limit of them.
+func (s *Store) ListThings(ctx context.Context, limit int32) ([]domain.Thing, error) {
+	rows, err := s.q.ListThings(ctx, limit)
+	if err != nil {
+		return nil, fmt.Errorf("models: list things: %w", err)
+	}
+	out := make([]domain.Thing, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, thingFromRow(r))
+	}
+	return out, nil
+}
+
+// UpdateThing writes a thing's columns and returns the stored row.
+func (s *Store) UpdateThing(ctx context.Context, t domain.Thing) (domain.Thing, error) {
+	uid, err := parseUUID(t.ID)
+	if err != nil {
+		return domain.Thing{}, domain.ErrNotFound
+	}
+	row, err := s.q.UpdateThing(ctx, UpdateThingParams{ID: uid, Name: t.Name})
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return domain.Thing{}, domain.ErrNotFound
+	case err != nil:
+		return domain.Thing{}, fmt.Errorf("models: update thing %s: %w", t.ID, err)
+	}
+	return thingFromRow(row), nil
+}
+
+// DeleteThing removes a thing, and says so if there was none.
+func (s *Store) DeleteThing(ctx context.Context, id string) error {
+	uid, err := parseUUID(id)
+	if err != nil {
+		return domain.ErrNotFound
+	}
+	n, err := s.q.DeleteThing(ctx, uid)
+	if err != nil {
+		return fmt.Errorf("models: delete thing %s: %w", id, err)
+	}
+	if n == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+func thingFromRow(r Thing) domain.Thing {
+	return domain.Thing{
+		ID:        uuidString(r.ID),
+		Name:      r.Name,
+		CreatedAt: r.CreatedAt.Time,
+		UpdatedAt: r.UpdatedAt.Time,
+	}
+}
+==> app/models/things_test.go
+package models
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"example.com/blog/app/domain"
+)
+
+// Whatever the id looks like, a thing that is not there is ErrNotFound, and a
+// caller cannot tell a malformed id from a well-formed one that names nothing.
+func TestUnknownThingsAreNotFound(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+
+	for _, id := range []string{"nope", "", "00000000-0000-4000-8000-000000000000"} {
+		if _, err := store.GetThing(ctx, id); !errors.Is(err, domain.ErrNotFound) {
+			t.Errorf("GetThing(%q): err = %v, want ErrNotFound", id, err)
+		}
+		if err := store.DeleteThing(ctx, id); !errors.Is(err, domain.ErrNotFound) {
+			t.Errorf("DeleteThing(%q): err = %v, want ErrNotFound", id, err)
+		}
+		if _, err := store.UpdateThing(ctx, domain.Thing{ID: id}); !errors.Is(err, domain.ErrNotFound) {
+			t.Errorf("UpdateThing(%q): err = %v, want ErrNotFound", id, err)
+		}
+	}
+}
+
+// TODO: a round trip. Create a thing with real values, Get it, List it,
+// Update it, Delete it; see posts_test.go for the shape.

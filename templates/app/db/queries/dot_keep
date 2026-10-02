@@ -1,0 +1,2 @@
+# Keeps the directory in git when it holds no queries yet. sqlc runs only once
+# there is a *.sql file here; the Makefile, bin/ci and bogie all check first.

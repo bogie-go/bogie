@@ -34,6 +34,7 @@ test: ## run the suite with coverage, in the test environment (needs: make up)
 	{{.EnvPrefix}}_ENV=test go test -race -cover ./...
 
 sqlc: ## regenerate app/models from db/queries against db/migrate
+	@ls db/queries/*.sql >/dev/null 2>&1 || { echo "no query files in db/queries yet; nothing to generate"; exit 0; }
 	cd db && go tool sqlc generate
 
 vet: ## stdlib static analysis

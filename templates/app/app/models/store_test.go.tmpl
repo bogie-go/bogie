@@ -2,25 +2,24 @@ package models
 
 import (
 	"context"
-	"errors"
 	"io"
 	"log/slog"
 	"testing"
 
-	"{{.Module}}/app/domain"
 	"{{.Module}}/app/services/migrate"
 	"{{.Module}}/config"
 )
 
-// testStore opens the TEST database, migrates it, and empties the example
-// table. The environment is forced to test here so that `go test` run by hand
-// in a development shell can never truncate development data.
+// testStore opens the TEST database, migrates it, and empties every table, so
+// each test starts from nothing. The environment is forced to test here so
+// that `go test` run by hand in a development shell can never truncate
+// development data.
 //
 // It needs Postgres running: make up. There is no in-memory substitute on
 // purpose; a store test that does not touch the database tests nothing.
 func testStore(t *testing.T) *Store {
 	t.Helper()
-	t.Setenv("{{.EnvPrefix}}_ENV", config.EnvTest)
+	t.Setenv(config.EnvVar, config.EnvTest)
 	cfg, err := config.Load()
 	if err != nil {
 		t.Fatal(err)
@@ -35,67 +34,27 @@ func testStore(t *testing.T) *Store {
 		t.Fatalf("%v\nIs the database up? Run: make up", err)
 	}
 	t.Cleanup(store.Close)
-	// CASCADE, so a table that references posts does not stop the test.
-	if _, err := store.pool.Exec(ctx, "TRUNCATE posts CASCADE"); err != nil {
+
+	// Every table of the app's, in one statement, CASCADE for the foreign
+	// keys between them. goose's version tables are left alone.
+	rows, err := store.pool.Query(ctx,
+		"SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename NOT IN ('goose_db_version', 'seed_db_version')")
+	if err != nil {
 		t.Fatal(err)
 	}
+	var tables []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			t.Fatal(err)
+		}
+		tables = append(tables, name)
+	}
+	rows.Close()
+	for _, table := range tables {
+		if _, err := store.pool.Exec(ctx, "TRUNCATE "+table+" CASCADE"); err != nil {
+			t.Fatal(err)
+		}
+	}
 	return store
-}
-
-func TestPostsRoundTrip(t *testing.T) {
-	store := testStore(t)
-	ctx := context.Background()
-
-	created, err := store.CreatePost(ctx, domain.Post{Title: "Hello", Body: "world"})
-	if err != nil {
-		t.Fatalf("CreatePost: %v", err)
-	}
-	if created.ID == "" || created.CreatedAt.IsZero() {
-		t.Fatalf("created post has no id or timestamp: %+v", created)
-	}
-
-	got, err := store.GetPost(ctx, created.ID)
-	if err != nil || got.Title != "Hello" {
-		t.Fatalf("GetPost = %+v, %v", got, err)
-	}
-
-	list, err := store.ListPosts(ctx, 10)
-	if err != nil || len(list) != 1 || list[0].ID != created.ID {
-		t.Fatalf("ListPosts = %+v, %v; want the one post", list, err)
-	}
-
-	got.Title = "Hello again"
-	updated, err := store.UpdatePost(ctx, got)
-	if err != nil || updated.Title != "Hello again" {
-		t.Fatalf("UpdatePost = %+v, %v", updated, err)
-	}
-	if !updated.UpdatedAt.After(created.UpdatedAt) {
-		t.Errorf("updated_at did not advance: %v -> %v", created.UpdatedAt, updated.UpdatedAt)
-	}
-
-	if err := store.DeletePost(ctx, created.ID); err != nil {
-		t.Fatalf("DeletePost: %v", err)
-	}
-	if _, err := store.GetPost(ctx, created.ID); !errors.Is(err, domain.ErrNotFound) {
-		t.Errorf("GetPost after delete: err = %v, want ErrNotFound", err)
-	}
-}
-
-// Whatever the id looks like, a post that is not there is ErrNotFound, and a
-// caller cannot tell a malformed id from a well-formed one that names nothing.
-func TestUnknownPostsAreNotFound(t *testing.T) {
-	store := testStore(t)
-	ctx := context.Background()
-
-	for _, id := range []string{"nope", "", "00000000-0000-4000-8000-000000000000"} {
-		if _, err := store.GetPost(ctx, id); !errors.Is(err, domain.ErrNotFound) {
-			t.Errorf("GetPost(%q): err = %v, want ErrNotFound", id, err)
-		}
-		if err := store.DeletePost(ctx, id); !errors.Is(err, domain.ErrNotFound) {
-			t.Errorf("DeletePost(%q): err = %v, want ErrNotFound", id, err)
-		}
-		if _, err := store.UpdatePost(ctx, domain.Post{ID: id, Title: "x"}); !errors.Is(err, domain.ErrNotFound) {
-			t.Errorf("UpdatePost(%q): err = %v, want ErrNotFound", id, err)
-		}
-	}
 }

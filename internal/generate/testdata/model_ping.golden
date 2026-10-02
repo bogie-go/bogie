@@ -140,3 +140,35 @@ func pingFromRow(r Ping) domain.Ping {
 		UpdatedAt: r.UpdatedAt.Time,
 	}
 }
+==> app/models/pings_test.go
+package models
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"example.com/blog/app/domain"
+)
+
+// Whatever the id looks like, a ping that is not there is ErrNotFound, and a
+// caller cannot tell a malformed id from a well-formed one that names nothing.
+func TestUnknownPingsAreNotFound(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+
+	for _, id := range []string{"nope", "", "00000000-0000-4000-8000-000000000000"} {
+		if _, err := store.GetPing(ctx, id); !errors.Is(err, domain.ErrNotFound) {
+			t.Errorf("GetPing(%q): err = %v, want ErrNotFound", id, err)
+		}
+		if err := store.DeletePing(ctx, id); !errors.Is(err, domain.ErrNotFound) {
+			t.Errorf("DeletePing(%q): err = %v, want ErrNotFound", id, err)
+		}
+		if _, err := store.UpdatePing(ctx, domain.Ping{ID: id}); !errors.Is(err, domain.ErrNotFound) {
+			t.Errorf("UpdatePing(%q): err = %v, want ErrNotFound", id, err)
+		}
+	}
+}
+
+// TODO: a round trip. Create a ping with real values, Get it, List it,
+// Update it, Delete it; see posts_test.go for the shape.

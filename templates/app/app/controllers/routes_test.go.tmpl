@@ -10,17 +10,16 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"{{.Module}}/app/controllers/posts_controller"
 	"{{.Module}}/config"
 )
 
-// testServer builds a root server with every controller field assigned, as
-// app/application.go would. A nil controller panics at SetupRoutes, which is
-// the point: an unwired controller fails here, not in production.
+// testServer builds a root server and mounts its routes. Controller fields
+// stay nil here: mounting binds method values, which is safe on a nil
+// pointer, and app/application.go is what constructs them. `bogie doctor`
+// checks that every controller package is both constructed and mounted.
 func testServer(env string) *Server {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	s := NewServer(config.Config{Env: env, App: config.AppConfig{Addr: ":0", LogLevel: "info"}}, log)
-	s.Posts = posts_controller.NewServer(nil, log)
 	s.SetupRoutes()
 	return s
 }

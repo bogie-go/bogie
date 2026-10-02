@@ -11,6 +11,7 @@ package migrate
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -66,6 +67,11 @@ func provider(databaseURL string, src source) (*goose.Provider, *sql.DB, error) 
 	return p, conn, nil
 }
 
+// nothingToDo reports goose's "no migrations found", which for an app that
+// has not written its first migration, or whose seeds directory is empty, is
+// not a fault: there is simply nothing to apply.
+func nothingToDo(err error) bool { return errors.Is(err, goose.ErrNoMigrations) }
+
 // Run applies every pending migration.
 //
 // goose takes a Postgres advisory lock for the duration, so this stays correct
@@ -85,6 +91,10 @@ func Seed(ctx context.Context, databaseURL string, log *slog.Logger) error {
 func up(ctx context.Context, databaseURL string, src source, log *slog.Logger) error {
 	what := src.what
 	p, conn, err := provider(databaseURL, src)
+	if nothingToDo(err) {
+		log.InfoContext(ctx, what+": nothing to apply", "dir", src.dir)
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -126,6 +136,10 @@ func SeedDown(ctx context.Context, databaseURL string, log *slog.Logger) error {
 func down(ctx context.Context, databaseURL string, src source, log *slog.Logger) error {
 	what := src.what
 	p, conn, err := provider(databaseURL, src)
+	if nothingToDo(err) {
+		log.InfoContext(ctx, "nothing to roll back", "dir", src.dir)
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -153,6 +167,10 @@ func down(ctx context.Context, databaseURL string, src source, log *slog.Logger)
 // DownTo rolls the schema back until it is at version, which may be 0.
 func DownTo(ctx context.Context, databaseURL string, version int64, log *slog.Logger) error {
 	p, conn, err := provider(databaseURL, migrations)
+	if nothingToDo(err) {
+		log.InfoContext(ctx, "nothing to roll back", "dir", migrations.dir)
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -172,6 +190,10 @@ func DownTo(ctx context.Context, databaseURL string, version int64, log *slog.Lo
 // Status prints which migrations have run and which are pending.
 func Status(ctx context.Context, databaseURL string) error {
 	p, conn, err := provider(databaseURL, migrations)
+	if nothingToDo(err) {
+		fmt.Println("no migrations yet: bogie g migration create_<table> ... writes the first")
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -197,6 +219,9 @@ func Status(ctx context.Context, databaseURL string) error {
 // Version returns the current schema version.
 func Version(ctx context.Context, databaseURL string) (int64, error) {
 	p, conn, err := provider(databaseURL, migrations)
+	if nothingToDo(err) {
+		return 0, nil
+	}
 	if err != nil {
 		return 0, err
 	}
