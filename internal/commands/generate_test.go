@@ -24,3 +24,23 @@ func TestNextStampSkipsTakenVersions(t *testing.T) {
 		t.Errorf("nextStamp = %s, want 20261002093002", got.Format("20060102150405"))
 	}
 }
+
+func TestExistingMigrationIgnoresTheStamp(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "db", "migrate")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "20261002093000_create_comments.sql"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := existingMigration(root, "db/migrate/20261002101010_create_comments.sql"); got != "db/migrate/20261002093000_create_comments.sql" {
+		t.Errorf("existingMigration = %q", got)
+	}
+	if got := existingMigration(root, "db/migrate/20261002101010_create_posts.sql"); got != "" {
+		t.Errorf("a different migration matched: %q", got)
+	}
+	if got := existingMigration(root, "app/domain/comment.go"); got != "" {
+		t.Errorf("a non-migration matched: %q", got)
+	}
+}

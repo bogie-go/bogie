@@ -108,6 +108,14 @@ func Generate(args []string, out io.Writer) error {
 
 	toWrite := make([]scaffold.File, len(files))
 	for i, f := range files {
+		// A migration is named by what it does, not by its stamp: a second
+		// create_comments is the same migration, as Rails says ("Another
+		// migration is already named create_comments"). Point the write at
+		// the existing file, so it reports identical or conflict, and --force
+		// replaces it in place rather than adding a duplicate.
+		if existing := existingMigration(root, f.Path); existing != "" {
+			f.Path = existing
+		}
 		toWrite[i] = scaffold.File{Path: f.Path, Content: []byte(f.Content)}
 	}
 	report := func(a scaffold.Action) { say("%12s  %s\n", a.Op, a.Path) }
@@ -128,6 +136,28 @@ func Generate(args []string, out io.Writer) error {
 		}
 	}
 	return nil
+}
+
+// existingMigration finds a migration in the app with the same name as path
+// (db/migrate/<stamp>_<name>.sql) under any stamp, and returns its path
+// relative to root, or "".
+func existingMigration(root, path string) string {
+	dir, file := filepath.Split(path)
+	if dir != "db/migrate/" {
+		return ""
+	}
+	name := file
+	if i := strings.Index(file, "_"); i == 14 { // a 14-digit stamp, then _
+		name = file[i+1:]
+	}
+	matches, _ := filepath.Glob(filepath.Join(root, "db", "migrate", "*_"+name))
+	for _, m := range matches {
+		rel, err := filepath.Rel(root, m)
+		if err == nil {
+			return filepath.ToSlash(rel)
+		}
+	}
+	return ""
 }
 
 // nextStamp returns now, moved forward a second at a time until no migration
