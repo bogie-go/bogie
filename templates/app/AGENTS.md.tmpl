@@ -37,6 +37,7 @@ Staging is `production` behaviour with staging settings, never its own value.
       controllers/
         application.go           root Server, one NAMED field per controller
         routes.go                the whole routing table
+        welcome.go               the development page at /; gone once a route claims /
         <name>_controller/       server.go · routes.go · one file per action
       middlewares/               request id · logging · recover
       services/<name>/           ctx first, knows nothing about HTTP

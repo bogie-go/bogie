@@ -5,7 +5,10 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 
 	"{{.Module}}/config"
 )
@@ -23,5 +26,42 @@ func TestHealthz(t *testing.T) {
 	}
 	if rec.Header().Get("X-Request-Id") == "" {
 		t.Error("no X-Request-Id header: the middleware chain is not mounted")
+	}
+}
+
+func get(s *Server, path string) *httptest.ResponseRecorder {
+	rec := httptest.NewRecorder()
+	s.Router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+	return rec
+}
+
+// The welcome page greets a developer at / and nobody else: development only,
+// GET / only, and gone the moment a route claims /.
+func TestWelcomeInDevelopmentOnly(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	dev := NewServer(config.Config{Env: config.EnvDevelopment, Addr: ":0", LogLevel: "info"}, log)
+	dev.SetupRoutes()
+	if rec := get(dev, "/"); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "is running") {
+		t.Errorf("development GET / = %d, want the welcome page", rec.Code)
+	}
+	if rec := get(dev, "/nothing-here"); rec.Code != http.StatusNotFound {
+		t.Errorf("development GET /nothing-here = %d, want 404: the welcome page answers / only", rec.Code)
+	}
+
+	prod := NewServer(config.Config{Env: config.EnvProduction, Addr: ":0", LogLevel: "info"}, log)
+	prod.SetupRoutes()
+	if rec := get(prod, "/"); rec.Code != http.StatusNotFound {
+		t.Errorf("production GET / = %d, want 404", rec.Code)
+	}
+}
+
+func TestARouteAtRootReplacesTheWelcomePage(t *testing.T) {
+	s := NewServer(config.Config{Env: config.EnvDevelopment, Addr: ":0", LogLevel: "info"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	s.SetupRoutes()
+	s.Router.GET("/", func(c *gin.Context) { c.String(http.StatusOK, "mine") })
+
+	if rec := get(s, "/"); rec.Body.String() != "mine" {
+		t.Errorf("GET / = %q, want the app's own route", rec.Body.String())
 	}
 }

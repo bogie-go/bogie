@@ -1,0 +1,96 @@
+package controllers
+
+import (
+	"html/template"
+	"net/http"
+	"runtime"
+
+	"github.com/gin-gonic/gin"
+
+	"{{.Module}}/config"
+)
+
+// welcome is the page you see at / before the app has one of its own, the
+// way a new Rails app greets you. Served only in development, and only while
+// no route claims /: it is mounted as the no-route handler, so the first
+// controller to mount / replaces it without anyone touching this file. In
+// every other environment / is a plain 404.
+//
+// Self-contained on purpose: no stylesheet, no font, no script, nothing
+// fetched. Delete this file when you no longer want it.
+func (s *Server) welcome(c *gin.Context) {
+	if c.Request.Method != http.MethodGet || c.Request.URL.Path != "/" {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	c.Header("Content-Type", "text/html; charset=utf-8")
+	c.Status(http.StatusOK)
+	_ = welcomePage.Execute(c.Writer, map[string]string{
+		"Name": "{{.Name}}",
+		"Env":  s.Config.Env,
+		"Addr": s.Config.Addr,
+		"Go":   runtime.Version(),
+	})
+}
+
+// mountWelcome installs the page in development only.
+func (s *Server) mountWelcome() {
+	if s.Config.Env == config.EnvDevelopment {
+		s.Router.NoRoute(s.welcome)
+	}
+}
+
+// The page uses [[ ]] as delimiters so that this file can itself be written by
+// a text/template without the two fighting over the default double braces.
+var welcomePage = template.Must(template.New("welcome").Delims("[[", "]]").Parse(`<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>[[.Name]] is running</title>
+<style>
+  :root { color-scheme: light dark; --fg: #1a1a1a; --muted: #6b6b6b; --line: #e3e3e3; --accent: #b23a2a; --bg: #fafaf7; }
+  @media (prefers-color-scheme: dark) { :root { --fg: #ececec; --muted: #9a9a9a; --line: #333; --accent: #e06a58; --bg: #141414; } }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 40rem; margin: 10vh auto; padding: 0 1.5rem; }
+  h1 { font-size: 2rem; margin: 1rem 0 .25rem; }
+  h1 small { display: block; font-size: .8rem; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+  p.lead { font-size: 1.1rem; color: var(--muted); margin-top: 0; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: .25rem 1.5rem; margin: 2rem 0; padding: 1rem 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  dt { color: var(--muted); } dd { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  ol { padding-left: 1.25rem; } li { margin: .4rem 0; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .95em; }
+  footer { margin-top: 2.5rem; color: var(--muted); font-size: .9rem; }
+  svg { display: block; }
+</style>
+</head>
+<body>
+<main>
+  <svg width="120" height="44" viewBox="0 0 120 44" aria-hidden="true">
+    <rect x="8" y="6" width="104" height="14" rx="3" fill="var(--accent)"/>
+    <rect x="22" y="20" width="76" height="6" fill="var(--fg)" opacity=".5"/>
+    <circle cx="34" cy="32" r="9" fill="none" stroke="var(--fg)" stroke-width="4"/>
+    <circle cx="86" cy="32" r="9" fill="none" stroke="var(--fg)" stroke-width="4"/>
+  </svg>
+  <h1><small>Bogie</small>[[.Name]] is running</h1>
+  <p class="lead">The Go service next to your Rails app.</p>
+
+  <dl>
+    <dt>Environment</dt><dd>[[.Env]]</dd>
+    <dt>Listening</dt><dd>[[.Addr]]</dd>
+    <dt>Go</dt><dd>[[.Go]]</dd>
+    <dt>Health</dt><dd><a href="/healthz">GET /healthz</a></dd>
+  </dl>
+
+  <p>Next:</p>
+  <ol>
+    <li>Add a controller: the recipe in <code>AGENTS.md</code> is three one-line insertions, one above each <code>bogie:</code> marker.</li>
+    <li>Run <code>bin/ci</code> before you push. Green signs off the commit.</li>
+    <li>Read the six rules in <code>AGENTS.md</code>. Rule two is the one with no Rails equivalent.</li>
+  </ol>
+
+  <footer>This page is served only in development, and only until a route claims <code>/</code>. It lives in <code>app/controllers/welcome.go</code>; delete it when you like.</footer>
+</main>
+</body>
+</html>
+`))

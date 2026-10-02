@@ -97,6 +97,7 @@ app/
   controllers/
     application.go            root Server, one NAMED field per controller
     routes.go                 the whole routing table
+    welcome.go                the development page at /, as `rails new` has; gone once a route claims /
     <name>_controller/        server.go · routes.go · one file per action
   middlewares/                request id · logging · recover
   services/<name>/            ctx first, knows nothing about HTTP

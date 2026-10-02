@@ -31,4 +31,7 @@ func (s *Server) SetupRoutes() {
 	//	s.Posts.SetupRoutes(&r.RouterGroup)
 	//
 	// bogie:routes
+
+	// Development only, and only while nothing above claims /.
+	s.mountWelcome()
 }
