@@ -1,0 +1,27 @@
+package posts_controller
+
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+
+	"{{.Module}}/app/views"
+)
+
+// Create handles POST /posts. A handler converts HTTP into domain values,
+// calls one function, and converts the result back; validation is the
+// domain's, which is why a bad title is a 422 from the service and not a
+// binding rule here.
+func (s *Server) Create(c *gin.Context) {
+	var req views.PostRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, views.Error(err))
+		return
+	}
+	post, err := s.Posts.Create(c.Request.Context(), req.Title, req.Body)
+	if err != nil {
+		s.fail(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, postView(post))
+}

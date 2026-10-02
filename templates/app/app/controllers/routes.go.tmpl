@@ -26,10 +26,8 @@ func (s *Server) SetupRoutes() {
 
 	// Each controller mounts its own routes under a group it names.
 	// `bogie g controller` inserts one line above the marker; by hand it is
-	// the same one line:
-	//
-	//	s.Posts.SetupRoutes(&r.RouterGroup)
-	//
+	// the same one line, as the example resource shows:
+	s.Posts.SetupRoutes(&r.RouterGroup)
 	// bogie:routes
 
 	// Development only, and only while nothing above claims /.

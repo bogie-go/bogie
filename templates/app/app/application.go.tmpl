@@ -9,7 +9,10 @@ import (
 	"os"
 
 	"{{.Module}}/app/controllers"
+	"{{.Module}}/app/controllers/posts_controller"
+	"{{.Module}}/app/models"
 	"{{.Module}}/app/services/migrate"
+	"{{.Module}}/app/services/posts"
 	"{{.Module}}/config"
 	"{{.Module}}/lib/logger"
 )
@@ -18,6 +21,7 @@ import (
 type Application struct {
 	Config config.Config
 	Log    *slog.Logger
+	Store  *models.Store
 	Server *controllers.Server
 }
 
@@ -47,18 +51,22 @@ func NewApplication(ctx context.Context) (*Application, error) {
 		}
 	}
 
+	store, err := models.Open(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return nil, err
+	}
+
 	server := controllers.NewServer(cfg, log)
 
 	// Each controller is built here, with its dependencies, and assigned to
 	// its NAMED field on the root server. `bogie g controller` inserts one
-	// line above the marker; by hand it is the same one line:
-	//
-	//	server.Posts = posts_controller.NewServer(log)
-	//
+	// line above the marker; by hand it is the same one line, as the example
+	// resource shows:
+	server.Posts = posts_controller.NewServer(posts.New(store), log)
 	// bogie:wire
 	server.SetupRoutes()
 
-	return &Application{Config: cfg, Log: log, Server: server}, nil
+	return &Application{Config: cfg, Log: log, Store: store, Server: server}, nil
 }
 
 // Start serves HTTP until ctx is cancelled.
@@ -67,6 +75,9 @@ func (a *Application) Start(ctx context.Context) error {
 	return a.Server.Start(ctx)
 }
 
-// Close releases connections. Nothing to release yet; the database layer adds
-// its pool here.
-func (a *Application) Close() {}
+// Close releases connections.
+func (a *Application) Close() {
+	if a.Store != nil {
+		a.Store.Close()
+	}
+}

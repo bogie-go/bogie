@@ -10,13 +10,23 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"{{.Module}}/app/controllers/posts_controller"
 	"{{.Module}}/config"
 )
 
-func TestHealthz(t *testing.T) {
-	cfg := config.Config{Env: config.EnvTest, Addr: ":0", LogLevel: "info"}
-	s := NewServer(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+// testServer builds a root server with every controller field assigned, as
+// app/application.go would. A nil controller panics at SetupRoutes, which is
+// the point: an unwired controller fails here, not in production.
+func testServer(env string) *Server {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	s := NewServer(config.Config{Env: env, Addr: ":0", LogLevel: "info"}, log)
+	s.Posts = posts_controller.NewServer(nil, log)
 	s.SetupRoutes()
+	return s
+}
+
+func TestHealthz(t *testing.T) {
+	s := testServer(config.EnvTest)
 
 	rec := httptest.NewRecorder()
 	s.Router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
@@ -38,10 +48,7 @@ func get(s *Server, path string) *httptest.ResponseRecorder {
 // The welcome page greets a developer at / and nobody else: development only,
 // GET / only, and gone the moment a route claims /.
 func TestWelcomeInDevelopmentOnly(t *testing.T) {
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-
-	dev := NewServer(config.Config{Env: config.EnvDevelopment, Addr: ":0", LogLevel: "info"}, log)
-	dev.SetupRoutes()
+	dev := testServer(config.EnvDevelopment)
 	if rec := get(dev, "/"); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "is running") {
 		t.Errorf("development GET / = %d, want the welcome page", rec.Code)
 	}
@@ -49,16 +56,14 @@ func TestWelcomeInDevelopmentOnly(t *testing.T) {
 		t.Errorf("development GET /nothing-here = %d, want 404: the welcome page answers / only", rec.Code)
 	}
 
-	prod := NewServer(config.Config{Env: config.EnvProduction, Addr: ":0", LogLevel: "info"}, log)
-	prod.SetupRoutes()
+	prod := testServer(config.EnvProduction)
 	if rec := get(prod, "/"); rec.Code != http.StatusNotFound {
 		t.Errorf("production GET / = %d, want 404", rec.Code)
 	}
 }
 
 func TestARouteAtRootReplacesTheWelcomePage(t *testing.T) {
-	s := NewServer(config.Config{Env: config.EnvDevelopment, Addr: ":0", LogLevel: "info"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	s.SetupRoutes()
+	s := testServer(config.EnvDevelopment)
 	s.Router.GET("/", func(c *gin.Context) { c.String(http.StatusOK, "mine") })
 
 	if rec := get(s, "/"); rec.Body.String() != "mine" {

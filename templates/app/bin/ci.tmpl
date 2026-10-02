@@ -79,6 +79,7 @@ export {{.EnvPrefix}}_ENV=test
 step "Setup: modules"          "go mod download && go mod verify"
 step "Setup: database"         "docker compose up -d --wait && go run . db prepare"
 step "Schema: down and up"     "go run . migrate down-to 0 --yes && go run . migrate up && go run . migrate status"
+step "Schema: models current"  "cd db && go tool sqlc diff"
 step "Style: gofmt"            "test -z \"\$(gofmt -l .)\" || { gofmt -l .; exit 1; }"
 step "Style: go vet"           "go vet ./..."
 step "Style: golangci-lint"    "lint"

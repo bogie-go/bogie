@@ -1,0 +1,25 @@
+# sqlc compiles db/queries/*.sql against the migrations in db/migrate.
+#
+# The migrations ARE the schema of record: this app owns them, applies them at
+# boot, and generates its query code from the same files. There is no dump
+# step and nothing to keep in sync. sqlc understands goose's -- +goose Up/Down
+# markers and applies the Up blocks in order, so what it type-checks against is
+# exactly what a migrated database contains.
+#
+#   make sqlc          regenerate app/models from these files
+#
+# A query naming a column that does not exist fails here, not in production,
+# and nobody can call a query that was never written.
+version: "2"
+sql:
+  - engine: "postgresql"
+    schema: "migrate"
+    queries: "queries"
+    gen:
+      go:
+        package: "models"
+        out: "../app/models"
+        sql_package: "pgx/v5"
+        emit_json_tags: false
+        emit_pointers_for_null_types: true
+        emit_empty_slices: true

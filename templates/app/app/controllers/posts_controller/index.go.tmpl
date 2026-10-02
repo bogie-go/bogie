@@ -1,0 +1,17 @@
+package posts_controller
+
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+)
+
+// Index handles GET /posts.
+func (s *Server) Index(c *gin.Context) {
+	posts, err := s.Posts.List(c.Request.Context())
+	if err != nil {
+		s.fail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, postsView(posts))
+}

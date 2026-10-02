@@ -1,0 +1,29 @@
+package domain
+
+import (
+	"errors"
+	"strings"
+	"testing"
+)
+
+func TestPostValidate(t *testing.T) {
+	cases := map[string]struct {
+		post Post
+		ok   bool
+	}{
+		"title and body": {Post{Title: "Hello", Body: "world"}, true},
+		"no body":        {Post{Title: "Hello"}, true},
+		"blank title":    {Post{Title: "   "}, false},
+		"title too long": {Post{Title: strings.Repeat("x", maxTitle+1)}, false},
+		"title at bound": {Post{Title: strings.Repeat("x", maxTitle)}, true},
+	}
+	for name, c := range cases {
+		err := c.post.Validate()
+		if c.ok && err != nil {
+			t.Errorf("%s: unexpected error %v", name, err)
+		}
+		if !c.ok && !errors.Is(err, ErrInvalid) {
+			t.Errorf("%s: err = %v, want ErrInvalid", name, err)
+		}
+	}
+}

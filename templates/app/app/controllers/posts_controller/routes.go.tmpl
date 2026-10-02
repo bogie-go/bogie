@@ -1,0 +1,15 @@
+package posts_controller
+
+import "github.com/gin-gonic/gin"
+
+// SetupRoutes mounts the resource under its own prefix. Any middleware the
+// whole group needs goes here; the exposure boundary stays visible in
+// app/controllers/routes.go, which calls this.
+func (s *Server) SetupRoutes(router *gin.RouterGroup) {
+	posts := router.Group("/posts")
+	posts.GET("", s.Index)
+	posts.POST("", s.Create)
+	posts.GET("/:id", s.Show)
+	posts.PATCH("/:id", s.Update)
+	posts.DELETE("/:id", s.Destroy)
+}

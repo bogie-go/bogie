@@ -1,0 +1,41 @@
+// Package models is the database: the sqlc output compiled from
+// db/queries/*.sql, and the Store that wraps it.
+//
+// Nothing here is hand-written SQL. The *.sql.go files are generated (make
+// sqlc) and speak pgtype; the Store's own methods speak app/domain, so nothing
+// above this package imports pgx. The sqlc-generated Queries is held
+// privately rather than embedded, so that boundary cannot leak by accident.
+package models
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// Store wraps the connection pool and the generated queries.
+type Store struct {
+	pool *pgxpool.Pool
+	q    *Queries
+}
+
+// Open connects and verifies the database is reachable, so a bad URL fails at
+// boot rather than on the first request.
+func Open(ctx context.Context, databaseURL string) (*Store, error) {
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("models: open database: %w", err)
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("models: ping database: %w", err)
+	}
+	return &Store{pool: pool, q: New(pool)}, nil
+}
+
+// Close releases the pool.
+func (s *Store) Close() { s.pool.Close() }
+
+// Ping reports whether the database answers.
+func (s *Store) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }

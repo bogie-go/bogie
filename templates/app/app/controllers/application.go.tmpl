@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"{{.Module}}/app/controllers/posts_controller"
 	"{{.Module}}/config"
 )
 
@@ -25,6 +26,7 @@ type Server struct {
 	Router *gin.Engine
 	Log    *slog.Logger
 
+	Posts *posts_controller.Server
 	// bogie:controllers
 }
 

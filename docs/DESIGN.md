@@ -78,8 +78,12 @@ column name fails at `sqlc generate`, not in production, and an agent cannot
 invent an ORM method that does not exist.
 
 kchat today calls `sqlc` bare (`cd db && sqlc generate`), which needs a global
-install. The scaffold pins sqlc and goose with `go get -tool` so a fresh clone
-needs only Go.
+install. The scaffold pins sqlc and goose under the `tool` directive in
+`go.mod` so a fresh clone needs only Go. Checked 2026-10-02: sqlc v1.31.1
+builds with `CGO_ENABLED=0` (its Postgres parser runs in WebAssembly), the
+directive adds about 30 lines to `go.mod` and 80 to `go.sum`, and `go tool
+sqlc` compiles in under 20 seconds, once. The generated `*.sql.go` files are
+committed and `bin/ci` runs `sqlc diff` so they cannot go stale.
 
 ---
 
@@ -554,7 +558,8 @@ best metaphor for a scaffold, but a common word), **Ballast**, **Turnout**,
   the domain; ~~answers to §12.1–12.3~~ and ~~§12.10~~ (decided 2026-09-30);
   read geng and Autostrada; draft the launch essay (done, in review).
 - **M1 — skeleton.** Repo, `bogie new` producing an app that builds, migrates and
-  serves; CI scaffold job green.
+  serves; `bin/ci` green. Done 2026-10-02 but for seeds and credentials, which
+  land with M2's first slice.
 - **M2 — generators.** `g migration`, `g model`, `g controller`, `g service`,
   `d`, markers, `doctor`, golden tests.
 - **M3 — agent layer.** `AGENTS.md`, recipes, `docs/FROM_RAILS.md`, a lint rule

@@ -1,0 +1,91 @@
+package posts
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"{{.Module}}/app/domain"
+)
+
+// The fake is this short because the interface is declared in this package
+// and holds only what it uses.
+type fakeStore struct {
+	posts map[string]domain.Post
+	next  int
+}
+
+func newFake() *fakeStore { return &fakeStore{posts: map[string]domain.Post{}} }
+
+func (f *fakeStore) CreatePost(_ context.Context, p domain.Post) (domain.Post, error) {
+	f.next++
+	p.ID = string(rune('a' + f.next))
+	f.posts[p.ID] = p
+	return p, nil
+}
+
+func (f *fakeStore) GetPost(_ context.Context, id string) (domain.Post, error) {
+	p, ok := f.posts[id]
+	if !ok {
+		return domain.Post{}, domain.ErrNotFound
+	}
+	return p, nil
+}
+
+func (f *fakeStore) ListPosts(_ context.Context, _ int32) ([]domain.Post, error) {
+	out := make([]domain.Post, 0, len(f.posts))
+	for _, p := range f.posts {
+		out = append(out, p)
+	}
+	return out, nil
+}
+
+func (f *fakeStore) UpdatePost(_ context.Context, p domain.Post) (domain.Post, error) {
+	if _, ok := f.posts[p.ID]; !ok {
+		return domain.Post{}, domain.ErrNotFound
+	}
+	f.posts[p.ID] = p
+	return p, nil
+}
+
+func (f *fakeStore) DeletePost(_ context.Context, id string) error {
+	if _, ok := f.posts[id]; !ok {
+		return domain.ErrNotFound
+	}
+	delete(f.posts, id)
+	return nil
+}
+
+func TestCreateValidatesBeforeStoring(t *testing.T) {
+	store := newFake()
+	svc := New(store)
+
+	if _, err := svc.Create(context.Background(), "  ", "body"); !errors.Is(err, domain.ErrInvalid) {
+		t.Errorf("blank title: err = %v, want ErrInvalid", err)
+	}
+	if len(store.posts) != 0 {
+		t.Error("an invalid post reached the store")
+	}
+
+	p, err := svc.Create(context.Background(), "Hello", "world")
+	if err != nil || p.ID == "" {
+		t.Fatalf("Create = %+v, %v", p, err)
+	}
+}
+
+func TestUpdateValidatesTheResult(t *testing.T) {
+	store := newFake()
+	svc := New(store)
+	p, _ := svc.Create(context.Background(), "Hello", "")
+
+	if _, err := svc.Update(context.Background(), p.ID, "", ""); !errors.Is(err, domain.ErrInvalid) {
+		t.Errorf("blank title on update: err = %v, want ErrInvalid", err)
+	}
+	if store.posts[p.ID].Title != "Hello" {
+		t.Error("an invalid update was stored")
+	}
+
+	if _, err := svc.Update(context.Background(), "missing", "x", ""); !errors.Is(err, domain.ErrNotFound) {
+		t.Errorf("unknown id: err = %v, want ErrNotFound", err)
+	}
+}

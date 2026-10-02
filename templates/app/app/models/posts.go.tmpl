@@ -1,0 +1,95 @@
+package models
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/jackc/pgx/v5"
+
+	"{{.Module}}/app/domain"
+)
+
+// Posts, as the domain sees them. Each method converts domain.Post to and
+// from the row type sqlc generated, and maps pgx's "no rows" to
+// domain.ErrNotFound so callers never import pgx to ask a question.
+
+// CreatePost inserts a post and returns it with its id and timestamps.
+func (s *Store) CreatePost(ctx context.Context, p domain.Post) (domain.Post, error) {
+	row, err := s.q.CreatePost(ctx, CreatePostParams{Title: p.Title, Body: p.Body})
+	if err != nil {
+		return domain.Post{}, fmt.Errorf("models: create post: %w", err)
+	}
+	return postFromRow(row), nil
+}
+
+// GetPost finds one post. An id that is not a uuid is simply not found.
+func (s *Store) GetPost(ctx context.Context, id string) (domain.Post, error) {
+	uid, err := parseUUID(id)
+	if err != nil {
+		return domain.Post{}, domain.ErrNotFound
+	}
+	row, err := s.q.GetPost(ctx, uid)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return domain.Post{}, domain.ErrNotFound
+	case err != nil:
+		return domain.Post{}, fmt.Errorf("models: get post %s: %w", id, err)
+	}
+	return postFromRow(row), nil
+}
+
+// ListPosts returns the newest posts first, at most limit of them.
+func (s *Store) ListPosts(ctx context.Context, limit int32) ([]domain.Post, error) {
+	rows, err := s.q.ListPosts(ctx, limit)
+	if err != nil {
+		return nil, fmt.Errorf("models: list posts: %w", err)
+	}
+	out := make([]domain.Post, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, postFromRow(r))
+	}
+	return out, nil
+}
+
+// UpdatePost writes a post's title and body and returns the stored row.
+func (s *Store) UpdatePost(ctx context.Context, p domain.Post) (domain.Post, error) {
+	uid, err := parseUUID(p.ID)
+	if err != nil {
+		return domain.Post{}, domain.ErrNotFound
+	}
+	row, err := s.q.UpdatePost(ctx, UpdatePostParams{ID: uid, Title: p.Title, Body: p.Body})
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return domain.Post{}, domain.ErrNotFound
+	case err != nil:
+		return domain.Post{}, fmt.Errorf("models: update post %s: %w", p.ID, err)
+	}
+	return postFromRow(row), nil
+}
+
+// DeletePost removes a post, and says so if there was none.
+func (s *Store) DeletePost(ctx context.Context, id string) error {
+	uid, err := parseUUID(id)
+	if err != nil {
+		return domain.ErrNotFound
+	}
+	n, err := s.q.DeletePost(ctx, uid)
+	if err != nil {
+		return fmt.Errorf("models: delete post %s: %w", id, err)
+	}
+	if n == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+func postFromRow(r Post) domain.Post {
+	return domain.Post{
+		ID:        uuidString(r.ID),
+		Title:     r.Title,
+		Body:      r.Body,
+		CreatedAt: r.CreatedAt.Time,
+		UpdatedAt: r.UpdatedAt.Time,
+	}
+}

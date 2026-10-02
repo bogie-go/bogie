@@ -1,0 +1,17 @@
+package posts_controller
+
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+)
+
+// Show handles GET /posts/:id.
+func (s *Server) Show(c *gin.Context) {
+	post, err := s.Posts.Get(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		s.fail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, postView(post))
+}
