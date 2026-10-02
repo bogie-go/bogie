@@ -77,9 +77,10 @@ func (c Config) validate() error {
 func (c Config) Production() bool { return c.Env == EnvProduction }
 
 // PrintTo writes the effective settings, for the boot log. Straight to the
-// writer, because slog would escape the newlines into one unreadable line.
+// writer, because slog would escape the newlines into one unreadable line. A
+// failed write to stderr at boot has nowhere to be reported, so it is dropped.
 func (c Config) PrintTo(w io.Writer) {
-	fmt.Fprintf(w, "{{.Name}}: env=%s addr=%s log_level=%s shutdown_grace=%s\n",
+	_, _ = fmt.Fprintf(w, "{{.Name}}: env=%s addr=%s log_level=%s shutdown_grace=%s\n",
 		c.Env, c.Addr, c.LogLevel, c.ShutdownGrace)
 }
 
