@@ -1,10 +1,13 @@
 // Package config loads and validates settings.
 //
+// Two sources, in order: an encrypted credentials file if one exists, then
+// environment variables, which always win. The file is the Rails pattern,
+// committed ciphertext and a key that is never committed, so this service is
+// configured the same way the Rails app next to it is.
+//
 // No globals and no init(): Load returns a struct, main passes it where it is
 // needed. Every field is validated once, at startup, so a missing setting is a
 // refusal to boot rather than a nil dereference an hour later.
-//
-// Settings come from the environment, prefixed {{.EnvPrefix}}_.
 package config
 
 import (
@@ -12,9 +15,12 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"time"
+
+	"github.com/bogie-go/credentials/pkg/credentials"
 )
 
 // Env is a CLOSED set, mirroring RAILS_ENV. There is deliberately no staging:
@@ -28,54 +34,148 @@ const (
 	EnvProduction  = "production"
 )
 
+// Two variables, deliberately separate:
+//
+//	{{.EnvPrefix}}_ENV            exactly development, test or production; selects BEHAVIOUR
+//	{{.EnvPrefix}}_CREDENTIALS    any name; selects WHICH credentials file to read
+//
+// A staging deployment is {{.EnvPrefix}}_ENV=production {{.EnvPrefix}}_CREDENTIALS=staging:
+// production strictness, staging secrets. CREDENTIALS defaults to ENV.
+const (
+	EnvVar         = "{{.EnvPrefix}}_ENV"
+	CredentialsVar = "{{.EnvPrefix}}_CREDENTIALS"
+
+	// MasterKeyVar carries the decryption key from the deployment, so no key
+	// file ever has to exist in the image. It is RAILS_MASTER_KEY's
+	// counterpart and must hold the key for whichever credentials file is
+	// selected. The reader takes it directly: no file to write, no chmod to
+	// get wrong.
+	MasterKeyVar = "{{.EnvPrefix}}_MASTER_KEY"
+
+	// ConfigDirVar points at the config directory, for tests and for running
+	// the binary from somewhere other than the app root.
+	ConfigDirVar = "{{.EnvPrefix}}_CONFIG_DIR"
+)
+
 var envs = []string{EnvDevelopment, EnvTest, EnvProduction}
 var logLevels = []string{"debug", "info", "warn", "error"}
 
 // Config is everything {{.Name}} needs to run.
+//
+// Env, Source and KeyFile never come from the file: Env selects which file to
+// read, so it cannot live inside one, and the other two describe the file
+// that was read.
 type Config struct {
-	// Env selects runtime behaviour: gin mode, log format, strictness.
-	Env string
-	// Addr is the listen address, {{.EnvPrefix}}_ADDR, default :8080.
-	Addr string
-	// LogLevel is {{.EnvPrefix}}_LOG_LEVEL: debug, info, warn or error.
-	LogLevel string
+	Env     string `mapstructure:"-"`
+	Source  string `mapstructure:"-"`
+	KeyFile string `mapstructure:"-"`
+
+	// App is the {{.Name}}: section of the credentials file. The section name
+	// gives the environment-variable prefix: {{.Name}}.addr is overridden by
+	// {{.EnvPrefix}}_ADDR, so a value can move between the file and the
+	// environment without renaming anything.
+	App AppConfig `mapstructure:"{{.Name}}"`
+}
+
+// AppConfig is the service's own settings.
+type AppConfig struct {
+	// Addr is the listen address, default :8080.
+	Addr string `mapstructure:"addr"`
+	// LogLevel is debug, info, warn or error.
+	LogLevel string `mapstructure:"log_level"`
 	// ShutdownGrace is how long Start waits for in-flight requests on
-	// SIGTERM, {{.EnvPrefix}}_SHUTDOWN_GRACE, default 10s.
-	ShutdownGrace time.Duration
-	// DatabaseURL is {{.EnvPrefix}}_DATABASE_URL. Development and test default
-	// to the compose stack on 5440 and a database named after the
-	// environment, as database.yml would; production has no default.
-	DatabaseURL string
+	// SIGTERM, default 10s.
+	ShutdownGrace time.Duration `mapstructure:"shutdown_grace"`
+	// DatabaseURL points at the database. Development and test default to the
+	// compose stack on 5440 and a database named after the environment, as
+	// database.yml would; production has no default.
+	DatabaseURL string `mapstructure:"database_url"`
 	// MigrateAtBoot applies pending migrations before the server binds,
-	// {{.EnvPrefix}}_MIGRATE_AT_BOOT, default true. Set it to false only for
-	// a deployment that migrates from one place on purpose.
-	MigrateAtBoot bool
+	// default true. Set it to false only for a deployment that migrates from
+	// one place on purpose.
+	MigrateAtBoot bool `mapstructure:"migrate_at_boot"`
 }
 
 // Load reads configuration and validates it.
+//
+// Where it reads from, in order:
+//
+//   - test: the environment only. Tests must not depend on anyone's secrets,
+//     and the test database must never be the development one.
+//   - config/credentials/<{{.EnvPrefix}}_CREDENTIALS>.yml.enc with its own key
+//     beside it, if that file exists. Staging and production live here, each
+//     with a key that opens nothing else.
+//   - config/credentials.yml.enc with config/master.key: the shared file,
+//     which holds development.
+//   - nothing: the environment only, for a container configured entirely
+//     through its environment.
+//
+// Whichever applies, environment variables override the file.
 func Load() (Config, error) {
-	cfg := Config{
-		Env:      envOr("{{.EnvPrefix}}_ENV", EnvDevelopment),
-		Addr:     envOr("{{.EnvPrefix}}_ADDR", ":8080"),
-		LogLevel: envOr("{{.EnvPrefix}}_LOG_LEVEL", "info"),
+	env := envOr(EnvVar, EnvDevelopment)
+	credentialsEnv := envOr(CredentialsVar, env)
+
+	// Hand the deployment's key to the credentials reader under the name it
+	// looks for, without making every deployment learn that name.
+	if key := os.Getenv(MasterKeyVar); key != "" && os.Getenv(credentials.EnvKeyVar) == "" {
+		if err := os.Setenv(credentials.EnvKeyVar, key); err != nil {
+			return Config{}, fmt.Errorf("config: %w", err)
+		}
 	}
 
-	grace := envOr("{{.EnvPrefix}}_SHUTDOWN_GRACE", "10s")
-	d, err := time.ParseDuration(grace)
-	if err != nil {
-		return Config{}, fmt.Errorf("config: {{.EnvPrefix}}_SHUTDOWN_GRACE=%q is not a duration", grace)
+	cfg := Config{Env: env, App: defaults(env)}
+
+	dir := envOr(ConfigDirVar, "config")
+	scoped, scopedKey := credentials.EnvironmentPaths(dir, credentialsEnv)
+	shared, sharedKey := credentials.EnvironmentPaths(dir, "")
+
+	switch {
+	case env == EnvTest:
+		cfg.Source = "environment only (test never reads a credentials file)"
+		if err := applyEnv(&cfg.App); err != nil {
+			return Config{}, err
+		}
+
+	case exists(scoped), exists(shared):
+		cfg.Source, cfg.KeyFile = shared, sharedKey
+		if exists(scoped) {
+			cfg.Source, cfg.KeyFile = scoped, scopedKey
+		}
+		// Flat everywhere: the shared file holds one environment's settings
+		// exactly as a per-environment file does, so a key sits at the same
+		// depth wherever it is written. The reader applies environment
+		// overrides itself, so anything set in the environment still wins.
+		reader := credentials.NewConfigReader(dir)
+		reader.FlatShared = true
+		if err := reader.Read(credentialsEnv, &cfg); err != nil {
+			return Config{}, fmt.Errorf("config: %w", err)
+		}
+
+	default:
+		cfg.Source = "environment only (no credentials file)"
+		if err := applyEnv(&cfg.App); err != nil {
+			return Config{}, err
+		}
 	}
-	cfg.ShutdownGrace = d
 
-	cfg.DatabaseURL = envOr("{{.EnvPrefix}}_DATABASE_URL", defaultDatabaseURL(cfg.Env))
-
-	boot := envOr("{{.EnvPrefix}}_MIGRATE_AT_BOOT", "true")
-	cfg.MigrateAtBoot, err = strconv.ParseBool(boot)
-	if err != nil {
-		return Config{}, fmt.Errorf("config: {{.EnvPrefix}}_MIGRATE_AT_BOOT=%q is not a boolean", boot)
+	if os.Getenv(credentials.EnvKeyVar) != "" {
+		cfg.KeyFile = "from " + MasterKeyVar
 	}
 
 	return cfg, cfg.validate()
+}
+
+// defaults is what every environment starts from. The credentials file and the
+// environment change only what they name, so a key absent from both keeps its
+// default rather than becoming a zero value.
+func defaults(env string) AppConfig {
+	return AppConfig{
+		Addr:          ":8080",
+		LogLevel:      "info",
+		ShutdownGrace: 10 * time.Second,
+		DatabaseURL:   defaultDatabaseURL(env),
+		MigrateAtBoot: true,
+	}
 }
 
 // defaultDatabaseURL is the compose stack's database for the environment, and
@@ -89,20 +189,49 @@ func defaultDatabaseURL(env string) string {
 	}
 }
 
+// applyEnv is the no-credentials-file path: every setting straight from the
+// environment, under the same names the file's section would produce. A value
+// that does not parse is an error, never a silent fallback: the process would
+// boot and behave as though you never set it.
+func applyEnv(a *AppConfig) error {
+	a.Addr = envOr("{{.EnvPrefix}}_ADDR", a.Addr)
+	a.LogLevel = envOr("{{.EnvPrefix}}_LOG_LEVEL", a.LogLevel)
+	a.DatabaseURL = envOr("{{.EnvPrefix}}_DATABASE_URL", a.DatabaseURL)
+	if v := os.Getenv("{{.EnvPrefix}}_SHUTDOWN_GRACE"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return fmt.Errorf("config: {{.EnvPrefix}}_SHUTDOWN_GRACE=%q is not a duration", v)
+		}
+		a.ShutdownGrace = d
+	}
+	if v := os.Getenv("{{.EnvPrefix}}_MIGRATE_AT_BOOT"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return fmt.Errorf("config: {{.EnvPrefix}}_MIGRATE_AT_BOOT=%q is not a boolean", v)
+		}
+		a.MigrateAtBoot = b
+	}
+	return nil
+}
+
 func (c Config) validate() error {
 	if !slices.Contains(envs, c.Env) {
-		return fmt.Errorf("config: {{.EnvPrefix}}_ENV=%q; must be one of %v", c.Env, envs)
+		return fmt.Errorf("config: %s=%q; must be one of %v", EnvVar, c.Env, envs)
 	}
-	if !slices.Contains(logLevels, c.LogLevel) {
-		return fmt.Errorf("config: {{.EnvPrefix}}_LOG_LEVEL=%q; must be one of %v", c.LogLevel, logLevels)
+	a := c.App
+	if !slices.Contains(logLevels, a.LogLevel) {
+		return fmt.Errorf("config: {{.EnvPrefix}}_LOG_LEVEL=%q; must be one of %v", a.LogLevel, logLevels)
 	}
-	if c.Addr == "" {
+	if a.Addr == "" {
 		return fmt.Errorf("config: {{.EnvPrefix}}_ADDR is empty")
 	}
-	if c.DatabaseURL == "" {
+	if a.ShutdownGrace <= 0 {
+		return fmt.Errorf("config: {{.EnvPrefix}}_SHUTDOWN_GRACE must be a positive duration")
+	}
+	if a.DatabaseURL == "" {
 		return fmt.Errorf("config: {{.EnvPrefix}}_DATABASE_URL is required in %s", c.Env)
 	}
-	if _, err := url.Parse(c.DatabaseURL); err != nil {
+	if _, err := url.Parse(a.DatabaseURL); err != nil {
 		return fmt.Errorf("config: {{.EnvPrefix}}_DATABASE_URL: %w", err)
 	}
 	return nil
@@ -115,8 +244,9 @@ func (c Config) Production() bool { return c.Env == EnvProduction }
 // writer, because slog would escape the newlines into one unreadable line. A
 // failed write to stderr at boot has nowhere to be reported, so it is dropped.
 func (c Config) PrintTo(w io.Writer) {
-	_, _ = fmt.Fprintf(w, "{{.Name}}: env=%s addr=%s log_level=%s shutdown_grace=%s database=%s migrate_at_boot=%t\n",
-		c.Env, c.Addr, c.LogLevel, c.ShutdownGrace, redacted(c.DatabaseURL), c.MigrateAtBoot)
+	_, _ = fmt.Fprintf(w, "{{.Name}}: env=%s settings=%q key=%q\n", c.Env, c.Source, c.KeyFile)
+	_, _ = fmt.Fprintf(w, "{{.Name}}: addr=%s log_level=%s shutdown_grace=%s database=%s migrate_at_boot=%t\n",
+		c.App.Addr, c.App.LogLevel, c.App.ShutdownGrace, redacted(c.App.DatabaseURL), c.App.MigrateAtBoot)
 }
 
 // redacted hides the password in a URL; the boot log is not where it belongs.
@@ -126,6 +256,11 @@ func redacted(raw string) string {
 		return "(unparseable)"
 	}
 	return u.Redacted()
+}
+
+func exists(path string) bool {
+	_, err := os.Stat(filepath.Clean(path))
+	return err == nil
 }
 
 func envOr(key, fallback string) string {

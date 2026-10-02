@@ -79,6 +79,9 @@ func New(args []string, out io.Writer) error {
 	}); err != nil {
 		return fmt.Errorf("new: %w", err)
 	}
+	if err := writeCredentials(name, vars, *pretend, report); err != nil {
+		return err
+	}
 
 	if !*pretend && !*skipTidy {
 		say("%12s  go mod tidy\n", "run")

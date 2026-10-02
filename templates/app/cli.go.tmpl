@@ -47,8 +47,8 @@ func runMigrate(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	log := logger.New(cfg.LogLevel, cfg.Env)
-	url := cfg.DatabaseURL
+	log := logger.New(cfg.App.LogLevel, cfg.Env)
+	url := cfg.App.DatabaseURL
 
 	rest := args[1:]
 	confirmed := false
@@ -103,7 +103,9 @@ const dbUsage = `Usage: {{.Name}} db <command>
 Commands:
   create              create the database this environment points at
   drop --yes          DROP that database, and everything in it
-  prepare             create it if needed, then migrate it (rails db:prepare)
+  prepare             create if needed, migrate, seed (rails db:prepare)
+  seed                apply pending seeds from db/seeds
+  seed-down --yes     roll back the most recent seed
 
 Rails' db:create and db:drop. Both connect to the server's "postgres" database
 rather than the target, so they work before it exists and after it is gone,
@@ -130,8 +132,8 @@ func runDB(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	log := logger.New(cfg.LogLevel, cfg.Env)
-	url := cfg.DatabaseURL
+	log := logger.New(cfg.App.LogLevel, cfg.Env)
+	url := cfg.App.DatabaseURL
 
 	confirmed := false
 	for _, a := range args[1:] {
@@ -148,7 +150,19 @@ func runDB(ctx context.Context, args []string) error {
 		if err := database.Create(ctx, url, log); err != nil {
 			return err
 		}
-		return migrate.Run(ctx, url, log)
+		if err := migrate.Run(ctx, url, log); err != nil {
+			return err
+		}
+		return migrate.Seed(ctx, url, log)
+
+	case "seed":
+		return migrate.Seed(ctx, url, log)
+
+	case "seed-down":
+		if !confirmed {
+			return fmt.Errorf("db: seed-down deletes the most recent seed's rows; pass --yes to confirm")
+		}
+		return migrate.SeedDown(ctx, url, log)
 
 	case "drop":
 		// Not a --yes that production can also pass. A deployed database is

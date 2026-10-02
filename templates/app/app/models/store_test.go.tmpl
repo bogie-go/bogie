@@ -27,10 +27,10 @@ func testStore(t *testing.T) *Store {
 	}
 	ctx := context.Background()
 	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
-	if err := migrate.Run(ctx, cfg.DatabaseURL, quiet); err != nil {
+	if err := migrate.Run(ctx, cfg.App.DatabaseURL, quiet); err != nil {
 		t.Fatalf("migrate: %v\nIs the database up? Run: make up", err)
 	}
-	store, err := Open(ctx, cfg.DatabaseURL)
+	store, err := Open(ctx, cfg.App.DatabaseURL)
 	if err != nil {
 		t.Fatalf("%v\nIs the database up? Run: make up", err)
 	}

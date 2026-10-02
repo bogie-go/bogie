@@ -28,7 +28,7 @@ func (s *Server) welcome(c *gin.Context) {
 	_ = welcomePage.Execute(c.Writer, map[string]string{
 		"Name": "{{.Name}}",
 		"Env":  s.Config.Env,
-		"Addr": s.Config.Addr,
+		"Addr": s.Config.App.Addr,
 		"Go":   runtime.Version(),
 	})
 }

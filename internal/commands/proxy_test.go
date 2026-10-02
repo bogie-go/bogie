@@ -21,6 +21,7 @@ func TestPlan(t *testing.T) {
 		{"ci", nil, "bin/ci"},
 		{"db", []string{"create"}, "go run . db create"},
 		{"migrate", []string{"down", "--yes"}, "go run . migrate down --yes"},
+		{"credentials", []string{"edit", "-e", "production"}, "go tool credentials edit -e production"},
 	}
 	for _, c := range cases {
 		argv, err := plan(c.command, c.args)

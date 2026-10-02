@@ -278,7 +278,9 @@ bogie upgrade --pretend  the report only; nothing written
 ```
 
 Files the templates never produced are not touched, so everything `bogie g`
-and the user wrote is safe by construction. Templates render deterministically
+and the user wrote is safe by construction. That includes `config/master.key`
+and `config/credentials.yml.enc`, which `new` makes outside the templates
+because the key is random; `upgrade` never looks at them. Templates render deterministically
 from `(version, name, module)` and nothing else, which is what makes base
 reproducible; `new` must never consult the clock, the environment or the
 machine.
@@ -296,9 +298,18 @@ falls back to a two-way report with every differing file marked `conflict`.
 
 Both are carried over from kchat unchanged in shape:
 
-- Encrypted credentials, Rails pattern. `KCHAT_ENV`-style closed set controls
-  behaviour; a second variable selects *which* credentials file, so staging can
-  be "production strictness, staging secrets". Keys are gitignored.
+- Encrypted credentials, Rails pattern, via `bogie-go/credentials`. The
+  `<NAME>_ENV` closed set controls behaviour; `<NAME>_CREDENTIALS` selects
+  *which* credentials file, so staging is "production strictness, staging
+  secrets"; `<NAME>_MASTER_KEY` carries the key into a container. Keys are
+  gitignored. Every file is flat with one section named after the app, whose
+  keys give the environment-variable names. **Test never reads a credentials
+  file** (decided 2026-10-02): it runs from defaults and the environment, so
+  tests need nobody's secrets, `bin/ci` needs no key, and a store test can
+  never open the development database. `bogie new` generates
+  `config/master.key` and a sealed development file; staging and production
+  files are made by `make credentials ENV=<name>` when someone first needs
+  them, so the development key opens nothing else.
 - Kamal 2. `config/deploy.yml` is staging; production is an overlay reached with
   `-d production`. The container migrates itself at boot.
 
@@ -561,9 +572,8 @@ best metaphor for a scaffold, but a common word), **Ballast**, **Turnout**,
 - **M0 — decide.** ~~Name~~ (Bogie, §11); ~~claim the GitHub org~~; register
   the domain; ~~answers to §12.1–12.3~~ and ~~§12.10~~ (decided 2026-09-30);
   read geng and Autostrada; draft the launch essay (done, in review).
-- **M1 — skeleton.** Repo, `bogie new` producing an app that builds, migrates and
-  serves; `bin/ci` green. Done 2026-10-02 but for seeds and credentials, which
-  land with M2's first slice.
+- **M1 — skeleton.** Repo, `bogie new` producing an app that builds, migrates,
+  seeds, reads its credentials and serves; `bin/ci` green. **Done 2026-10-02.**
 - **M2 — generators.** `g migration`, `g model`, `g controller`, `g service`,
   `d`, markers, `doctor`, golden tests.
 - **M3 — agent layer.** `AGENTS.md`, recipes, `docs/FROM_RAILS.md`, a lint rule

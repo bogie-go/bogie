@@ -19,7 +19,7 @@ import (
 // the point: an unwired controller fails here, not in production.
 func testServer(env string) *Server {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	s := NewServer(config.Config{Env: env, Addr: ":0", LogLevel: "info"}, log)
+	s := NewServer(config.Config{Env: env, App: config.AppConfig{Addr: ":0", LogLevel: "info"}}, log)
 	s.Posts = posts_controller.NewServer(nil, log)
 	s.SetupRoutes()
 	return s

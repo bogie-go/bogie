@@ -66,6 +66,9 @@ func plan(command string, args []string) ([]string, error) {
 	case "db", "migrate":
 		// The app's own subcommands, exactly as the Makefile calls them.
 		argv = []string{"go", "run", ".", command}
+	case "credentials":
+		// The pinned credentials tool, from the app's own go.mod.
+		argv = []string{"go", "tool", "credentials"}
 	default:
 		return nil, fmt.Errorf("%s: not a command the app provides", command)
 	}

@@ -4,3 +4,12 @@
 *.test
 *.out
 .DS_Store
+
+# Encrypted credentials are committed; the keys that open them never are.
+config/master.key
+config/credentials/*.key
+
+# Not used: configuration is the credentials file plus real environment
+# variables. Ignored anyway so a stray one can never be committed.
+.env
+.env.*

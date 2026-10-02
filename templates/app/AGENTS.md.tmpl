@@ -12,7 +12,9 @@ layout. Underscored package names such as `posts_controller` are deliberate;
 
     make help           every task
     make up             postgres on :5440 (docker compose), healthy before it returns
-    make db-prepare     create + migrate, like rails db:prepare
+    make db-prepare     create + migrate + seed, like rails db:prepare
+    make db-seed        apply db/seeds through the binary; g_seed_<name> authors one
+    make credentials    edit the encrypted settings; ENV=production for that file
     make db-migrate     apply pending migrations; db-rollback, db-migrate-status, db-reset as in Rails
     make g_migration_<name>   author a migration (go tool goose)
     make server         run the HTTP server (go run . serve); migrates at boot
@@ -29,9 +31,27 @@ CI runs here, not on a hosted runner: `bin/ci` is the whole pipeline (Rails
 status on the commit. Run it before you push. Add a new check as one line at
 the bottom of `bin/ci`.
 
-Configuration is read from the environment, prefixed `{{.EnvPrefix}}_`.
-`{{.EnvPrefix}}_ENV` is a closed set: `development`, `test`, `production`.
-Staging is `production` behaviour with staging settings, never its own value.
+## Configuration
+
+Encrypted credentials, the Rails pattern, via `bogie-go/credentials`:
+committed ciphertext, keys never committed, environment variables override.
+
+    config/credentials.yml.enc            + config/master.key              development
+    config/credentials/staging.yml.enc    + config/credentials/staging.key
+    config/credentials/production.yml.enc + config/credentials/production.key
+
+`make credentials` edits development's; `make credentials ENV=production`
+edits that file with its own key. Every file is flat and has one section,
+`{{.Name}}:`, whose keys give the environment-variable names: `{{.Name}}.addr`
+is overridden by `{{.EnvPrefix}}_ADDR`.
+
+Two variables, deliberately separate: `{{.EnvPrefix}}_ENV` is a closed set,
+`development`, `test`, `production`, and selects behaviour; staging is
+`{{.EnvPrefix}}_ENV=production {{.EnvPrefix}}_CREDENTIALS=staging`, production
+strictness with staging secrets. In a container the key arrives as
+`{{.EnvPrefix}}_MASTER_KEY` and no key file exists. **Test never reads a
+credentials file**: it runs from defaults and the environment, so tests need
+nobody's secrets and can never open the development database.
 
 ## Layout
 
@@ -47,14 +67,15 @@ Staging is `production` behaviour with staging settings, never its own value.
       middlewares/               request id · logging · recover
       services/<name>/           ctx first, knows nothing about HTTP
       services/database/         db create and drop, through the maintenance database
-      services/migrate/          goose over the embedded migrations
+      services/migrate/          goose over the embedded migrations and seeds
       models/                    sqlc output plus the store
       views/                     wire contracts; domain structs never double as wire structs
       domain/                    THE DOMAIN; imports nothing third-party
-    config/                      env → validated struct, no globals
+    config/                      credentials file + env → validated struct, no globals
     db/
-      migrations.go              go:embed of migrate/*.sql
+      db.go                      go:embed of migrate/*.sql and seeds/*.sql
       migrate/                   goose SQL, timestamped; the example posts table to start
+      seeds/                     goose SQL in its own version table; development data
     lib/logger/
 
 Tests live beside the code they test, stdlib `testing` only.

@@ -22,8 +22,9 @@ Inside an app (found by its bogie.toml, from any subdirectory):
   test [PKGS]     run the tests     (go test -race -cover ./...)
   lint            gofmt, vet, golangci-lint
   ci              every check, locally, then sign off (bin/ci)
-  db CMD          create | drop --yes | prepare        (go run . db CMD)
+  db CMD          create | drop --yes | prepare | seed (go run . db CMD)
   migrate CMD     up | down --yes | status | version   (go run . migrate CMD)
+  credentials CMD edit | show | get [-e ENV]           (go tool credentials CMD)
 
   version         print the version
   help            this text
@@ -41,7 +42,7 @@ func main() {
 	switch os.Args[1] {
 	case "new":
 		err = commands.New(os.Args[2:], os.Stdout)
-	case "server", "test", "lint", "ci", "db", "migrate":
+	case "server", "test", "lint", "ci", "db", "migrate", "credentials":
 		err = commands.Proxy(os.Args[1], os.Args[2:], os.Stdout)
 	case "version":
 		fmt.Println(commands.Version)
