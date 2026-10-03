@@ -1,0 +1,60 @@
+name: Feature or design change
+description: Propose something Bogie should do, or a decision it should revisit.
+title: "[proposal] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Bogie's scope is deliberately narrow: **the Go service next to your Rails app**.
+        API-only, Postgres-only, one choice per concern, never a runtime dependency of
+        the app it generates. Its decisions and their reasoning are in
+        [docs/DESIGN.md](https://github.com/bogie-go/bogie/blob/main/docs/DESIGN.md).
+        A proposal that engages with that reasoning gets the most useful answer.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What were you trying to do in your Bogie app, and where did it get in the way?
+    validations:
+      required: true
+
+  - type: input
+    id: rails
+    attributes:
+      label: The Rails equivalent, if there is one
+      description: Bogie spells things the way Rails does. What would you type in Rails?
+      placeholder: "rails g mailer UserMailer welcome"
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose
+      description: Commands, generated files, and behaviour. Show the Rails-style output (`create` / `insert`) if it's a generator.
+    validations:
+      required: true
+
+  - type: textarea
+    id: glue
+    attributes:
+      label: Glue, then gaps
+      description: |
+        Is there an existing Go ecosystem tool for this that Bogie could wire in once?
+        If not, why is the gap big enough for Bogie to own?
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: design
+    attributes:
+      label: Design
+      options:
+        - label: This would change a decision recorded in docs/DESIGN.md (name the section below).
+        - label: I'd be willing to send a PR once the approach is agreed.
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: DESIGN.md section, alternatives you considered, prior art in other tools.

@@ -1,0 +1,15 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Rails → Bogie dictionary
+    url: https://github.com/bogie-go/bogie/blob/main/docs/FROM_RAILS.md
+    about: "Where each Rails thing lives in a Bogie app, and what has no equivalent. Check here before asking \"how do I…\"."
+  - name: Design and reasoning
+    url: https://github.com/bogie-go/bogie/blob/main/docs/DESIGN.md
+    about: Why Bogie is API-only, Postgres-only, Rails-shaped, and wires code with marker comments.
+  - name: Website
+    url: https://bogie-go.com
+    about: What Bogie is, in one page.
+  # Uncomment if Discussions is enabled:
+  # - name: Questions and ideas
+  #   url: https://github.com/bogie-go/bogie/discussions
+  #   about: Usage questions and open-ended ideas.

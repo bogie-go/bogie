@@ -1,0 +1,125 @@
+name: Bug report
+description: Something Bogie generated, or a command it ran, did the wrong thing.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Bogie is pre-release, maintained by one person, and every
+        report is read. The fields below are the ones needed to reproduce a problem
+        without going back and forth.
+
+  - type: input
+    id: version
+    attributes:
+      label: bogie version
+      description: Output of `bogie version`.
+      placeholder: v0.0.0-20261003054031-1f59c6f15edd
+    validations:
+      required: true
+
+  - type: input
+    id: go
+    attributes:
+      label: go version
+      description: Output of `go version`.
+      placeholder: go version go1.26.8 linux/amd64
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options:
+        - macOS
+        - Linux
+        - Windows (WSL)
+        - Windows (native)
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where does it go wrong?
+      options:
+        - bogie new
+        - bogie generate / g
+        - bogie destroy / d
+        - bogie doctor
+        - bogie app:update
+        - db:* tasks
+        - credentials:* tasks
+        - server / worker / test / lint
+        - bin/ci (the generated app's)
+        - bin/ci (Bogie's own, contributing)
+        - Generated code (builds, lints or behaves wrongly)
+        - Dockerfile / Kamal config
+        - Docs
+        - Something else
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: jobs
+    attributes:
+      label: App shape
+      options:
+        - label: The app was made with `--jobs` (River)
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The exact commands, starting from `bogie new` if you can.
+      placeholder: |
+        bogie new blog
+        cd blog && make up
+        bogie g model comment body:text post:references
+        ...
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: Full output, including any `create` / `insert` / `conflict` lines and errors.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: "`bogie doctor` output"
+      description: Run inside the app. Leave empty if the problem is with `bogie new` itself.
+      render: text
+
+  - type: textarea
+    id: toml
+    attributes:
+      label: "`bogie.toml`"
+      description: Shows which Bogie version generated the app. It holds no secrets.
+      render: toml
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I removed secrets from the output above (never paste `config/master.key` or decrypted credentials).
+          required: true
+        - label: I searched existing issues.
+          required: true
