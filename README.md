@@ -16,6 +16,8 @@ out of Gin, sqlc, goose, River and Kamal, with generators that also wire the cod
   -->
 </p>
 
+<p align="center"><img src="docs/assets/bogie-demo.gif" width="720" alt="Terminal demo, about 38 seconds: bogie new demoapp, make up to start Postgres, bogie g controller and bogie g scaffold post printing their create and insert lines, bogie db:prepare, bogie s, then curl calls that return a 501 stub from the new controller, create a post with a 201, and list it back"></p>
+
 ---
 
 Every Rails shop eventually needs one service that Rails is the wrong tool
@@ -48,14 +50,16 @@ app does not notice.
 go install github.com/bogie-go/bogie@latest
 ```
 
-You need **Go 1.25+** and **Docker with Compose v2**. The generated app runs
-its Postgres in Compose on port 5440, so it stays clear of the Rails app's 5432.
+You need **Docker with Compose v2** and **Go 1.26+**. The tool itself builds
+with Go 1.25, but the app it generates needs 1.26, because the pinned sqlc
+requires it. The generated app runs its Postgres in Compose on port 5440, so it
+stays clear of the Rails app's 5432.
 sqlc and goose are pinned in the generated app's `go.mod` under `tool`, so
 there is nothing else to install globally.
 
-Optional, for `bin/ci`:
-[golangci-lint v2](https://golangci-lint.run/) and
-`gh extension install basecamp/gh-signoff`.
+Required for `bin/ci`: [golangci-lint v2](https://golangci-lint.run/).
+Optional: `gh extension install basecamp/gh-signoff`, so a green run signs off
+the commit.
 
 > **Pre-release.** There is no tagged release yet, so `@latest` resolves to a
 > recent commit through the Go module proxy and can trail `main` by a few
@@ -81,6 +85,16 @@ curl -X POST localhost:8080/posts -H 'content-type: application/json' \
      -d '{"title":"Hello","body":"from Go"}'
 curl localhost:8080/posts
 ```
+
+Tests use their own database, `blog_test`. Create it once before `bogie test`:
+
+```sh
+BLOG_ENV=test bogie db:prepare    # the prefix is the app name, upper-cased: bogie new shop → SHOP_ENV
+bogie test
+```
+
+`bin/ci` rebuilds the test database itself. Postgres for every Bogie app listens
+on :5440, so run `make down` in one app before `make up` in another.
 
 `bogie g scaffold` prints what it did, the way Rails does:
 
