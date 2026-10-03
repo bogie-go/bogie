@@ -129,12 +129,13 @@ pushing; on a clean tree a green run signs off the commit.
   GoDaddy. Edit `index.html` there and push. In M5 it gets a `go-import`
   meta tag so `bogie-go.com/bogie` can be the vanity import path.
 - `bogie-go/credentials` changelog has no 1.4.0 entry; 1.5.0 is the path move.
-- Release steps, for M5: `bin/ci` green on a clean tree, `git tag v0.1.0 &&
-  git push --tags`, then the Homebrew formula in `bogie-go/homebrew-tap`
-  (`bogie.rb`, builds from the tag's tarball with `-X
-  github.com/bogie-go/bogie/internal/commands.version=#{version}`). Until
-  the tap exists, `go install github.com/bogie-go/bogie@latest` is the
-  install line and reports the tag it came from.
+- Release, for M5: `bin/release v0.1.0` from a clean, pushed `main`. It runs
+  `bin/ci` (green signs off), tags, pushes the tag, creates the GitHub
+  release, and writes the Homebrew formula to `../homebrew-tap/Formula/bogie.rb`
+  if that clone exists beside this repo, else prints it. Needs
+  `bogie-go/homebrew-tap` created first; then `brew install bogie-go/tap/bogie`.
+  Until the tag, `go install github.com/bogie-go/bogie@latest` is the install
+  line and reports the commit it came from.
 - `bogie version` reads the build: the release flag, or the module version
   Go stamped, which is the tag for `go install @vX.Y.Z` and
   `v0.0.0-<date>-<commit>` (`+dirty` if uncommitted) for a build from a
