@@ -129,6 +129,7 @@ Rails spelling, Rails layout, Go underneath:
 | `rails g controller posts index show` | `bogie g controller posts index show`, registered as it is written |
 | `namespace :admin` | `bogie g controller admin/reports`, a package per namespace |
 | `rails g job send_welcome` | `bogie g job send_welcome`, a River worker on the same Postgres |
+| `rails g authentication` | `bogie g authentication secret\|token\|api_key`: a middleware for a route group (shared secret, JWT bearer token, or hashed API key), its config and credentials entry, and a `WithSecret` / `WithUser` / `WithAPIKey` helper; you mount the routes it guards |
 | `rails db:migrate`, `db:rollback`, `db:seed` | the same words, run by the app's own binary |
 | `rails credentials:edit` | `bogie credentials:edit`: encrypted file, key never committed |
 | `rails s`, `rails t`, `bin/ci` | `bogie s`, `bogie t`, `bin/ci` |
@@ -206,7 +207,7 @@ Go service beside it to look and behave like something they already know.
 
 **Pre-release, single maintainer, MIT.** Working today: `bogie new` (with or
 without `--jobs`); `g`/`d` for `scaffold`, `model`, `migration`, `controller`,
-`service` and `job`; `doctor`; the `db:*` and `credentials:*` tasks; `server`,
+`service`, `job` and `authentication`; `doctor`; the `db:*` and `credentials:*` tasks; `server`,
 `worker`, `test`, `lint`, `ci`; and `app:update`.
 
 Known gaps:
