@@ -26,6 +26,12 @@ Rails. That one thing goes to Go. The first attempt usually goes badly, not
 because of Go, but because everything Rails decided for you is now yours to
 decide.
 
+**Why Bogie exists.** We needed parts of our system to handle what Rails
+doesn't do well, like heavy concurrency and high load, so we moved those
+parts to Go. But Go gives you so much freedom and so many choices that
+building the app itself was the hard part. Bogie brings Rails's convention
+over configuration to Go, so the Go side starts from decisions already made.
+
 Bogie makes those decisions the way Rails would, out of tools the Go
 ecosystem already ships, and builds only what has no equivalent: the
 `rails new`-style generator, and `rails g`-style generators that also
