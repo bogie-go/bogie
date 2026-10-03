@@ -10,13 +10,20 @@ import (
 	"{{.Module}}/config"
 )
 
+// dbHint names both things a fresh checkout is missing: Postgres itself, and
+// the test database, which db:prepare in development does not create.
+var dbHint = "Is the database up, and the test database created? Run: make up && " +
+	config.EnvVar + "=test bogie db:prepare (bin/ci does both)"
+
 // testStore opens the TEST database, migrates it, and empties every table, so
 // each test starts from nothing. The environment is forced to test here so
 // that `go test` run by hand in a development shell can never truncate
 // development data.
 //
-// It needs Postgres running: make up. There is no in-memory substitute on
-// purpose; a store test that does not touch the database tests nothing.
+// It needs Postgres running and the test database created: make up, then
+// {{.EnvPrefix}}_ENV=test bogie db:prepare once (bin/ci does both). There is
+// no in-memory substitute on purpose; a store test that does not touch the
+// database tests nothing.
 func testStore(t *testing.T) *Store {
 	t.Helper()
 	t.Setenv(config.EnvVar, config.EnvTest)
@@ -27,11 +34,11 @@ func testStore(t *testing.T) *Store {
 	ctx := context.Background()
 	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
 	if err := migrate.Run(ctx, cfg.App.DatabaseURL, quiet); err != nil {
-		t.Fatalf("migrate: %v\nIs the database up? Run: make up", err)
+		t.Fatalf("migrate: %v\n%s", err, dbHint)
 	}
 	store, err := Open(ctx, cfg.App.DatabaseURL)
 	if err != nil {
-		t.Fatalf("%v\nIs the database up? Run: make up", err)
+		t.Fatalf("%v\n%s", err, dbHint)
 	}
 	t.Cleanup(store.Close)
 
