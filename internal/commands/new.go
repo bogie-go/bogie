@@ -14,12 +14,9 @@ import (
 	"github.com/bogie-go/bogie/templates"
 )
 
-// Version is set by the release build and is "dev" otherwise.
-var Version = "dev"
-
-// LayoutVersion is written to the generated bogie.toml so a later
-// `bogie app:update` knows which templates produced the app.
-const LayoutVersion = "0.1.0"
+// The tool's version is what bogie.toml records, so a later `bogie
+// app:update` knows exactly which templates produced the app: see Version in
+// version.go.
 
 // A name becomes a Go module path segment, a package name, an env prefix and a
 // binary name, so it is held to the strictest of those.
@@ -72,7 +69,7 @@ func New(args []string, out io.Writer) error {
 		Name:          name,
 		Module:        *module,
 		EnvPrefix:     strings.ToUpper(name),
-		LayoutVersion: LayoutVersion,
+		LayoutVersion: Version(),
 		Jobs:          *jobs,
 		Mascot:        templates.MascotDataURI(),
 	}

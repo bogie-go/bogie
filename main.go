@@ -65,7 +65,7 @@ func main() {
 		"credentials:edit", "credentials:show", "credentials:get":
 		err = commands.Proxy(command, os.Args[2:], os.Stdout)
 	case "version":
-		fmt.Println(commands.Version)
+		fmt.Println(commands.Version())
 	case "help", "-h", "--help":
 		fmt.Print(usage)
 	default:

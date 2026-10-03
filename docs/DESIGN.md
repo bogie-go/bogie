@@ -384,9 +384,13 @@ machine.
 
 **When.** After the first tagged release; it needs two versions to exist.
 Two prerequisites land in M5 before that tag, or the first upgrade is
-impossible: the tool's version comes from the git tag at build time (ldflags),
-not the `"dev"` constant; and `bogie.toml` records that exact version, not a
-separate layout number. One version, one source of truth. A `"dev"` build
+impossible: the tool's version comes from the build, not a constant; and
+`bogie.toml` records that exact version, not a separate layout number. One
+version, one source of truth. Built 2026-10-03: a release build sets it with
+`-ldflags -X`, a `go install module@vX.Y.Z` carries it in the build info, and
+a build from a clone reports the pseudo-version Go stamps from the commit,
+`v0.0.0-<date>-<commit>` (`+dirty` with uncommitted changes), so even a
+development build's apps say which commit made them. A `dev` build with no tag to compare
 falls back to a two-way report with every differing file marked `conflict`.
 
 ---
