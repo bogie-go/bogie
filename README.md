@@ -211,9 +211,9 @@ without `--jobs`); `g`/`d` for `scaffold`, `model`, `migration`, `controller`,
 
 Known gaps:
 
-- No tagged release yet. `bogie app:update` (a three-way merge that moves an
-  app to the current templates, using the version recorded in `bogie.toml`)
-  is new and has had little real-world use.
+- `bogie app:update` (a three-way merge that moves an app to the current
+  templates, using the version recorded in `bogie.toml`) is new. v0.1.0 is the
+  first tag, so no app has yet been upgraded from one tagged release to the next.
 - `g controller` actions start as 501 stubs. Wiring a dependency into one is by
   hand (the comment above the `bogie:wire` marker shows the line).
 - One level of namespace. `api/v1/posts` is refused; a version is a route
