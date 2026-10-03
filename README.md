@@ -61,10 +61,9 @@ Required for `bin/ci`: [golangci-lint v2](https://golangci-lint.run/).
 Optional: `gh extension install basecamp/gh-signoff`, so a green run signs off
 the commit.
 
-> **Pre-release.** There is no tagged release yet, so `@latest` resolves to a
-> recent commit through the Go module proxy and can trail `main` by a few
-> commits. `bogie version` prints the commit you got. To be on `main`
-> exactly, clone the repo and run `go install .`.
+`@latest` is the newest tagged release, and `bogie version` prints it. For
+`main` as it stands, `go install github.com/bogie-go/bogie@main`; for a
+clone, `go install .`.
 
 ## Quickstart
 
@@ -205,7 +204,7 @@ Go service beside it to look and behave like something they already know.
 
 ## Status
 
-**Pre-release, single maintainer, MIT.** Working today: `bogie new` (with or
+**v0.1.0, single maintainer, MIT.** Working today: `bogie new` (with or
 without `--jobs`); `g`/`d` for `scaffold`, `model`, `migration`, `controller`,
 `service`, `job` and `authentication`; `doctor`; the `db:*` and `credentials:*` tasks; `server`,
 `worker`, `test`, `lint`, `ci`; and `app:update`.

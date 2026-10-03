@@ -23,6 +23,7 @@ you do not have to find them.
 | `rails g controller admin/reports` | `bogie g controller admin/reports` | A namespace is a package, `app/controllers/admin_controller/`. |
 | `rails g migration add_slug_to_posts slug:string` | `bogie g migration add_slug_to_posts slug:string` | SQL, not Ruby; `create_`, `add_x_to_`, `remove_x_from_` get their SQL written. |
 | `rails g job send_welcome` | `bogie g job send_welcome` | A River worker, registered; apps made with `--jobs`. |
+| `rails g authentication` | `bogie g authentication secret`, `token` or `api_key` | A middleware on a route group; the shape says who the caller is. |
 | (a service object, by hand) | `bogie g service publish_post` | A package with a `Run(ctx)`, not wired anywhere. |
 | `rails destroy ...`, `rails d` | `bogie destroy ...`, `bogie d` | Removes the registration lines too. |
 | `rails db:create` … `db:rollback` | the same words | `db:prepare`, `db:reset`, `db:seed`, `db:migrate:status`, `db:migrate:redo`, `db:version`. |
@@ -102,7 +103,8 @@ writes the column, the constraint and the index; `has_many :comments` is
 | `head :no_content` | `c.Status(http.StatusNoContent)` |
 | `validates :title, presence: true` | `func (p Post) Validate() error { ... return fmt.Errorf("%w: title is required", ErrInvalid) }` in `app/domain`; runs on save |
 | `rescue_from ActiveRecord::RecordNotFound` | `ctl.fail(c, err)`: `ErrNotFound` is 404, `ErrInvalid` is 422, anything else is a logged 500 |
-| `before_action :authenticate` | middleware on the group, in `routes.go`, so the exposure boundary is visible in one place |
+| `before_action :authenticate` | middleware on the group, in `routes.go`, so the exposure boundary is visible in one place; `bogie g authentication` writes it and a `WithUser` group helper |
+| `Current.user` | `middlewares.Subject(c)`, the verified token's subject; load the record if you need it |
 | `Post.find(id)` | `ctl.Store.GetPost(ctx, id)` |
 | `post.save` | `store.CreatePost(ctx, post)` or `store.UpdatePost(ctx, post)`; validation runs inside |
 | `SendWelcomeJob.perform_later(id)` | `app.Jobs.Insert(ctx, jobs.SendWelcomeArgs{ID: id}, nil)`; `InsertTx` inside a transaction |

@@ -1,0 +1,250 @@
+==> app/services/token/token.go
+// Package token mints and verifies the bearer tokens a signed-in user
+// presents. JWT, HS256, one shared secret: the Rails app next door can mint
+// a token for its user with the jwt gem and this service verifies it, so
+// users keep living in Rails, or this service mints its own from a sessions
+// controller. Nothing here knows about HTTP.
+package token
+
+import (
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
+)
+
+// ErrInvalid is a token that does not verify: wrong signature, wrong
+// issuer, malformed. ErrExpired is one that did, but too late.
+var (
+	ErrInvalid = errors.New("token: invalid")
+	ErrExpired = errors.New("token: expired")
+)
+
+// Maker holds the secret and the issuer every token must carry. The secret
+// is blog.token_secret in the credentials file (BLOG_TOKEN_SECRET in the environment), at
+// least 32 bytes; the issuer is the app's name, so a token minted for
+// another service with the same secret is still refused.
+type Maker struct {
+	Secret []byte
+	Issuer string
+}
+
+// Claims is what a verified token says.
+type Claims struct {
+	// Subject is who the token was minted for: the Rails user's id, usually.
+	Subject   string
+	ExpiresAt time.Time
+	// ID is the token's own id, for a revocation list if you keep one.
+	ID string
+}
+
+// Mint signs a token for subject that expires after ttl.
+func (m Maker) Mint(subject string, ttl time.Duration) (string, error) {
+	if subject == "" {
+		return "", fmt.Errorf("%w: empty subject", ErrInvalid)
+	}
+	now := time.Now()
+	claims := jwt.RegisteredClaims{
+		Issuer:    m.Issuer,
+		Subject:   subject,
+		IssuedAt:  jwt.NewNumericDate(now),
+		ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
+		ID:        uuid.NewString(),
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(m.Secret)
+}
+
+// Verify checks the signature, the issuer and the expiry, and returns the
+// claims. The method is pinned to HS256 so a token claiming "none" or an
+// asymmetric algorithm is refused before the key is consulted.
+func (m Maker) Verify(raw string) (Claims, error) {
+	var claims jwt.RegisteredClaims
+	_, err := jwt.ParseWithClaims(raw, &claims, func(*jwt.Token) (any, error) { return m.Secret, nil },
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+		jwt.WithIssuer(m.Issuer),
+		jwt.WithExpirationRequired(),
+	)
+	switch {
+	case errors.Is(err, jwt.ErrTokenExpired):
+		return Claims{}, ErrExpired
+	case err != nil:
+		return Claims{}, ErrInvalid
+	case claims.Subject == "":
+		return Claims{}, ErrInvalid
+	}
+	return Claims{Subject: claims.Subject, ExpiresAt: claims.ExpiresAt.Time, ID: claims.ID}, nil
+}
+==> app/services/token/token_test.go
+package token
+
+import (
+	"errors"
+	"testing"
+	"time"
+)
+
+var maker = Maker{Secret: []byte("a-test-secret-of-at-least-thirty-two-bytes"), Issuer: "test"}
+
+func TestMintThenVerify(t *testing.T) {
+	raw, err := maker.Mint("user-42", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims, err := maker.Verify(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claims.Subject != "user-42" || claims.ID == "" || time.Until(claims.ExpiresAt) <= 0 {
+		t.Errorf("claims = %+v", claims)
+	}
+}
+
+func TestVerifyRefuses(t *testing.T) {
+	expired, _ := maker.Mint("user-42", -time.Minute)
+	otherSecret, _ := Maker{Secret: []byte("another-secret-of-at-least-thirty-two-bytes"), Issuer: "test"}.Mint("user-42", time.Minute)
+	otherIssuer, _ := Maker{Secret: maker.Secret, Issuer: "someone-else"}.Mint("user-42", time.Minute)
+
+	for name, tc := range map[string]struct {
+		raw  string
+		want error
+	}{
+		"expired":        {expired, ErrExpired},
+		"another secret": {otherSecret, ErrInvalid},
+		"another issuer": {otherIssuer, ErrInvalid},
+		"garbage":        {"not.a.token", ErrInvalid},
+		"empty":          {"", ErrInvalid},
+	} {
+		if _, err := maker.Verify(tc.raw); !errors.Is(err, tc.want) {
+			t.Errorf("%s: err = %v, want %v", name, err, tc.want)
+		}
+	}
+	if _, err := maker.Mint("", time.Minute); err == nil {
+		t.Error("minted a token with no subject")
+	}
+}
+==> app/middlewares/require_user.go
+package middlewares
+
+import (
+	"net/http"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+
+	"example.com/blog/app/services/token"
+	"example.com/blog/app/views"
+)
+
+// userTokens is the slice of the token service this middleware uses,
+// declared here (rule 2). token.Maker satisfies it.
+type userTokens interface {
+	Verify(raw string) (token.Claims, error)
+}
+
+const subjectKey = "subject"
+
+// RequireUser guards routes for a signed-in user: a bearer token in the
+// Authorization header that the token service verifies. The token's subject
+// is then on the context for handlers, through Subject. Who the subject is,
+// a Rails user id usually, is for the caller and the handler to agree on;
+// nothing is loaded here.
+func RequireUser(tokens userTokens) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		raw, ok := strings.CutPrefix(c.GetHeader("Authorization"), "Bearer ")
+		if !ok || raw == "" {
+			c.Header("WWW-Authenticate", `Bearer realm="blog"`)
+			c.AbortWithStatusJSON(http.StatusUnauthorized, views.ErrorMessage("a bearer token is required"))
+			return
+		}
+		claims, err := tokens.Verify(raw)
+		if err != nil {
+			c.Header("WWW-Authenticate", `Bearer realm="blog", error="invalid_token"`)
+			c.AbortWithStatusJSON(http.StatusUnauthorized, views.Error(err))
+			return
+		}
+		c.Set(subjectKey, claims.Subject)
+		c.Next()
+	}
+}
+
+// Subject is who the request's token was minted for, or "" on a route that
+// RequireUser does not guard.
+func Subject(c *gin.Context) string { return c.GetString(subjectKey) }
+==> app/middlewares/require_user_test.go
+package middlewares
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/gin-gonic/gin"
+
+	"example.com/blog/app/services/token"
+)
+
+var testTokens = token.Maker{Secret: []byte("a-test-secret-of-at-least-thirty-two-bytes"), Issuer: "test"}
+
+func userRequest(t *testing.T, authorization string) *httptest.ResponseRecorder {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/me", RequireUser(testTokens), func(c *gin.Context) { c.String(http.StatusOK, Subject(c)) })
+	req := httptest.NewRequest(http.MethodGet, "/me", nil)
+	if authorization != "" {
+		req.Header.Set("Authorization", authorization)
+	}
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestRequireUser(t *testing.T) {
+	good, _ := testTokens.Mint("user-42", time.Minute)
+	expired, _ := testTokens.Mint("user-42", -time.Minute)
+
+	if rec := userRequest(t, "Bearer "+good); rec.Code != http.StatusOK || rec.Body.String() != "user-42" {
+		t.Errorf("good token: %d %q", rec.Code, rec.Body.String())
+	}
+	for name, header := range map[string]string{
+		"none": "", "expired": "Bearer " + expired, "garbage": "Bearer nope", "wrong scheme": "Basic " + good,
+	} {
+		if rec := userRequest(t, header); rec.Code != http.StatusUnauthorized {
+			t.Errorf("%s: %d, want 401", name, rec.Code)
+		}
+	}
+}
+==> app/controllers/authentication_token.go
+package controllers
+
+import (
+	"github.com/gin-gonic/gin"
+
+	"example.com/blog/app/middlewares"
+	"example.com/blog/app/services/token"
+)
+
+// Tokens is the token maker for this app: the secret from config
+// (blog.token_secret in the credentials file, BLOG_TOKEN_SECRET in the environment) and the
+// app's name as issuer. A sessions controller that signs users in here mints
+// with it; a Rails app that signs them in mints the same token with the jwt
+// gem and the same secret:
+//
+//	JWT.encode({ iss: "blog", sub: user.id.to_s, iat: Time.now.to_i, exp: 15.minutes.from_now.to_i, jti: SecureRandom.uuid },
+//	           Rails.application.credentials.blog_token_secret, "HS256")
+func (s *Server) Tokens() token.Maker {
+	return token.Maker{Secret: []byte(s.Config.App.TokenSecret), Issuer: "blog"}
+}
+
+// WithUser is the route group a signed-in user is required for. Mount a
+// controller here instead of on the router, in routes.go:
+//
+//	s.Posts.SetupRoutes(s.WithUser(&r.RouterGroup))
+//
+// and in a handler, middlewares.Subject(c) is the token's subject.
+func (s *Server) WithUser(r *gin.RouterGroup) *gin.RouterGroup {
+	return r.Group("", middlewares.RequireUser(s.Tokens()))
+}

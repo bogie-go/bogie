@@ -63,6 +63,12 @@ func TestPlanUnknownTaskNamesTheNearest(t *testing.T) {
 	if _, err := plan("deploy", nil); err == nil {
 		t.Error("plan(deploy) succeeded; the app has no such command")
 	}
+	// A colon task outside Bogie's own families is the binary's: a
+	// generator may have added it.
+	steps, err := plan("api_keys:create", []string{"billing"})
+	if err != nil || joined(steps) != "go run . api_keys create billing" {
+		t.Errorf("api_keys:create = %q, %v", joined(steps), err)
+	}
 }
 
 // Appending args must not mutate the shared task table.

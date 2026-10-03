@@ -1,0 +1,502 @@
+==> db/migrate/20261002093000_create_api_keys.sql
+-- +goose Up
+CREATE TABLE api_keys (
+    id         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+    name       text        NOT NULL DEFAULT '',
+    prefix     text        NOT NULL DEFAULT '' UNIQUE,
+    digest     text        NOT NULL DEFAULT '',
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- +goose Down
+DROP TABLE api_keys;
+==> db/queries/api_keys.sql
+-- name: GetApiKey :one
+SELECT * FROM api_keys WHERE id = $1;
+
+-- name: ListApiKeys :many
+SELECT * FROM api_keys ORDER BY created_at DESC, id DESC LIMIT $1;
+
+-- name: CreateApiKey :one
+INSERT INTO api_keys (name, prefix, digest) VALUES ($1, $2, $3) RETURNING *;
+
+-- name: UpdateApiKey :one
+UPDATE api_keys SET name = $2, prefix = $3, digest = $4, updated_at = now() WHERE id = $1 RETURNING *;
+
+-- name: DeleteApiKey :execrows
+DELETE FROM api_keys WHERE id = $1;
+
+-- name: GetApiKeyByPrefix :one
+SELECT * FROM api_keys WHERE prefix = $1;
+==> app/domain/api_key.go
+package domain
+
+import (
+	"time"
+)
+
+// ApiKey is a api_key. Imports nothing third-party: ids are strings here and
+// become uuid at the store boundary.
+type ApiKey struct {
+	ID        string
+	Name      string
+	Prefix    string
+	Digest    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// Validate is the model's validations, as Rails would put them. Wrap every
+// failure in ErrInvalid so a controller can answer 422 without knowing the
+// rule:
+//
+//	return fmt.Errorf("%w: title is required", ErrInvalid)
+func (a ApiKey) Validate() error {
+	return nil
+}
+==> app/models/api_keys.go
+package models
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/jackc/pgx/v5"
+
+	"example.com/blog/app/domain"
+)
+
+// ApiKeys, as the domain sees them. Each method converts domain.ApiKey to and from
+// the row type sqlc generated, and maps pgx's "no rows" to domain.ErrNotFound
+// so callers never import pgx to ask a question.
+
+// CreateApiKey validates a api_key, inserts it, and returns it with its id and
+// timestamps. Validation runs on save, as Rails's does, so every caller
+// gets it and none can forget it.
+func (s *Store) CreateApiKey(ctx context.Context, a domain.ApiKey) (domain.ApiKey, error) {
+	if err := a.Validate(); err != nil {
+		return domain.ApiKey{}, err
+	}
+	row, err := s.q.CreateApiKey(ctx, CreateApiKeyParams{Name: a.Name, Prefix: a.Prefix, Digest: a.Digest})
+	if err != nil {
+		return domain.ApiKey{}, fmt.Errorf("models: create api_key: %w", err)
+	}
+	return api_keyFromRow(row), nil
+}
+
+// GetApiKey finds one api_key. An id that is not a uuid is simply not found.
+func (s *Store) GetApiKey(ctx context.Context, id string) (domain.ApiKey, error) {
+	uid, err := parseUUID(id)
+	if err != nil {
+		return domain.ApiKey{}, domain.ErrNotFound
+	}
+	row, err := s.q.GetApiKey(ctx, uid)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return domain.ApiKey{}, domain.ErrNotFound
+	case err != nil:
+		return domain.ApiKey{}, fmt.Errorf("models: get api_key %s: %w", id, err)
+	}
+	return api_keyFromRow(row), nil
+}
+
+// ListApiKeys returns the newest api_keys first, at most limit of them.
+func (s *Store) ListApiKeys(ctx context.Context, limit int32) ([]domain.ApiKey, error) {
+	rows, err := s.q.ListApiKeys(ctx, limit)
+	if err != nil {
+		return nil, fmt.Errorf("models: list api_keys: %w", err)
+	}
+	out := make([]domain.ApiKey, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, api_keyFromRow(r))
+	}
+	return out, nil
+}
+
+// UpdateApiKey validates a api_key, writes its columns, and returns the stored row.
+func (s *Store) UpdateApiKey(ctx context.Context, a domain.ApiKey) (domain.ApiKey, error) {
+	if err := a.Validate(); err != nil {
+		return domain.ApiKey{}, err
+	}
+	uid, err := parseUUID(a.ID)
+	if err != nil {
+		return domain.ApiKey{}, domain.ErrNotFound
+	}
+	row, err := s.q.UpdateApiKey(ctx, UpdateApiKeyParams{ID: uid, Name: a.Name, Prefix: a.Prefix, Digest: a.Digest})
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return domain.ApiKey{}, domain.ErrNotFound
+	case err != nil:
+		return domain.ApiKey{}, fmt.Errorf("models: update api_key %s: %w", a.ID, err)
+	}
+	return api_keyFromRow(row), nil
+}
+
+// DeleteApiKey removes a api_key, and says so if there was none.
+func (s *Store) DeleteApiKey(ctx context.Context, id string) error {
+	uid, err := parseUUID(id)
+	if err != nil {
+		return domain.ErrNotFound
+	}
+	n, err := s.q.DeleteApiKey(ctx, uid)
+	if err != nil {
+		return fmt.Errorf("models: delete api_key %s: %w", id, err)
+	}
+	if n == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+func api_keyFromRow(r ApiKey) domain.ApiKey {
+	return domain.ApiKey{
+		ID:        uuidString(r.ID),
+		Name:      r.Name,
+		Prefix:    r.Prefix,
+		Digest:    r.Digest,
+		CreatedAt: r.CreatedAt.Time,
+		UpdatedAt: r.UpdatedAt.Time,
+	}
+}
+
+// GetApiKeyByPrefix finds the key a presented "<prefix>.<secret>" names, by
+// its prefix; the service compares the secret against the digest.
+func (s *Store) GetApiKeyByPrefix(ctx context.Context, prefix string) (domain.ApiKey, error) {
+	row, err := s.q.GetApiKeyByPrefix(ctx, prefix)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return domain.ApiKey{}, domain.ErrNotFound
+	case err != nil:
+		return domain.ApiKey{}, fmt.Errorf("models: get api key by prefix: %w", err)
+	}
+	return api_keyFromRow(row), nil
+}
+==> app/models/api_keys_test.go
+package models
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"example.com/blog/app/domain"
+)
+
+// Whatever the id looks like, a api_key that is not there is ErrNotFound, and a
+// caller cannot tell a malformed id from a well-formed one that names nothing.
+func TestUnknownApiKeysAreNotFound(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+
+	for _, id := range []string{"nope", "", "00000000-0000-4000-8000-000000000000"} {
+		if _, err := store.GetApiKey(ctx, id); !errors.Is(err, domain.ErrNotFound) {
+			t.Errorf("GetApiKey(%q): err = %v, want ErrNotFound", id, err)
+		}
+		if err := store.DeleteApiKey(ctx, id); !errors.Is(err, domain.ErrNotFound) {
+			t.Errorf("DeleteApiKey(%q): err = %v, want ErrNotFound", id, err)
+		}
+		if _, err := store.UpdateApiKey(ctx, domain.ApiKey{ID: id}); !errors.Is(err, domain.ErrNotFound) {
+			t.Errorf("UpdateApiKey(%q): err = %v, want ErrNotFound", id, err)
+		}
+	}
+}
+
+// TODO: a round trip. Create a api_key with real values, Get it, List it,
+// Update it, Delete it; see posts_test.go for the shape.
+==> app/services/api_keys/api_keys.go
+// Package api_keys makes and checks the keys machine clients present: a
+// public prefix that finds the row and a secret that is stored only as a
+// bcrypt digest, so the table leaks nothing if it leaks. A key is shown in
+// full once, when it is made. Nothing here knows about HTTP.
+package api_keys
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"strings"
+
+	"golang.org/x/crypto/bcrypt"
+
+	"example.com/blog/app/domain"
+)
+
+// ErrInvalid is a presented key that names no row or does not match it;
+// a caller cannot tell the two apart.
+var ErrInvalid = errors.New("api key: invalid")
+
+// store is the slice of the store this service uses (rule 2).
+type store interface {
+	CreateApiKey(ctx context.Context, k domain.ApiKey) (domain.ApiKey, error)
+	GetApiKeyByPrefix(ctx context.Context, prefix string) (domain.ApiKey, error)
+}
+
+// Service makes and verifies keys.
+type Service struct {
+	Store store
+}
+
+// New builds the service.
+func New(s store) *Service { return &Service{Store: s} }
+
+// Create makes a key for name and returns it in full, "<prefix>.<secret>",
+// the only time the secret is ever seen; and the row that was stored.
+func (s *Service) Create(ctx context.Context, name string) (string, domain.ApiKey, error) {
+	prefix, err := random(6)
+	if err != nil {
+		return "", domain.ApiKey{}, err
+	}
+	secret, err := random(24)
+	if err != nil {
+		return "", domain.ApiKey{}, err
+	}
+	digest, err := bcrypt.GenerateFromPassword([]byte(secret), bcrypt.DefaultCost)
+	if err != nil {
+		return "", domain.ApiKey{}, fmt.Errorf("api keys: digest: %w", err)
+	}
+	key, err := s.Store.CreateApiKey(ctx, domain.ApiKey{Name: name, Prefix: prefix, Digest: string(digest)})
+	if err != nil {
+		return "", domain.ApiKey{}, err
+	}
+	return prefix + "." + secret, key, nil
+}
+
+// Verify checks a presented key and returns the row it names.
+func (s *Service) Verify(ctx context.Context, presented string) (domain.ApiKey, error) {
+	prefix, secret, ok := strings.Cut(presented, ".")
+	if !ok || prefix == "" || secret == "" {
+		return domain.ApiKey{}, ErrInvalid
+	}
+	key, err := s.Store.GetApiKeyByPrefix(ctx, prefix)
+	if err != nil {
+		return domain.ApiKey{}, ErrInvalid
+	}
+	if bcrypt.CompareHashAndPassword([]byte(key.Digest), []byte(secret)) != nil {
+		return domain.ApiKey{}, ErrInvalid
+	}
+	return key, nil
+}
+
+func random(n int) (string, error) {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("api keys: random: %w", err)
+	}
+	return hex.EncodeToString(b), nil
+}
+==> app/services/api_keys/api_keys_test.go
+package api_keys
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"example.com/blog/app/domain"
+)
+
+// fakeStore keeps keys in memory, by prefix.
+type fakeStore struct{ keys map[string]domain.ApiKey }
+
+func (f *fakeStore) CreateApiKey(_ context.Context, k domain.ApiKey) (domain.ApiKey, error) {
+	k.ID = "id-" + k.Prefix
+	f.keys[k.Prefix] = k
+	return k, nil
+}
+
+func (f *fakeStore) GetApiKeyByPrefix(_ context.Context, prefix string) (domain.ApiKey, error) {
+	k, ok := f.keys[prefix]
+	if !ok {
+		return domain.ApiKey{}, domain.ErrNotFound
+	}
+	return k, nil
+}
+
+func TestCreateThenVerify(t *testing.T) {
+	svc := New(&fakeStore{keys: map[string]domain.ApiKey{}})
+	ctx := context.Background()
+
+	presented, made, err := svc.Create(ctx, "billing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if made.Name != "billing" || made.Digest == "" || made.Digest == presented {
+		t.Errorf("stored %+v for key %q", made, presented)
+	}
+	got, err := svc.Verify(ctx, presented)
+	if err != nil || got.ID != made.ID {
+		t.Errorf("Verify = %+v, %v", got, err)
+	}
+	for name, bad := range map[string]string{
+		"wrong secret": made.Prefix + ".nope",
+		"wrong prefix": "nope." + presented[len(made.Prefix)+1:],
+		"no dot":       "nope",
+		"empty":        "",
+	} {
+		if _, err := svc.Verify(ctx, bad); !errors.Is(err, ErrInvalid) {
+			t.Errorf("%s: err = %v, want ErrInvalid", name, err)
+		}
+	}
+}
+==> app/middlewares/require_api_key.go
+package middlewares
+
+import (
+	"context"
+	"net/http"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+
+	"example.com/blog/app/domain"
+	"example.com/blog/app/views"
+)
+
+// apiKeys is the slice of the api_keys service this middleware uses,
+// declared here (rule 2).
+type apiKeys interface {
+	Verify(ctx context.Context, presented string) (domain.ApiKey, error)
+}
+
+const apiKeyNameKey = "api_key"
+
+// RequireAPIKey guards routes for a machine client: a key made by
+// "blog api_keys create NAME", presented as a bearer token. The key's name
+// is then on the context for handlers, through APIKeyName.
+func RequireAPIKey(keys apiKeys) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		raw, ok := strings.CutPrefix(c.GetHeader("Authorization"), "Bearer ")
+		if !ok || raw == "" {
+			c.Header("WWW-Authenticate", `Bearer realm="blog"`)
+			c.AbortWithStatusJSON(http.StatusUnauthorized, views.ErrorMessage("an api key is required"))
+			return
+		}
+		key, err := keys.Verify(c.Request.Context(), raw)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, views.ErrorMessage("invalid api key"))
+			return
+		}
+		c.Set(apiKeyNameKey, key.Name)
+		c.Next()
+	}
+}
+
+// APIKeyName is the name of the key the request presented, or "" on a route
+// that RequireAPIKey does not guard.
+func APIKeyName(c *gin.Context) string { return c.GetString(apiKeyNameKey) }
+==> app/middlewares/require_api_key_test.go
+package middlewares
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+
+	"example.com/blog/app/domain"
+)
+
+type fakeAPIKeys struct{}
+
+func (fakeAPIKeys) Verify(_ context.Context, presented string) (domain.ApiKey, error) {
+	if presented == "good.key" {
+		return domain.ApiKey{Name: "billing"}, nil
+	}
+	return domain.ApiKey{}, errors.New("invalid")
+}
+
+func apiKeyRequest(t *testing.T, authorization string) *httptest.ResponseRecorder {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/guarded", RequireAPIKey(fakeAPIKeys{}), func(c *gin.Context) { c.String(http.StatusOK, APIKeyName(c)) })
+	req := httptest.NewRequest(http.MethodGet, "/guarded", nil)
+	if authorization != "" {
+		req.Header.Set("Authorization", authorization)
+	}
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestRequireAPIKey(t *testing.T) {
+	if rec := apiKeyRequest(t, "Bearer good.key"); rec.Code != http.StatusOK || rec.Body.String() != "billing" {
+		t.Errorf("good key: %d %q", rec.Code, rec.Body.String())
+	}
+	for name, header := range map[string]string{"none": "", "wrong": "Bearer bad.key", "wrong scheme": "Basic good.key"} {
+		if rec := apiKeyRequest(t, header); rec.Code != http.StatusUnauthorized {
+			t.Errorf("%s: %d, want 401", name, rec.Code)
+		}
+	}
+}
+==> app/controllers/authentication_api_key.go
+package controllers
+
+import (
+	"github.com/gin-gonic/gin"
+
+	"example.com/blog/app/middlewares"
+)
+
+// WithAPIKey is the route group a machine client's key is required for.
+// Keys are made with `blog api_keys create NAME` (bogie api_keys:create NAME)
+// and presented as a bearer token. Mount a controller here instead of on
+// the router, in routes.go:
+//
+//	s.Reports.SetupRoutes(s.WithAPIKey(&r.RouterGroup))
+//
+// and in a handler, middlewares.APIKeyName(c) says which key it was.
+func (s *Server) WithAPIKey(r *gin.RouterGroup) *gin.RouterGroup {
+	return r.Group("", middlewares.RequireAPIKey(s.APIKeys))
+}
+==> cli_api_keys.go
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+
+	"example.com/blog/app/models"
+	"example.com/blog/app/services/api_keys"
+	"example.com/blog/config"
+)
+
+const apiKeysUsage = `Usage: blog api_keys create NAME
+
+Makes an api key for a machine client and prints it, the only time it is
+shown in full. The client presents it as a bearer token on the routes
+mounted under WithAPIKey. The table keeps a bcrypt digest, never the key.
+Spelled the Rails way through the tool: bogie api_keys:create NAME
+`
+
+// runAPIKeys handles `blog api_keys ...`.
+func runAPIKeys(ctx context.Context, args []string) error {
+	if len(args) != 2 || args[0] != "create" {
+		fmt.Fprint(os.Stderr, apiKeysUsage)
+		return fmt.Errorf("api_keys: create NAME is the one command")
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	store, err := models.Open(ctx, cfg.App.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	key, made, err := api_keys.New(store).Create(ctx, args[1])
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "api key %q made (%s); it is shown once:\n", made.Name, made.ID)
+	fmt.Println(key)
+	return nil
+}

@@ -1,7 +1,7 @@
 # Status
 
 Where Bogie stands, for whoever picks it up next, on whatever machine. Updated
-2026-10-03, on top of commit `1be0831`. `docs/DESIGN.md` is the design and the
+2026-10-03, at v0.1.0. `docs/DESIGN.md` is the design and the
 reasoning; this file is the state.
 
 ## Milestones
@@ -13,13 +13,14 @@ reasoning; this file is the state.
 | M2 generators: `g`/`d` for migration, model, controller, service, job; markers; `doctor`; golden and marker-removal tests; `--jobs` with River | **done** |
 | M3 agent layer: fuller `AGENTS.md`, `docs/FROM_RAILS.md`, a test that catches an unregistered controller | **done** 2026-10-03: `g scaffold`, `FROM_RAILS.md`, `doctor` as the registration check, and `AGENTS.md` with recipes for a dependency, a query, tests and troubleshooting |
 | M4 dogfood: regenerate kchat's skeleton and diff | **done** 2026-10-03; found the Dockerfile and Kamal config missing, added them |
-| M5 publish: version from the git tag, first release, launch | version done; `bin/release` ready; needs the essay and the tag. No Homebrew tap, decided 2026-10-03: `go install` is the one install |
+| M5 publish: version from the git tag, first release, launch | **v0.1.0 tagged 2026-10-03** with `bin/release`. No Homebrew tap, decided the same day: `go install` is the one install. The launch essay remains |
 | M6 `app:update`: three-way merge against the version in `bogie.toml` | **done** 2026-10-03; tested across two of the day's commits |
 
 ## What works today
 
-Install: `cd bogie && go install .` (until there is a tagged release; `@latest`
-through the module proxy can lag behind main).
+Install: `go install github.com/bogie-go/bogie@latest` for the newest tag,
+`@main` for main, `go install .` from a clone. First release: v0.1.0,
+2026-10-03.
 
     bogie new NAME [--module=PATH] [--jobs]      an empty service, as rails new makes: it
                                                  builds, migrates, reads its credentials,
@@ -41,6 +42,10 @@ through the module proxy can lag behind main).
                                                       written and registered on first use
     bogie g service publish_post
     bogie g job send_welcome                          apps made with --jobs
+    bogie g authentication secret|token|api_key       a middleware on a route group, its config
+                                                      keys wired and a development secret written
+                                                      to the credentials; api_key adds a table
+                                                      and `bogie api_keys:create NAME`
     bogie d <generator> NAME                          reverses any of the above
     bogie doctor                                      markers once each, tools pinned, layout
                                                       files, every controller and namespace
@@ -92,7 +97,8 @@ pushing; on a clean tree a green run signs off the commit.
 - Generators are pure in `internal/generate` (clock passed in) and pinned by
   golden files: `go test ./internal/generate -update` rewrites them after an
   intended change; review the diff.
-- Markers (`// bogie:controllers`, `bogie:wire`, `bogie:routes`, `bogie:jobs`)
+- Markers (`// bogie:controllers`, `bogie:wire`, `bogie:routes`, `bogie:jobs`,
+  `bogie:config`, `bogie:env`, `bogie:validate`, `bogie:commands`)
   are edited by `internal/markers`: insert above, idempotent, import added,
   file formatted with `go/format`; every marker checked before any file is
   written. A namespace package carries its own `controllers` and `routes`

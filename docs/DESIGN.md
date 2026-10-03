@@ -172,6 +172,7 @@ Commands, v1:
     bogie g scaffold post title:string body:text   # model + views + a wired controller
     bogie g controller posts index show create
     bogie g service publish_post
+    bogie g authentication secret|token|api_key   # a middleware on a route group, with its config
     bogie d controller posts            # destroy what g created
     bogie server | worker | test | lint
     bogie db:create | db:drop | db:prepare | db:reset | db:seed
@@ -309,6 +310,30 @@ one place the tool pluralizes; `g controller` uses the name as typed. A
 service is for logic that is not CRUD, and `g service` is there when a
 resource outgrows the store. One level: no namespace in v1, and a scaffold
 over an existing model is reported as a conflict rather than merged.
+
+**`g authentication`, built 2026-10-03.** Rails 8 has `rails g
+authentication`; Bogie's takes a shape, because the two reference services
+needed three different things and all of them were a middleware on a route
+group. `secret` is kchat's control secret: a header, constant-time
+compared, with a Basic fallback for a browser, for the Rails app calling
+this service. `token` is line-connect's user sessions, as JWT HS256 rather
+than PASETO: line-connect reached for JWT every time it had to talk to
+another system, and with HS256 the Rails app mints the token with the `jwt`
+gem and this service verifies, so users keep living in Rails. `api_key` is
+line-connect's applications table: a public prefix, a bcrypt digest, a key
+shown once by `api_keys create`. Each shape writes the middleware and its
+test, a `WithSecret`, `WithUser` or `WithAPIKey` group helper on the root
+`Server`, and registers its config in `config/config.go` above three new
+markers (`bogie:config`, `bogie:env`, `bogie:validate`): the field, the
+environment override, and a check that refuses to boot in production
+without the secret. The development value is written into the credentials
+file by the generator, so the app boots as before; staging and production
+are given theirs by hand. `api_key` also registers a subcommand in
+`main.go` above `bogie:commands`, which `bogie api_keys:create NAME`
+reaches through the proxy's rule that any other colon task is one of the
+binary's own. Applying the guard is one edit by hand, mounting a controller
+on the group instead of the router, because that line is the exposure
+boundary and belongs in `routes.go` where it can be read.
 
 The file rule is one sentence: one file per Rails controller, one package per
 Rails namespace. kchat's `conversations.go` already obeys it; "one file per
