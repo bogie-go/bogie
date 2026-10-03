@@ -34,6 +34,7 @@ func (s *Server) SetupRoutes() {
 	//
 	// bogie:routes
 
-	// Development only, and only while nothing above claims /.
+	// Development only, and only while nothing above claims /. Goes with
+	// app/controllers/welcome.go: delete both together.
 	s.mountWelcome()
 }

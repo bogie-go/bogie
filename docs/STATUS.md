@@ -14,7 +14,7 @@ reasoning; this file is the state.
 | M3 agent layer: fuller `AGENTS.md`, `docs/FROM_RAILS.md`, a test that catches an unregistered controller | **done** 2026-10-03: `g scaffold`, `FROM_RAILS.md`, `doctor` as the registration check, and `AGENTS.md` with recipes for a dependency, a query, tests and troubleshooting |
 | M4 dogfood: regenerate kchat's skeleton and diff | **done** 2026-10-03; found the Dockerfile and Kamal config missing, added them |
 | M5 publish: version from the git tag, Homebrew tap, first release, launch | version done; `bin/release` ready; needs the tap repo, the essay and the tag |
-| M6 `app:update`: three-way merge against the version in `bogie.toml` | after the first tag |
+| M6 `app:update`: three-way merge against the version in `bogie.toml` | **done** 2026-10-03; tested across two of the day's commits |
 
 ## What works today
 
@@ -45,6 +45,8 @@ through the module proxy can lag behind main).
     bogie doctor                                      markers once each, tools pinned, layout
                                                       files, every controller and namespace
                                                       constructed and mounted
+    bogie app:update [--pretend]                      three-way merge to this Bogie's layout,
+                                                      base rendered by the recorded version
 
 Every command is spelled as Rails spells it; the app's own binary uses spaces
 (`blog db prepare`) and the tool accepts that too. `bogie help` is the

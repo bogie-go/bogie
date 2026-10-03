@@ -382,9 +382,20 @@ from `(version, name, module)` and nothing else, which is what makes base
 reproducible; `new` must never consult the clock, the environment or the
 machine.
 
-**When.** After the first tagged release; it needs two versions to exist.
-Two prerequisites land in M5 before that tag, or the first upgrade is
-impossible: the tool's version comes from the build, not a constant; and
+**Built 2026-10-03**, before the first tag after all: the module proxy serves
+any pushed commit as a pseudo-version, so base is `go run bogie@<recorded>
+new` for a development build's app too, and the first real run updated an
+app from the morning's commit to the afternoon's, merging an edited
+`AGENTS.md` and respecting a deleted `welcome.go`. Per file the report says
+`identical`, `updated` (yours was base), `merged`, `conflict`, `create`,
+`kept` (the template did not change, or you deleted the file) or `retired`
+(no longer generated; left as it is). `go.mod` and `go.sum` are tidied
+rather than merged, the marker is rewritten, and the credentials file and
+key are never looked at. A `+dirty` recorded version cannot be served by any
+proxy, and the command says so and reports two-way without writing.
+
+**When.** Two prerequisites landed in M5 before the tag, or the first upgrade
+would have been impossible: the tool's version comes from the build, not a constant; and
 `bogie.toml` records that exact version, not a separate layout number. One
 version, one source of truth. Built 2026-10-03: a release build sets it with
 `-ldflags -X`, a `go install module@vX.Y.Z` carries it in the build info, and

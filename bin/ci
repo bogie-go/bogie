@@ -78,6 +78,9 @@ generators() {
   "$b" g controller admin/audits index || return 1
   "$b" g service publish_post || return 1
   "$b" doctor || return 1
+  # Same version on both sides, so this is the no-op path; the merge itself
+  # is unit-tested, and a real cross-version run needs the module proxy.
+  "$b" app:update | grep -q "nothing to update" || return 1
   cd "$OLDPWD" || return 1
   "$CI_APP_DIR/blog/bin/ci" || return 1
 

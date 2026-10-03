@@ -26,7 +26,11 @@ and nothing else.
 `bogie` runs the same commands from any subdirectory, spelled as Rails spells
 them: `bogie db:prepare`, `db:migrate`, `db:rollback`, `db:seed`,
 `credentials:edit -e production`, `server` (`s`), `test` (`t`). The tool adds the Rails
-spelling and nothing else; the app never imports it.
+spelling and nothing else; the app never imports it. A newer Bogie moves the
+app to its layout with `bogie app:update`, a three-way merge of the files the
+templates produce against the version `bogie.toml` records; your edits and
+everything the generators wrote are kept, and a real overlap leaves conflict
+markers.
 
 CI runs here, not on a hosted runner: `bin/ci` is the whole pipeline (Rails
 8.1's bin/ci, ported), and a green run on a clean tree records a signoff

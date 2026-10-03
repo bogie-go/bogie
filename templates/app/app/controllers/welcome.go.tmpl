@@ -17,7 +17,8 @@ import (
 // every other environment / is a plain 404.
 //
 // Self-contained on purpose: no stylesheet, no font, no script, nothing
-// fetched. Delete this file when you no longer want it.
+// fetched. To remove it, delete this file and the s.mountWelcome() line in
+// routes.go.
 func (s *Server) welcome(c *gin.Context) {
 	if c.Request.Method != http.MethodGet || c.Request.URL.Path != "/" {
 		c.Status(http.StatusNotFound)
@@ -121,7 +122,7 @@ var welcomePage = template.Must(template.New("welcome").Delims("[[", "]]").Parse
     </ol>
   </section>
 
-  <footer>This page is served only in development, and only until a route claims <code>/</code>. It lives in <code>app/controllers/welcome.go</code>; delete it when you like.</footer>
+  <footer>This page is served only in development, and only until a route claims <code>/</code>. It lives in <code>app/controllers/welcome.go</code>; to remove it, delete that file and the <code>s.mountWelcome()</code> line in <code>routes.go</code>.</footer>
 </main>
 </body>
 </html>
