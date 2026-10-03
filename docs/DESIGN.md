@@ -760,7 +760,9 @@ best metaphor for a scaffold, but a common word), **Ballast**, **Turnout**,
   or test that catches an unregistered controller.
 - **M4 — dogfood.** Regenerate the kchat skeleton with the tool and diff (§9,
   "Done 2026-10-03"). It found the deploy half missing; fixed the same day.
-- **M5 — publish.** README, Homebrew tap, first tagged release. Before the tag:
-  version from the git tag via ldflags, recorded as-is in `bogie.toml` (§5a).
+- **M5 — publish.** README, first tagged release, `go install` as the one
+  install (no Homebrew tap, decided 2026-10-03: a tool for people about to
+  write Go can ask for Go). Before the tag: version from the build, recorded
+  as-is in `bogie.toml` (§5a). Done except the tag and the essay.
 - **M6 — app:update.** `bogie app:update` as a three-way merge (§5a); the
   first feature after the first release, because it needs two versions to exist.

@@ -13,7 +13,7 @@ reasoning; this file is the state.
 | M2 generators: `g`/`d` for migration, model, controller, service, job; markers; `doctor`; golden and marker-removal tests; `--jobs` with River | **done** |
 | M3 agent layer: fuller `AGENTS.md`, `docs/FROM_RAILS.md`, a test that catches an unregistered controller | **done** 2026-10-03: `g scaffold`, `FROM_RAILS.md`, `doctor` as the registration check, and `AGENTS.md` with recipes for a dependency, a query, tests and troubleshooting |
 | M4 dogfood: regenerate kchat's skeleton and diff | **done** 2026-10-03; found the Dockerfile and Kamal config missing, added them |
-| M5 publish: version from the git tag, Homebrew tap, first release, launch | version done; `bin/release` ready; needs the tap repo, the essay and the tag |
+| M5 publish: version from the git tag, first release, launch | version done; `bin/release` ready; needs the essay and the tag. No Homebrew tap, decided 2026-10-03: `go install` is the one install |
 | M6 `app:update`: three-way merge against the version in `bogie.toml` | **done** 2026-10-03; tested across two of the day's commits |
 
 ## What works today
@@ -132,12 +132,11 @@ pushing; on a clean tree a green run signs off the commit.
   meta tag so `bogie-go.com/bogie` can be the vanity import path.
 - `bogie-go/credentials` changelog has no 1.4.0 entry; 1.5.0 is the path move.
 - Release, for M5: `bin/release v0.1.0` from a clean, pushed `main`. It runs
-  `bin/ci` (green signs off), tags, pushes the tag, creates the GitHub
-  release, and writes the Homebrew formula to `../homebrew-tap/Formula/bogie.rb`
-  if that clone exists beside this repo, else prints it. Needs
-  `bogie-go/homebrew-tap` created first; then `brew install bogie-go/tap/bogie`.
-  Until the tag, `go install github.com/bogie-go/bogie@latest` is the install
-  line and reports the commit it came from.
+  `bin/ci` (green signs off), tags, pushes the tag and creates the GitHub
+  release. The install is `go install github.com/bogie-go/bogie@v0.1.0`, and
+  only that: a tool for people about to write Go can ask for Go, so there is
+  no Homebrew tap and nothing prebuilt (decided 2026-10-03). Until the tag,
+  `@latest` installs the newest commit and reports it.
 - `bogie version` reads the build: the release flag, or the module version
   Go stamped, which is the tag for `go install @vX.Y.Z` and
   `v0.0.0-<date>-<commit>` (`+dirty` if uncommitted) for a build from a
