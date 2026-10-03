@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/bogie.png" width="260" alt="Bogie's mascot: a gopher and a ruby riding a mine cart on rails"></p>
+
 # Bogie
 
 **The Go service next to your Rails app.**

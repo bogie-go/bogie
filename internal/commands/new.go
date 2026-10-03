@@ -74,6 +74,7 @@ func New(args []string, out io.Writer) error {
 		EnvPrefix:     strings.ToUpper(name),
 		LayoutVersion: LayoutVersion,
 		Jobs:          *jobs,
+		Mascot:        templates.MascotDataURI(),
 	}
 	report := func(a scaffold.Action) { say("%12s  %s\n", a.Op, name+"/"+a.Path) }
 	if _, err := scaffold.Render(templates.App, "app", name, vars, scaffold.Options{

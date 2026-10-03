@@ -27,6 +27,8 @@ type Vars struct {
 	LayoutVersion string
 	// Jobs adds River: the worker role, app/jobs, the schema at boot.
 	Jobs bool
+	// Mascot is the welcome page's image as a data URI (templates.MascotDataURI).
+	Mascot string
 }
 
 // Op is what happened to one file.
