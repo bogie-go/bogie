@@ -95,12 +95,18 @@ func AddImport(src []byte, path string) (out []byte, changed bool, err error) {
 	return []byte(s[:at] + "\n\t" + quoted + s[at:]), true, nil
 }
 
-var importLine = regexp.MustCompile(`^\s*(?:(\w+)\s+)?"([^"]+)"\s*$`)
+var (
+	importLine    = regexp.MustCompile(`^\s*(?:(\w+)\s+)?"([^"]+)"\s*$`)
+	versionSuffix = regexp.MustCompile(`^v[0-9]+$`)
+)
 
 // PruneImports drops imports whose package is no longer referenced, after a
 // wire line has been removed. The package name is the import's alias or its
-// last path segment; a reference is that name followed by a dot anywhere
-// outside the import block.
+// last path segment, except a last segment that is only a major version
+// (".../pgx/v5"), which Go's own convention leaves out of the package's own
+// name: the code says pgx.Tx, never v5.Tx, so the segment before it is used
+// instead. A reference is that name followed by a dot anywhere outside the
+// import block.
 func PruneImports(src []byte) []byte {
 	s := string(src)
 	open := strings.Index(s, "import (")
@@ -123,7 +129,11 @@ func PruneImports(src []byte) []byte {
 		}
 		name := m[1]
 		if name == "" {
-			name = m[2][strings.LastIndex(m[2], "/")+1:]
+			segs := strings.Split(m[2], "/")
+			name = segs[len(segs)-1]
+			if len(segs) > 1 && versionSuffix.MatchString(name) {
+				name = segs[len(segs)-2]
+			}
 		}
 		if name == "_" || regexp.MustCompile(`\b`+regexp.QuoteMeta(name)+`\.`).MatchString(rest) {
 			kept = append(kept, l)

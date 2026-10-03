@@ -40,7 +40,8 @@ Generators:
                                     on first use and registered the same way
   service NAME                      app/services/<name>/, ctx first, no HTTP
   job NAME                          app/jobs/<name>.go, a River job, REGISTERED
-                                    above bogie:jobs (apps made with --jobs)
+                                    above bogie:jobs; the first one on an app
+                                    made without --jobs adds it first
   authentication SHAPE              a middleware on a route group, its config
                                     key with a development value written to
                                     the credentials, and a WithX group helper
@@ -158,7 +159,10 @@ func generateIn(root string, args []string, out io.Writer) error {
 		}
 	case "job":
 		if _, err := os.Stat(filepath.Join(root, "app", "jobs", "jobs.go")); err != nil {
-			return fmt.Errorf("generate job: this app has no app/jobs; it was generated without --jobs (AGENTS.md says what --jobs adds, if you want to add it by hand)")
+			say("%12s  this app has no app/jobs yet; adding --jobs\n", "note")
+			if err := enableJobs(root, out); err != nil {
+				return fmt.Errorf("generate job: %w", err)
+			}
 		}
 		files, wires, err = generate.Job(name)
 		if err != nil {

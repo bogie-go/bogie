@@ -41,7 +41,11 @@ Install: `go install github.com/bogie-go/bogie@latest` for the newest tag,
     bogie g controller admin/reports index show       the same inside a namespace package,
                                                       written and registered on first use
     bogie g service publish_post
-    bogie g job send_welcome                          apps made with --jobs
+    bogie g job send_welcome                          on an app with no jobs,
+                                                      adds River first (as if
+                                                      --jobs had been passed
+                                                      to new), merged in the
+                                                      same way as app:update
     bogie g authentication secret|token|api_key       a middleware on a route group, its config
                                                       keys wired and a development secret written
                                                       to the credentials; api_key adds a table
