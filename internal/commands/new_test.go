@@ -7,8 +7,8 @@ import (
 )
 
 // The Next block is the first thing a new user reads after `bogie new`; it
-// must list the steps a fresh machine needs before the server can start:
-// Postgres up, then the database prepared.
+// must list the steps a fresh machine needs before the server can start
+// (Postgres up, then the database prepared), in the README Quickstart's order.
 func TestNewPrintsEveryStepToAServingApp(t *testing.T) {
 	t.Chdir(t.TempDir())
 	var out bytes.Buffer
@@ -20,7 +20,7 @@ func TestNewPrintsEveryStepToAServingApp(t *testing.T) {
 	if !ok {
 		t.Fatalf("no Next block in:\n%s", got)
 	}
-	want := []string{"cd blog", "make up", "bogie db:prepare", "bogie server", "curl localhost:8080/healthz"}
+	want := []string{"cd blog", "make up", "bogie g scaffold post title:string body:text", "bogie db:prepare", "bogie s ", "curl localhost:8080/healthz"}
 	at := 0
 	for _, w := range want {
 		i := strings.Index(next[at:], w)
