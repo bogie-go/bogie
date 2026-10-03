@@ -76,6 +76,9 @@ nobody's secrets and can never open the development database.
       views/                     wire contracts; domain structs never double as wire structs
       domain/                    THE DOMAIN; imports nothing third-party
     config/                      credentials file + env → validated struct, no globals
+      deploy.yml                 Kamal 2, staging; deploy.production.yml overlays it
+    .kamal/secrets               what Kamal substitutes: the master key and the registry password
+    Dockerfile                   one image, every role; keys never enter it (.dockerignore)
     db/
       db.go                      go:embed of migrate/*.sql and seeds/*.sql
       migrate/                   goose SQL, timestamped; `bogie g model` writes the first
@@ -83,6 +86,18 @@ nobody's secrets and can never open the development database.
     lib/logger/
 
 Tests live beside the code they test, stdlib `testing` only.
+
+## Deploy
+
+Kamal 2, as the Rails app next door. `config/deploy.yml` IS staging and a
+bare `kamal deploy` targets it; `kamal deploy -d production` overlays
+`config/deploy.production.yml`. Three things to fill in first: the servers,
+the host names and the registry, marked CHANGE-ME. The image is one binary
+in every role{{if .Jobs}}, and the `job` role is that image started as `{{.Name}} worker`{{end}};
+it migrates at boot, so the database only has to exist. The encrypted
+credentials travel in the image and the key arrives as `{{.EnvPrefix}}_MASTER_KEY`
+from `.kamal/secrets`, which reads `config/credentials/staging.key`.
+`make credentials ENV=staging` makes that file and key the first time.
 
 ## The six rules
 

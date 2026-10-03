@@ -1,0 +1,46 @@
+# Kamal 2, PRODUCTION: an overlay on config/deploy.yml, which IS staging.
+#
+#     kamal deploy -d production
+#
+# A bare `kamal deploy` still targets staging; production is only ever reached
+# through `-d production`, and this file plus .kamal/secrets.production are
+# the only two things that change.
+#
+# HOW THE MERGE WORKS, because getting it backwards is silent:
+#   - HASHES deep-merge, so `env.clear` below only needs the keys that differ.
+#     Every key is restated anyway: this map is three lines, and reading one
+#     file instead of two is worth more than the brevity.
+#   - ARRAYS replace wholesale. `env.secret` and `proxy.hosts` are arrays, so
+#     naming one host here REPLACES staging's rather than adding to it. That
+#     is what we want for `hosts`; it is why `env.secret` is absent below.
+service: {{.Name}}
+
+servers:
+  web:
+    - CHANGE-ME.example.com{{if .Jobs}}
+  job:
+    hosts:
+      - CHANGE-ME.example.com
+    cmd: {{.Name}} worker{{end}}
+
+proxy:
+  ssl: true
+  # REPLACES staging's host; arrays do not append. If the record is behind a
+  # proxying CDN, make it DNS-only before the first deploy: kamal-proxy issues
+  # its certificate over HTTP-01, and a proxied record answers that challenge
+  # itself.
+  hosts:
+    - {{.Name}}.example.com
+
+env:
+  # No `secret:` key here ON PURPOSE. It is an array, so restating it would
+  # REPLACE staging's rather than extend it, and the list is identical either
+  # way. What differs is the VALUE, and that comes from
+  # .kamal/secrets.production, which reads config/credentials/production.key.
+  clear:
+    # Both restated rather than inherited, because the pair is the whole
+    # staging/production distinction and reading it in one place is the
+    # point. Production is the only place both say production.
+    {{.EnvPrefix}}_ENV: production
+    {{.EnvPrefix}}_CREDENTIALS: production
+    {{.EnvPrefix}}_ADDR: ":8080"

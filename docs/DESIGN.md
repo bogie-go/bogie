@@ -529,6 +529,34 @@ Extraction, in order:
    migration. The web process holds a client it never starts, so it only
    inserts; the worker process starts the same client. River v0.48.0.
 7. **Later:** regenerate a clean app with the tool and diff it against kchat.
+
+**Done 2026-10-03 (M4).** `bogie new kchat --module=github.com/klangtech/kchat
+--jobs` against commit `485b80f`, skeleton file by skeleton file. Findings:
+
+- **The deploy half was missing.** §3 and §6 promised a Dockerfile and
+  Kamal config and the templates had neither; `bin/ci` never noticed
+  because nothing built an image. Added, ported from kchat: `Dockerfile`
+  (one image, every role, no CMD, the schema inside), `.dockerignore` (keys
+  never enter the context), `config/deploy.yml` as staging with
+  `deploy.production.yml` as the overlay, and `.kamal/secrets` reading the
+  key from disk and the registry password from the credentials through the
+  pinned tool. `--jobs` adds the `job` role as the same image run as
+  `worker`. The tool's `bin/ci` now builds the image from a fresh app and
+  checks it carries the credentials and not the key.
+- **The logger names the service.** kchat's `.With("service", "kchat")` is
+  what tells its lines from the Rails app's in a shared shipper. Adopted.
+- **The rest of the diff is what the extraction intended:** named fields
+  and markers instead of positional wiring, seeds through the binary, a
+  goose provider with its own version table per source, River's schema at
+  boot, a bounded boot migration, `--help` on the binary. kchat's
+  `APP_ENV` is `<NAME>_CREDENTIALS` here (§6, decided). Not adopted:
+  kchat's `mise.toml` (the Go version is `go.mod`'s), its `script/`
+  helpers (product-specific), and its `spec/` (§3).
+- **What kchat would gain from the tool**, for when it is regenerated for
+  real: the markers and `doctor`, `db seed` through the binary, pinned
+  sqlc, River in place of asynq (§12.2), and the `internal_controller`
+  namespace maps straight onto `g controller internal/...` with one file
+  per controller, which its `conversations.go` already is.
    Where they disagree, one of them is wrong.
 
 Do this in the new repository, not in kchat or line-connect. Both keep shipping.
@@ -715,7 +743,8 @@ best metaphor for a scaffold, but a common word), **Ballast**, **Turnout**,
   tests, River behind `--jobs`. **Done 2026-10-02.**
 - **M3 — agent layer.** `AGENTS.md`, recipes, `docs/FROM_RAILS.md`, a lint rule
   or test that catches an unregistered controller.
-- **M4 — dogfood.** Regenerate the kchat skeleton with the tool and diff (§9.6).
+- **M4 — dogfood.** Regenerate the kchat skeleton with the tool and diff (§9,
+  "Done 2026-10-03"). It found the deploy half missing; fixed the same day.
 - **M5 — publish.** README, Homebrew tap, first tagged release. Before the tag:
   version from the git tag via ldflags, recorded as-is in `bogie.toml` (§5a).
 - **M6 — app:update.** `bogie app:update` as a three-way merge (§5a); the

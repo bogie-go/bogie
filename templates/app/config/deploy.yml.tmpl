@@ -1,0 +1,85 @@
+# Kamal 2, STAGING. This file IS the staging config: a bare `kamal deploy`
+# targets staging. Production overlays it with config/deploy.production.yml
+# and is reached only as `kamal deploy -d production`, so an edit here
+# without a matching one there changes BOTH.
+#
+# Three things to fill in before the first deploy: the server, the host name
+# and the registry. Everything else is set.
+service: {{.Name}}
+
+# Where the image is pushed. Docker Hub by default: `username/{{.Name}}`.
+# For another registry add `registry: server:` below.
+image: CHANGE-ME/{{.Name}}
+
+servers:
+  web:
+    - CHANGE-ME.example.com{{if .Jobs}}
+  # The worker is this same image started with a different argument, so a
+  # web container and a job container cannot be built from different
+  # commits. Same host as web until the queue needs its own.
+  job:
+    hosts:
+      - CHANGE-ME.example.com
+    cmd: {{.Name}} worker{{end}}
+
+proxy:
+  ssl: true
+  hosts:
+    - staging-{{.Name}}.example.com
+  # The app listens on 8080, not Rails' 3000.
+  app_port: 8080
+  # Kamal's default probe is /up, which this service does not have. /healthz
+  # touches nothing and allocates nothing, so it stays honest under load.
+  healthcheck:
+    path: /healthz
+  # Bounds the wait for a RESPONSE. Nothing on an API path should approach
+  # this; if a timeout appears here, the question is what started blocking,
+  # not what to raise.
+  response_timeout: 30
+
+registry:
+  username: CHANGE-ME
+  password:
+    - KAMAL_REGISTRY_PASSWORD
+
+env:
+  secret:
+    # The key that opens config/credentials/staging.yml.enc, which is baked
+    # into the image. The key never is: .dockerignore keeps every *.key out
+    # of the build context, so an image cannot carry both halves. Its value
+    # comes from .kamal/secrets.
+    - {{.EnvPrefix}}_MASTER_KEY
+  clear:
+    # PRODUCTION BEHAVIOUR, STAGING CREDENTIALS. {{.EnvPrefix}}_ENV is a closed
+    # set of three with no "staging" member on purpose: staging exercises the
+    # same gin mode, log format and validation strictness production will.
+    # {{.EnvPrefix}}_CREDENTIALS is what selects the secrets.
+    {{.EnvPrefix}}_ENV: production
+    {{.EnvPrefix}}_CREDENTIALS: staging
+    {{.EnvPrefix}}_ADDR: ":8080"
+
+builder:
+  arch: amd64
+
+# The database is not an accessory here on purpose. The premise is a service
+# next to a Rails app that already runs Postgres, so {{.Name}}.database_url in
+# config/credentials/staging.yml.enc points at that server, as a SEPARATE
+# database on it. If this service is to run its own, uncomment:
+#
+# accessories:
+#   db:
+#     image: postgres:18
+#     roles: [web]
+#     env:
+#       secret: [POSTGRES_PASSWORD]
+#     directories: [data:/var/lib/postgresql]
+#
+# and the URL becomes postgres://postgres:…@{{.Name}}-db:5432/{{.Name}}_staging,
+# resolved by container name on Kamal's docker network. The schema is applied
+# by the container itself at boot, from the migrations in the binary, so the
+# database only has to exist.
+
+aliases:
+  logs: app logs -f
+  shell: app exec --interactive --reuse "sh"
+  status: app exec --reuse "wget -qO- http://localhost:8080/healthz"

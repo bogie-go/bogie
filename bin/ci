@@ -19,7 +19,7 @@ step() {
   printf '\n\033[1m== %s\033[0m\n' "$name"
   t=$(date +%s)
   case "$command" in
-    lint|signoff|scaffold|generators|serves|teardown|jobs|teardown_jobs) "$command" ;;
+    lint|signoff|scaffold|image|generators|serves|teardown|jobs|teardown_jobs) "$command" ;;
     *) sh -c "$command" ;;
   esac
   if [ $? -eq 0 ]; then
@@ -50,6 +50,16 @@ scaffold() {
   (cd "$CI_APP_DIR" && ./bogie new blog --module=example.com/blog) || return 1
   echo "generated app: $CI_APP_DIR/blog"
   "$CI_APP_DIR/blog/bin/ci"
+}
+
+# The Dockerfile is a template too, so build it: the image must build from a
+# fresh app, with the keys left out of the context.
+image() {
+  [ -d "$CI_APP_DIR/blog" ] || { echo "no generated app"; return 1; }
+  docker build -q -t bogie-ci-blog "$CI_APP_DIR/blog" >/dev/null || return 1
+  docker run --rm --entrypoint sh bogie-ci-blog -c 'test -f /app/config/credentials.yml.enc && ! test -f /app/config/master.key' || { echo "image carries the key, or not the credentials"; return 1; }
+  docker rmi -f bogie-ci-blog >/dev/null
+  echo "image builds, with the credentials and without the key"
 }
 
 # Every generator, run into that app, and the app's own bin/ci again: the
@@ -156,6 +166,7 @@ step "Style: go vet"                "go vet ./..."
 step "Style: golangci-lint"         "lint"
 step "Tests: the tool"              "go test -race -cover ./..."
 step "Generated app: its own bin/ci" "scaffold"
+step "Generated app: image builds"   "image"
 step "Generators: into that app"    "generators"
 step "Generated app: serves"        "serves"
 step "Generated app: tear down"     "teardown"

@@ -12,7 +12,7 @@ reasoning; this file is the state.
 | M1 skeleton: `new`, database, credentials, seeds, `bin/ci` | **done** |
 | M2 generators: `g`/`d` for migration, model, controller, service, job; markers; `doctor`; golden and marker-removal tests; `--jobs` with River | **done** |
 | M3 agent layer: fuller `AGENTS.md`, `docs/FROM_RAILS.md`, a test that catches an unregistered controller | `g scaffold` and `FROM_RAILS.md` done 2026-10-03; `doctor` is the registration check; a fuller `AGENTS.md` comes out of M4 |
-| M4 dogfood: regenerate kchat's skeleton and diff | |
+| M4 dogfood: regenerate kchat's skeleton and diff | **done** 2026-10-03; found the Dockerfile and Kamal config missing, added them |
 | M5 publish: version from the git tag, Homebrew tap, first release, launch | |
 | M6 `app:update`: three-way merge against the version in `bogie.toml` | after the first tag |
 
@@ -54,8 +54,9 @@ Each generated app ships: the six rules in `AGENTS.md` with a recipe per
 generator, `bin/ci` (drop and rebuild the test database, migrate down to zero
 and back, sqlc diff, gofmt, vet, golangci-lint, build, tests, worker boot with
 `--jobs`, then `gh signoff`), a development welcome page at `/`, encrypted
-credentials with env-only fallback, and no example resource (removed
-2026-10-03; the generators are the shape to copy).
+credentials with env-only fallback, a Dockerfile and Kamal 2 config (staging
+plus a production overlay, `.kamal/secrets` from the credentials), and no
+example resource (removed 2026-10-03; the generators are the shape to copy).
 
 ## Setting up a new machine
 

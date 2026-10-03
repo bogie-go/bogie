@@ -22,5 +22,7 @@ func New(level, env string) *slog.Logger {
 	} else {
 		h = slog.NewTextHandler(os.Stderr, opts)
 	}
-	return slog.New(h)
+	// Every line names the service, so its lines can be told apart from
+	// the Rails app's once a shipper aggregates them.
+	return slog.New(h).With("service", "{{.Name}}")
 }

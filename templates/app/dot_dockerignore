@@ -1,0 +1,16 @@
+# Keys never enter the build context. The encrypted files travel with the
+# image; the key arrives at runtime as an environment variable. An image
+# carrying both halves leaks both, and a key in the build context ends up in a
+# layer even if a later instruction deletes it.
+config/master.key
+config/credentials/*.key
+
+# Not used: configuration is the credentials file plus real environment
+# variables. Ignored anyway so a stray one can never be baked in.
+.env
+.env.*
+
+bin/
+tmp/
+.git/
+.kamal/
