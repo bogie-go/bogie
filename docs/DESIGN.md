@@ -64,7 +64,7 @@ Use whatever the Go ecosystem provides. Wire it once. Build only what is missing
 | CI | **`bin/ci`**, run locally, Rails 8.1 style; `gh signoff` records the green run on the commit | **gap** (a port) |
 | Task runner | `make` | ecosystem |
 | Logging | `log/slog` | stdlib |
-| Tool versions | Go 1.25+ (what gin v1.12 needs); `tool` directive in `go.mod` | ecosystem |
+| Tool versions | Go 1.25+ for the tool (what gin v1.12 needs), Go 1.26+ for a generated app (what sqlc v1.31 needs); `tool` directive in `go.mod` | ecosystem |
 | Project generator (`rails new`) | **bogie new** | **gap** |
 | Generators (`rails g`) that also *wire* | **bogie g** | **gap** |
 | One command surface (`rails db:*`, `rails s`) | app binary + `bogie` proxy | **gap** |
