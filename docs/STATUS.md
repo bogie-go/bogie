@@ -120,10 +120,10 @@ pushing; on a clean tree a green run signs off the commit.
 - **Launch essay**, drafted, needs the author's edits on four facts (city, the
   company link, "in production", file counts):
   https://claude.ai/code/artifact/7be1e8e6-8b29-4822-9627-134dc1bac8b8
-- **Site**: `bogie-go.com` is registered (2026-10-03) and points nowhere yet.
-  Plan: GitHub Pages from a separate `bogie-go/bogie-go.com` repo, static
-  HTML, a CNAME file, and in M5 a `go-import` meta tag so
-  `bogie-go.com/bogie` can be the vanity import path.
+- **Site**: https://bogie-go.com is live (2026-10-03): GitHub Pages from the
+  `bogie-go/bogie-go.com` repo, `main` at the root, plain HTML, DNS at
+  GoDaddy. Edit `index.html` there and push. In M5 it gets a `go-import`
+  meta tag so `bogie-go.com/bogie` can be the vanity import path.
 - `bogie-go/credentials` changelog has no 1.4.0 entry; 1.5.0 is the path move.
 - `bogie version` prints `dev`; M5 wires it to the git tag and `bogie.toml`.
 - kchat still imports `roonglit/credentials`; it can move whenever convenient.
