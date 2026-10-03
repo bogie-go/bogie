@@ -264,6 +264,38 @@ func TestControllerWithNoActions(t *testing.T) {
 	golden(t, "controller_empty", files)
 }
 
+func TestScaffold(t *testing.T) {
+	files, wires, err := Scaffold("example.com/blog", "post", attrs(t, "title:string", "body:text", "score:integer", "published_at:datetime", "author:references"), at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden(t, "scaffold_post", files)
+	if len(wires) != 3 || wires[1].Line != "server.Posts = controllers.NewPostsController(store, log)" || wires[0].Line != "Posts *PostsController" {
+		t.Errorf("wires = %+v", wires)
+	}
+	// destroy removes by the same paths, whatever the attributes were
+	paths, err := ScaffoldFiles("example.com/blog", "post")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i < len(files); i++ { // 0 is the migration, whose stamp differs
+		if files[i].Path != paths[i].Path {
+			t.Errorf("file %d: %s vs %s", i, files[i].Path, paths[i].Path)
+		}
+	}
+	if _, _, err := Scaffold("m", "posts", nil, at); err == nil {
+		t.Error("plural model name accepted")
+	}
+}
+
+func TestScaffoldWithNoAttributes(t *testing.T) {
+	files, _, err := Scaffold("example.com/blog", "ping", nil, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden(t, "scaffold_ping", files)
+}
+
 func TestService(t *testing.T) {
 	files, err := Service("example.com/blog", "publish_post")
 	if err != nil {

@@ -25,6 +25,10 @@ Generators:
   model NAME [field:type ...]       the migration, db/queries/<table>.sql,
                                     app/domain/<name>.go and the store's
                                     app/models/<table>.go; then runs sqlc
+  scaffold NAME [field:type ...]    the model, plus app/views/<table>.go and
+                                    a <Table>Controller with real handlers
+                                    over the store, REGISTERED. As Rails:
+                                    the model is singular, the rest plural
   controller NAME [action ...]      app/controllers/<name>_controller.go, one
                                     Rails controller in one file, REGISTERED:
                                     a field, a wire line and a mount above
@@ -42,6 +46,7 @@ Attributes are field:type, with :index or :uniq after the type. Types:
   string text integer bigint boolean datetime uuid jsonb references
 A references field names the other model: post:references is post_id.
 
+  bogie g scaffold post title:string body:text
   bogie g model comment body:text post:references
   bogie g migration add_slug_to_posts slug:string:uniq
   bogie g controller comments index show create
@@ -150,7 +155,7 @@ func generateIn(root string, args []string, out io.Writer) error {
 		if err != nil {
 			return fmt.Errorf("generate job: %w", err)
 		}
-	case "migration", "model":
+	case "migration", "model", "scaffold":
 		runSqlc = true
 	default:
 		say(generateUsage)
@@ -175,6 +180,11 @@ func generateIn(root string, args []string, out io.Writer) error {
 		files, err = generate.Model(module, name, attrs, now)
 		if err != nil {
 			return fmt.Errorf("generate model: %w", err)
+		}
+	case "scaffold":
+		files, wires, err = generate.Scaffold(module, name, attrs, now)
+		if err != nil {
+			return fmt.Errorf("generate scaffold: %w", err)
 		}
 	}
 

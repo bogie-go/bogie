@@ -182,8 +182,11 @@ func store(module, name, table string, attrs []Attr) string {
 	}
 
 	// Create
-	fmt.Fprintf(&b, "// Create%s inserts a %s and returns it with its id and timestamps.\n", typ, name)
+	fmt.Fprintf(&b, "// Create%s validates a %s, inserts it, and returns it with its id and\n", typ, name)
+	b.WriteString("// timestamps. Validation runs on save, as Rails's does, so every caller\n")
+	b.WriteString("// gets it and none can forget it.\n")
 	fmt.Fprintf(&b, "func (s *Store) Create%s(ctx context.Context, %s domain.%s) (domain.%s, error) {\n", typ, recv, typ, typ)
+	fmt.Fprintf(&b, "\tif err := %s.Validate(); err != nil {\n\t\treturn domain.%s{}, err\n\t}\n", recv, typ)
 	b.WriteString(referenceChecks(recv, typ, attrs))
 	switch len(attrs) {
 	case 0:
@@ -213,8 +216,9 @@ func store(module, name, table string, attrs []Attr) string {
 	fmt.Fprintf(&b, "\tout := make([]domain.%s, 0, len(rows))\n\tfor _, r := range rows {\n\t\tout = append(out, %sFromRow(r))\n\t}\n\treturn out, nil\n}\n\n", typ, name)
 
 	// Update
-	fmt.Fprintf(&b, "// Update%s writes a %s's columns and returns the stored row.\n", typ, name)
+	fmt.Fprintf(&b, "// Update%s validates a %s, writes its columns, and returns the stored row.\n", typ, name)
 	fmt.Fprintf(&b, "func (s *Store) Update%s(ctx context.Context, %s domain.%s) (domain.%s, error) {\n", typ, recv, typ, typ)
+	fmt.Fprintf(&b, "\tif err := %s.Validate(); err != nil {\n\t\treturn domain.%s{}, err\n\t}\n", recv, typ)
 	fmt.Fprintf(&b, "\tuid, err := parseUUID(%s.ID)\n\tif err != nil {\n\t\treturn domain.%s{}, domain.ErrNotFound\n\t}\n", recv, typ)
 	b.WriteString(referenceChecks(recv, typ, attrs))
 	if len(attrs) == 0 {

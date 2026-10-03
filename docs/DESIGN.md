@@ -169,6 +169,7 @@ Commands, v1:
     bogie new NAME [--db=postgres] [--jobs] [--deploy=kamal]   # --jobs adds River; no extra datastore
     bogie g migration add_slug_to_posts slug:string
     bogie g model post title:string body:text
+    bogie g scaffold post title:string body:text   # model + views + a wired controller
     bogie g controller posts index show create
     bogie g service publish_post
     bogie d controller posts            # destroy what g created
@@ -294,6 +295,20 @@ a namespace:
   removes both, matches kchat, and ST1003 is already off for it. One level of
   namespace in v1; a version such as `v1` is a route group inside the
   namespace's `routes.go`, as kchat's `/internal/v1` is.
+
+**`g scaffold`, built 2026-10-03.** `rails g scaffold` for an API: the
+model, the wire shapes in `app/views`, and a controller with the five
+resourceful actions over the store, registered with the store passed in.
+No service layer, decided the same day: a scaffold's service was two lines
+per action, validate then store, which is the layer Rails does not have
+either. Instead the store's create and update run the model's `Validate`,
+as Rails validates on save, and the controller consumes a `postsStore`
+interface declared beside it (rule 2) so its test needs no database. The
+model is singular and the rest plural, as Rails names them, and that is the
+one place the tool pluralizes; `g controller` uses the name as typed. A
+service is for logic that is not CRUD, and `g service` is there when a
+resource outgrows the store. One level: no namespace in v1, and a scaffold
+over an existing model is reported as a conflict rather than merged.
 
 The file rule is one sentence: one file per Rails controller, one package per
 Rails namespace. kchat's `conversations.go` already obeys it; "one file per

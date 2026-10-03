@@ -11,7 +11,7 @@ reasoning; this file is the state.
 | M0 decide | done, except: edit the launch essay (see Loose ends). `bogie-go.com` registered 2026-10-03 |
 | M1 skeleton: `new`, database, credentials, seeds, `bin/ci` | **done** |
 | M2 generators: `g`/`d` for migration, model, controller, service, job; markers; `doctor`; golden and marker-removal tests; `--jobs` with River | **done** |
-| M3 agent layer: fuller `AGENTS.md`, `docs/FROM_RAILS.md`, a test that catches an unregistered controller | next |
+| M3 agent layer: fuller `AGENTS.md`, `docs/FROM_RAILS.md`, a test that catches an unregistered controller | `g scaffold` done 2026-10-03; the rest next |
 | M4 dogfood: regenerate kchat's skeleton and diff | |
 | M5 publish: version from the git tag, Homebrew tap, first release, launch | |
 | M6 `app:update`: three-way merge against the version in `bogie.toml` | after the first tag |
@@ -30,6 +30,9 @@ through the module proxy can lag behind main).
     bogie credentials:edit [-e production] | credentials:show | credentials:get
     bogie g model comment body:text post:references   migration, queries, domain type,
                                                       store methods, store test; runs sqlc
+    bogie g scaffold post title:string body:text      the model, app/views/posts.go and a
+                                                      PostsController with real handlers over
+                                                      the store, registered; no service layer
     bogie g migration add_slug_to_posts slug:string:uniq
     bogie g controller comments index show create     one file, a <Name>Controller type with
                                                       its routes and actions, a test, and the
@@ -127,10 +130,8 @@ pushing; on a clean tree a green run signs off the commit.
 - `bogie-go/credentials` changelog has no 1.4.0 entry; 1.5.0 is the path move.
 - `bogie version` prints `dev`; M5 wires it to the git tag and `bogie.toml`.
 - kchat still imports `roonglit/credentials`; it can move whenever convenient.
-- `g controller` actions are 501 stubs with no dependencies; wiring a service
-  into one is by hand (the comments above the `bogie:wire` marker show the
-  line). A `g scaffold` that does model, service and controller together, so
-  a new app can have a wired resource in one command, is worth considering
-  in M3.
+- `g controller` actions are 501 stubs with no dependencies; wiring a
+  dependency into one is by hand (the comments above the `bogie:wire` marker
+  show the line, and a scaffolded controller shows the shape).
 - Nested namespaces (`api/v1/posts`) are refused; v1 supports one level, and a
   version is a route group inside the namespace's `routes.go`.

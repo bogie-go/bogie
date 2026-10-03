@@ -63,8 +63,13 @@ import (
 // the row type sqlc generated, and maps pgx's "no rows" to domain.ErrNotFound
 // so callers never import pgx to ask a question.
 
-// CreatePing inserts a ping and returns it with its id and timestamps.
+// CreatePing validates a ping, inserts it, and returns it with its id and
+// timestamps. Validation runs on save, as Rails's does, so every caller
+// gets it and none can forget it.
 func (s *Store) CreatePing(ctx context.Context, p domain.Ping) (domain.Ping, error) {
+	if err := p.Validate(); err != nil {
+		return domain.Ping{}, err
+	}
 	row, err := s.q.CreatePing(ctx)
 	if err != nil {
 		return domain.Ping{}, fmt.Errorf("models: create ping: %w", err)
@@ -101,8 +106,11 @@ func (s *Store) ListPings(ctx context.Context, limit int32) ([]domain.Ping, erro
 	return out, nil
 }
 
-// UpdatePing writes a ping's columns and returns the stored row.
+// UpdatePing validates a ping, writes its columns, and returns the stored row.
 func (s *Store) UpdatePing(ctx context.Context, p domain.Ping) (domain.Ping, error) {
+	if err := p.Validate(); err != nil {
+		return domain.Ping{}, err
+	}
 	uid, err := parseUUID(p.ID)
 	if err != nil {
 		return domain.Ping{}, domain.ErrNotFound

@@ -115,7 +115,7 @@ var welcomePage = template.Must(template.New("welcome").Delims("[[", "]]").Parse
 
     <h2>Next</h2>
     <ol>
-      <li>Add a model and a controller: <code>bogie g model post title:string</code>, then <code>bogie g controller posts index show</code>. Each one registers itself above a <code>bogie:</code> marker.</li>
+      <li>Add a resource: <code>bogie g scaffold post title:string body:text</code> writes the model, the views and a controller, and registers it above the <code>bogie:</code> markers.</li>
       <li>Run <code>bin/ci</code> before you push. Green signs off the commit.</li>
       <li>Read the six rules in <code>AGENTS.md</code>. Rule two is the one with no Rails equivalent.</li>
     </ol>

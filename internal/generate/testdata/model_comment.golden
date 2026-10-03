@@ -76,8 +76,13 @@ import (
 // the row type sqlc generated, and maps pgx's "no rows" to domain.ErrNotFound
 // so callers never import pgx to ask a question.
 
-// CreateComment inserts a comment and returns it with its id and timestamps.
+// CreateComment validates a comment, inserts it, and returns it with its id and
+// timestamps. Validation runs on save, as Rails's does, so every caller
+// gets it and none can forget it.
 func (s *Store) CreateComment(ctx context.Context, c domain.Comment) (domain.Comment, error) {
+	if err := c.Validate(); err != nil {
+		return domain.Comment{}, err
+	}
 	postID, err := parseUUID(c.PostID)
 	if err != nil {
 		return domain.Comment{}, fmt.Errorf("%w: post_id is not a uuid", domain.ErrInvalid)
@@ -118,8 +123,11 @@ func (s *Store) ListComments(ctx context.Context, limit int32) ([]domain.Comment
 	return out, nil
 }
 
-// UpdateComment writes a comment's columns and returns the stored row.
+// UpdateComment validates a comment, writes its columns, and returns the stored row.
 func (s *Store) UpdateComment(ctx context.Context, c domain.Comment) (domain.Comment, error) {
+	if err := c.Validate(); err != nil {
+		return domain.Comment{}, err
+	}
 	uid, err := parseUUID(c.ID)
 	if err != nil {
 		return domain.Comment{}, domain.ErrNotFound

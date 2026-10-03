@@ -65,8 +65,13 @@ import (
 // the row type sqlc generated, and maps pgx's "no rows" to domain.ErrNotFound
 // so callers never import pgx to ask a question.
 
-// CreateThing inserts a thing and returns it with its id and timestamps.
+// CreateThing validates a thing, inserts it, and returns it with its id and
+// timestamps. Validation runs on save, as Rails's does, so every caller
+// gets it and none can forget it.
 func (s *Store) CreateThing(ctx context.Context, t domain.Thing) (domain.Thing, error) {
+	if err := t.Validate(); err != nil {
+		return domain.Thing{}, err
+	}
 	row, err := s.q.CreateThing(ctx, t.Name)
 	if err != nil {
 		return domain.Thing{}, fmt.Errorf("models: create thing: %w", err)
@@ -103,8 +108,11 @@ func (s *Store) ListThings(ctx context.Context, limit int32) ([]domain.Thing, er
 	return out, nil
 }
 
-// UpdateThing writes a thing's columns and returns the stored row.
+// UpdateThing validates a thing, writes its columns, and returns the stored row.
 func (s *Store) UpdateThing(ctx context.Context, t domain.Thing) (domain.Thing, error) {
+	if err := t.Validate(); err != nil {
+		return domain.Thing{}, err
+	}
 	uid, err := parseUUID(t.ID)
 	if err != nil {
 		return domain.Thing{}, domain.ErrNotFound

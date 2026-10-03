@@ -22,6 +22,7 @@ package goes too once it holds no controller, with the three lines that
 registered the namespace. Nothing else is touched; a file you added to a
 package by hand stays.
 
+  bogie d scaffold post
   bogie d controller comments
   bogie d controller admin/reports
   bogie d service publish_post
@@ -122,11 +123,16 @@ func destroyIn(root string, args []string, out io.Writer) error {
 	case "job":
 		files, _, err = generate.Job(name)
 		wires = generate.JobWirePrefix(name)
-	case "model":
-		files, err = generate.Model(module, name, nil, time.Time{})
+	case "model", "scaffold":
+		if generator == "model" {
+			files, err = generate.Model(module, name, nil, time.Time{})
+		} else {
+			files, err = generate.ScaffoldFiles(module, name)
+			wires = generate.WirePrefixes("", generate.Plural(name))
+		}
 		// sqlc writes a file per query file and never removes one whose
 		// source is gone, so the generated half goes too; and a test the
-		// model was given by hand, as the example has.
+		// model may have been given by hand.
 		files = append(files,
 			generate.File{Path: "app/models/" + generate.Plural(name) + ".sql.go"},
 			generate.File{Path: "app/domain/" + name + "_test.go"})

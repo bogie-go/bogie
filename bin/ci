@@ -59,7 +59,7 @@ generators() {
   [ -d "$CI_APP_DIR/blog" ] || { echo "no generated app"; return 1; }
   cd "$CI_APP_DIR/blog" || return 1
   b="$CI_APP_DIR/bogie"
-  "$b" g model post title:string body:text || return 1
+  "$b" g scaffold post title:string body:text || return 1
   "$b" g model comment body:text post:references score:integer published_at:datetime meta:jsonb || return 1
   "$b" g migration add_slug_to_posts slug:string:index || return 1
   "$b" g controller comments index show create update destroy search || return 1
@@ -79,7 +79,7 @@ generators() {
   "$b" d service publish_post || return 1
   "$b" d migration add_slug_to_posts || return 1
   "$b" d model comment || return 1
-  "$b" d model post || return 1
+  "$b" d scaffold post || return 1
   "$b" doctor || return 1
   cd "$OLDPWD" || return 1
   "$CI_APP_DIR/blog/bin/ci"

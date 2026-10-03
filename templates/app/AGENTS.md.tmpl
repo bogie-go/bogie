@@ -100,6 +100,21 @@ Tests live beside the code they test, stdlib `testing` only.
 
 ## Recipes
 
+### Add a resource
+
+    bogie g scaffold post title:string body:text
+
+is `rails g scaffold`: the model (everything `g model` writes, below), the
+wire shapes in `app/views/posts.go`, and `app/controllers/posts_controller.go`
+with the five resourceful actions over the store, registered with the store
+passed in. There is no service layer: the controller declares the slice of
+the store it uses as an interface beside it (rule 2), and the store runs the
+model's `Validate` on create and update, as Rails validates on save, so a bad
+value is a 422 from the store. The model is named in the singular and the
+views and controller in the plural, as Rails names them. `bogie d scaffold
+post` removes all of it. When a resource outgrows CRUD, `bogie g service`
+gives the logic a home that knows nothing about HTTP.
+
 ### Add a controller
 
     bogie g controller comments index show create update destroy
@@ -167,7 +182,8 @@ records. River's schema is applied by `migrate`, not by db/migrate.
 
 writes `app/services/publish_post/` with a `Service`, a `store` interface to
 fill with only the methods it calls, a `Run(ctx)` to rename, and a test. It is
-not wired anywhere: the controller that needs it declares what it wants.
+not wired anywhere: the controller that needs it declares what it wants. A
+service is for logic that is not CRUD; a plain resource needs none.
 
 Never delete a marker. The generators stop and name the file if one is
 missing; they do not guess.
@@ -179,8 +195,8 @@ missing; they do not guess.
 writes the `create_comments` migration, `db/queries/comments.sql` with get,
 list, create, update and delete, `app/domain/comment.go` with the type and an
 empty `Validate`, and `app/models/comments.go`, the store methods that convert
-sqlc's row type to `domain.Comment` and map no-rows to `domain.ErrNotFound`;
-then it runs sqlc. Types: string, text, integer, bigint, boolean, datetime,
+sqlc's row type to `domain.Comment`, run `Validate` before create and update,
+and map no-rows to `domain.ErrNotFound`; then it runs sqlc. Types: string, text, integer, bigint, boolean, datetime,
 uuid, jsonb, references; `:index` or `:uniq` after a type. `post:references`
 is the column `post_id` with a foreign key and an index.
 

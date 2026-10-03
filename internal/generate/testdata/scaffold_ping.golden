@@ -1,0 +1,479 @@
+==> db/migrate/20261002093000_create_pings.sql
+-- +goose Up
+CREATE TABLE pings (
+    id         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- +goose Down
+DROP TABLE pings;
+==> db/queries/pings.sql
+-- name: GetPing :one
+SELECT * FROM pings WHERE id = $1;
+
+-- name: ListPings :many
+SELECT * FROM pings ORDER BY created_at DESC, id DESC LIMIT $1;
+
+-- name: CreatePing :one
+INSERT INTO pings DEFAULT VALUES RETURNING *;
+
+-- name: UpdatePing :one
+UPDATE pings SET updated_at = now() WHERE id = $1 RETURNING *;
+
+-- name: DeletePing :execrows
+DELETE FROM pings WHERE id = $1;
+==> app/domain/ping.go
+package domain
+
+import (
+	"time"
+)
+
+// Ping is a ping. Imports nothing third-party: ids are strings here and
+// become uuid at the store boundary.
+type Ping struct {
+	ID        string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// Validate is the model's validations, as Rails would put them. Wrap every
+// failure in ErrInvalid so a controller can answer 422 without knowing the
+// rule:
+//
+//	return fmt.Errorf("%w: title is required", ErrInvalid)
+func (p Ping) Validate() error {
+	return nil
+}
+==> app/models/pings.go
+package models
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/jackc/pgx/v5"
+
+	"example.com/blog/app/domain"
+)
+
+// Pings, as the domain sees them. Each method converts domain.Ping to and from
+// the row type sqlc generated, and maps pgx's "no rows" to domain.ErrNotFound
+// so callers never import pgx to ask a question.
+
+// CreatePing validates a ping, inserts it, and returns it with its id and
+// timestamps. Validation runs on save, as Rails's does, so every caller
+// gets it and none can forget it.
+func (s *Store) CreatePing(ctx context.Context, p domain.Ping) (domain.Ping, error) {
+	if err := p.Validate(); err != nil {
+		return domain.Ping{}, err
+	}
+	row, err := s.q.CreatePing(ctx)
+	if err != nil {
+		return domain.Ping{}, fmt.Errorf("models: create ping: %w", err)
+	}
+	return pingFromRow(row), nil
+}
+
+// GetPing finds one ping. An id that is not a uuid is simply not found.
+func (s *Store) GetPing(ctx context.Context, id string) (domain.Ping, error) {
+	uid, err := parseUUID(id)
+	if err != nil {
+		return domain.Ping{}, domain.ErrNotFound
+	}
+	row, err := s.q.GetPing(ctx, uid)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return domain.Ping{}, domain.ErrNotFound
+	case err != nil:
+		return domain.Ping{}, fmt.Errorf("models: get ping %s: %w", id, err)
+	}
+	return pingFromRow(row), nil
+}
+
+// ListPings returns the newest pings first, at most limit of them.
+func (s *Store) ListPings(ctx context.Context, limit int32) ([]domain.Ping, error) {
+	rows, err := s.q.ListPings(ctx, limit)
+	if err != nil {
+		return nil, fmt.Errorf("models: list pings: %w", err)
+	}
+	out := make([]domain.Ping, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, pingFromRow(r))
+	}
+	return out, nil
+}
+
+// UpdatePing validates a ping, writes its columns, and returns the stored row.
+func (s *Store) UpdatePing(ctx context.Context, p domain.Ping) (domain.Ping, error) {
+	if err := p.Validate(); err != nil {
+		return domain.Ping{}, err
+	}
+	uid, err := parseUUID(p.ID)
+	if err != nil {
+		return domain.Ping{}, domain.ErrNotFound
+	}
+	row, err := s.q.UpdatePing(ctx, uid)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return domain.Ping{}, domain.ErrNotFound
+	case err != nil:
+		return domain.Ping{}, fmt.Errorf("models: update ping %s: %w", p.ID, err)
+	}
+	return pingFromRow(row), nil
+}
+
+// DeletePing removes a ping, and says so if there was none.
+func (s *Store) DeletePing(ctx context.Context, id string) error {
+	uid, err := parseUUID(id)
+	if err != nil {
+		return domain.ErrNotFound
+	}
+	n, err := s.q.DeletePing(ctx, uid)
+	if err != nil {
+		return fmt.Errorf("models: delete ping %s: %w", id, err)
+	}
+	if n == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+func pingFromRow(r Ping) domain.Ping {
+	return domain.Ping{
+		ID:        uuidString(r.ID),
+		CreatedAt: r.CreatedAt.Time,
+		UpdatedAt: r.UpdatedAt.Time,
+	}
+}
+==> app/models/pings_test.go
+package models
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"example.com/blog/app/domain"
+)
+
+// Whatever the id looks like, a ping that is not there is ErrNotFound, and a
+// caller cannot tell a malformed id from a well-formed one that names nothing.
+func TestUnknownPingsAreNotFound(t *testing.T) {
+	store := testStore(t)
+	ctx := context.Background()
+
+	for _, id := range []string{"nope", "", "00000000-0000-4000-8000-000000000000"} {
+		if _, err := store.GetPing(ctx, id); !errors.Is(err, domain.ErrNotFound) {
+			t.Errorf("GetPing(%q): err = %v, want ErrNotFound", id, err)
+		}
+		if err := store.DeletePing(ctx, id); !errors.Is(err, domain.ErrNotFound) {
+			t.Errorf("DeletePing(%q): err = %v, want ErrNotFound", id, err)
+		}
+		if _, err := store.UpdatePing(ctx, domain.Ping{ID: id}); !errors.Is(err, domain.ErrNotFound) {
+			t.Errorf("UpdatePing(%q): err = %v, want ErrNotFound", id, err)
+		}
+	}
+}
+
+// TODO: a round trip. Create a ping with real values, Get it, List it,
+// Update it, Delete it; see posts_test.go for the shape.
+==> app/views/pings.go
+package views
+
+import (
+	"time"
+)
+
+// PingRequest is the body of POST /pings and PATCH /pings/:id.
+type PingRequest struct {
+}
+
+// PingResponse is one ping on the wire.
+type PingResponse struct {
+	ID        string    `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// PingsResponse is a listing.
+type PingsResponse struct {
+	Pings []PingResponse `json:"pings"`
+}
+==> app/controllers/pings_controller.go
+package controllers
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+
+	"example.com/blog/app/domain"
+	"example.com/blog/app/views"
+)
+
+// pingsStore is the slice of the store this controller uses, declared next to
+// its caller (rule 2) and holding only the methods the actions call.
+// *models.Store satisfies it, and app/application.go passes it in; the
+// test's fake is a few lines.
+type pingsStore interface {
+	CreatePing(ctx context.Context, p domain.Ping) (domain.Ping, error)
+	GetPing(ctx context.Context, id string) (domain.Ping, error)
+	ListPings(ctx context.Context, limit int32) ([]domain.Ping, error)
+	UpdatePing(ctx context.Context, p domain.Ping) (domain.Ping, error)
+	DeletePing(ctx context.Context, id string) error
+}
+
+// pingsListLimit is how many a listing returns, newest first. Paging is
+// yours to add when a client needs more.
+const pingsListLimit = 100
+
+// PingsController is the HTTP surface of pings: a JSON resource over the store. A
+// handler converts HTTP into domain values, calls one store method, and
+// converts the result back. Validation is the domain's and runs on save,
+// which is why a bad value is a 422 from the store and not a binding rule
+// here. Nothing below app/controllers sees *gin.Context (rule 5).
+type PingsController struct {
+	Store pingsStore
+	Log   *slog.Logger
+}
+
+// NewPingsController builds the controller.
+func NewPingsController(store pingsStore, log *slog.Logger) *PingsController {
+	return &PingsController{Store: store, Log: log}
+}
+
+// SetupRoutes mounts the resource under its own prefix. Middleware the whole
+// controller needs goes here; which group it sits in, and so how it is
+// exposed, is decided by routes.go, which calls this.
+func (ctl *PingsController) SetupRoutes(router *gin.RouterGroup) {
+	pings := router.Group("/pings")
+	pings.GET("", ctl.Index)
+	pings.POST("", ctl.Create)
+	pings.GET("/:id", ctl.Show)
+	pings.PATCH("/:id", ctl.Update)
+	pings.DELETE("/:id", ctl.Destroy)
+}
+
+// Index handles GET /pings.
+func (ctl *PingsController) Index(c *gin.Context) {
+	pings, err := ctl.Store.ListPings(c.Request.Context(), pingsListLimit)
+	if err != nil {
+		ctl.fail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, pingsView(pings))
+}
+
+// Show handles GET /pings/:id.
+func (ctl *PingsController) Show(c *gin.Context) {
+	p, err := ctl.Store.GetPing(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		ctl.fail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, pingView(p))
+}
+
+// Create handles POST /pings.
+func (ctl *PingsController) Create(c *gin.Context) {
+	p, err := ctl.Store.CreatePing(c.Request.Context(), domain.Ping{})
+	if err != nil {
+		ctl.fail(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, pingView(p))
+}
+
+// Update handles PATCH /pings/:id.
+func (ctl *PingsController) Update(c *gin.Context) {
+	p, err := ctl.Store.UpdatePing(c.Request.Context(), domain.Ping{ID: c.Param("id")})
+	if err != nil {
+		ctl.fail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, pingView(p))
+}
+
+// Destroy handles DELETE /pings/:id.
+func (ctl *PingsController) Destroy(c *gin.Context) {
+	if err := ctl.Store.DeletePing(c.Request.Context(), c.Param("id")); err != nil {
+		ctl.fail(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// fail maps a domain error to a status, the one place that mapping lives:
+// not found is 404, a validation failure is 422 as in Rails, and anything
+// else is logged and answered 500 without leaking its text.
+func (ctl *PingsController) fail(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, domain.ErrNotFound):
+		c.JSON(http.StatusNotFound, views.ErrorMessage("no such ping"))
+	case errors.Is(err, domain.ErrInvalid):
+		c.JSON(http.StatusUnprocessableEntity, views.Error(err))
+	default:
+		ctl.Log.ErrorContext(c.Request.Context(), "pings: request failed",
+			"path", c.FullPath(), "err", err, "request_id", c.GetString("request_id"))
+		c.JSON(http.StatusInternalServerError, views.ErrorMessage("internal error"))
+	}
+}
+
+// The controller converts between the domain and the wire. views never
+// imports domain, so this is where PingResponse is built.
+
+func pingView(p domain.Ping) views.PingResponse {
+	return views.PingResponse{
+		ID:        p.ID,
+		CreatedAt: p.CreatedAt,
+		UpdatedAt: p.UpdatedAt,
+	}
+}
+
+func pingsView(pings []domain.Ping) views.PingsResponse {
+	out := views.PingsResponse{Pings: make([]views.PingResponse, 0, len(pings))}
+	for _, p := range pings {
+		out.Pings = append(out.Pings, pingView(p))
+	}
+	return out
+}
+==> app/controllers/pings_controller_test.go
+package controllers
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+
+	"example.com/blog/app/domain"
+)
+
+// fakePingsStore is a fake of the store interface declared beside the controller: it
+// records what the controller asked for and answers with what the test chose.
+type fakePingsStore struct {
+	one  domain.Ping
+	many []domain.Ping
+	err  error
+
+	gotID string
+	got   domain.Ping
+}
+
+func (f *fakePingsStore) CreatePing(_ context.Context, p domain.Ping) (domain.Ping, error) {
+	f.got = p
+	return f.one, f.err
+}
+
+func (f *fakePingsStore) GetPing(_ context.Context, id string) (domain.Ping, error) {
+	f.gotID = id
+	return f.one, f.err
+}
+
+func (f *fakePingsStore) ListPings(context.Context, int32) ([]domain.Ping, error) {
+	return f.many, f.err
+}
+
+func (f *fakePingsStore) UpdatePing(_ context.Context, p domain.Ping) (domain.Ping, error) {
+	f.gotID, f.got = p.ID, p
+	return f.one, f.err
+}
+
+func (f *fakePingsStore) DeletePing(_ context.Context, id string) error {
+	f.gotID = id
+	return f.err
+}
+
+// pingsRequest mounts the controller alone on a bare router, so these tests see
+// the controller and nothing else: no middleware, no other routes.
+func pingsRequest(t *testing.T, store *fakePingsStore, method, path, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	NewPingsController(store, slog.New(slog.NewTextHandler(io.Discard, nil))).SetupRoutes(&router.RouterGroup)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestPingsIndexLists(t *testing.T) {
+	store := &fakePingsStore{many: []domain.Ping{{ID: "a"}, {ID: "b"}}}
+	rec := pingsRequest(t, store, http.MethodGet, "/pings", "")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
+	}
+	var body struct {
+		Pings []struct{ ID string } `json:"pings"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Pings) != 2 || body.Pings[1].ID != "b" {
+		t.Errorf("body = %+v", body)
+	}
+}
+
+func TestPingsShowUnknownIs404(t *testing.T) {
+	rec := pingsRequest(t, &fakePingsStore{err: domain.ErrNotFound}, http.MethodGet, "/pings/nope", "")
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", rec.Code)
+	}
+}
+
+func TestPingsCreatePassesTheBodyThroughAndAnswers201(t *testing.T) {
+	store := &fakePingsStore{one: domain.Ping{ID: "a"}}
+	rec := pingsRequest(t, store, http.MethodPost, "/pings", `{}`)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), `"id":"a"`) {
+		t.Errorf("body = %s", rec.Body)
+	}
+}
+
+// Validation is the domain's and runs in the store. The controller's only
+// job is to say 422.
+func TestPingsCreateInvalidIs422(t *testing.T) {
+	store := &fakePingsStore{err: errors.Join(domain.ErrInvalid, errors.New("not valid"))}
+	rec := pingsRequest(t, store, http.MethodPost, "/pings", `{}`)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want 422: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestPingsDestroyAnswers204(t *testing.T) {
+	store := &fakePingsStore{}
+	rec := pingsRequest(t, store, http.MethodDelete, "/pings/a", "")
+	if rec.Code != http.StatusNoContent || store.gotID != "a" {
+		t.Errorf("status = %d, id = %q", rec.Code, store.gotID)
+	}
+}
+
+// An unexpected error is a 500 that says nothing about its cause.
+func TestPingsUnexpectedErrorIs500WithoutDetail(t *testing.T) {
+	rec := pingsRequest(t, &fakePingsStore{err: errors.New("connection refused to db-1")}, http.MethodGet, "/pings", "")
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", rec.Code)
+	}
+	if strings.Contains(rec.Body.String(), "db-1") {
+		t.Errorf("body leaks the internal error: %s", rec.Body)
+	}
+}
