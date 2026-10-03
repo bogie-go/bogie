@@ -156,7 +156,30 @@ GET under that name, and new and edit are refused because nothing here renders
 a form. Give the controller its dependencies as a small interface declared
 beside it and pass the real thing on the wire line. `bogie d controller
 comments` removes all of it, registration included. `bogie doctor` checks the
-markers are intact and every controller is constructed and mounted.
+markers are intact and every controller is constructed and mounted. Never
+delete a marker: the generators stop and name the file if one is missing;
+they do not guess.
+
+### Give a controller a dependency
+
+A generated controller holds only a logger. To hand it a store or a service,
+three edits, all in files you own:
+
+1. Beside the controller, declare the slice it needs (rule 2), only the
+   methods it calls:
+
+        type commentsStore interface {
+            GetComment(ctx context.Context, id string) (domain.Comment, error)
+        }
+
+2. Add a field and a constructor parameter: `Store commentsStore`,
+   `NewCommentsController(store commentsStore, log *slog.Logger)`.
+3. On its wire line in `app/application.go`, pass the real thing:
+   `server.Comments = controllers.NewCommentsController(store, log)`.
+   `*models.Store` satisfies any interface made of its own methods.
+
+The test hands in a fake with the same methods; it needs no database. A
+scaffolded controller shows the finished shape.
 
 ### Add a namespace
 
@@ -200,9 +223,6 @@ fill with only the methods it calls, a `Run(ctx)` to rename, and a test. It is
 not wired anywhere: the controller that needs it declares what it wants. A
 service is for logic that is not CRUD; a plain resource needs none.
 
-Never delete a marker. The generators stop and name the file if one is
-missing; they do not guess.
-
 ### Add a model
 
     bogie g model comment body:text post:references score:integer
@@ -236,3 +256,45 @@ committed; `bin/ci` fails if they are stale.
 The schema is owned here and applied at boot; there is no schema dump. A new
 app has no table, as `rails new` has none: `bogie g model` writes the first,
 and `bin/ci` runs the database steps against whatever the migrations hold.
+
+### Add a query
+
+There is no `where` builder; a query is SQL with a name. In
+`db/queries/comments.sql`:
+
+    -- name: ListCommentsForPost :many
+    SELECT * FROM comments WHERE post_id = $1 ORDER BY created_at DESC;
+
+then `make sqlc`, which writes `ListCommentsForPost` into
+`app/models/comments.sql.go` with typed parameters, or fails if a column is
+misspelled. Then a store method in `app/models/comments.go` that calls it
+and converts the rows with `commentFromRow`, as the generated methods do.
+Annotations: `:one`, `:many`, `:exec`, `:execrows`. The generated file is
+committed; `bin/ci` fails if it is stale.
+
+### Write a test
+
+Tests sit beside the code, stdlib `testing`, no factories and no fixtures.
+
+- A **controller test** mounts the controller alone on `gin.New()` with a
+  fake of its interface and asserts on status and body. No database; the
+  scaffolded `*_controller_test.go` is the pattern.
+- A **store test** calls `testStore(t)`, which opens the TEST database,
+  migrates it and truncates every table, so each test starts from nothing.
+  It needs Postgres up (`make up`) and never touches development data.
+- A **domain test** is a plain function call: `Validate` and whatever rules
+  live in `app/domain`, nothing to set up.
+- A **service test** fakes the store interface the service declared.
+
+`bogie test` runs everything with the race detector and coverage.
+
+### When something is off
+
+- `bogie doctor`: every marker exactly once, every controller constructed
+  and mounted, tools pinned, layout files present.
+- `make sqlc` after any change to `db/queries` or `db/migrate`; a stale
+  `*.sql.go` fails `bin/ci`.
+- A migration that will not roll back: `bogie db:rollback` runs the Down
+  block, so write one.
+- A 500 in a handler is logged with `request_id`; the response says
+  "internal error" and nothing else, on purpose.
