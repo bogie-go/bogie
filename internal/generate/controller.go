@@ -155,6 +155,22 @@ func NamespaceWirePrefixes(ns string) []Wire {
 	}
 }
 
+// LooksLikeASingularResource reports whether a controller name is singular
+// while its actions address a member by id (show, update, destroy): the
+// shape of a resource, which Rails names in the plural. index alone does
+// not count, since welcome or search are whole controllers of their own.
+func LooksLikeASingularResource(name string, actions []string) bool {
+	if Singular(name) != name {
+		return false
+	}
+	for _, a := range actions {
+		if r, ok := resourceful[a]; ok && strings.Contains(r.path, ":id") {
+			return true
+		}
+	}
+	return false
+}
+
 // controller is one Rails controller: the names every file and line derive
 // from, computed once.
 type controller struct {

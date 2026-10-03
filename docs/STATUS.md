@@ -109,6 +109,8 @@ pushing; on a clean tree a green run signs off the commit.
   against.
 - Migrate at boot is on by default; `<NAME>_MIGRATE_AT_BOOT=false` turns it off.
 - River's schema comes from `rivermigrate` at `migrate`, not from `db/migrate`.
+- Postgres is the only database, and SQLite was declined on 2026-10-03 for
+  as long as River's SQLite driver is a preview (DESIGN.md §12.4).
 - Tasks that destroy pass `--yes` through the tool; the binary in a container
   keeps asking.
 - `domain.ErrNotFound` and `ErrInvalid` live in `domain.go`, not with a model.

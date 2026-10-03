@@ -642,6 +642,29 @@ best metaphor for a scaffold, but a common word), **Ballast**, **Turnout**,
    so credentials ship as the default and env-only is documented.
 4. **Postgres-only.** sqlc supports others, but goose dialects, type mapping and
    tests multiply. Postgres only in v1.
+
+   **SQLite, considered and declined 2026-10-03.** Rails 8 defaults to
+   SQLite, so the question will come up again; this is why the answer is
+   still no. The database is wired in nine places, and SQLite changes every
+   one: the driver (`modernc.org/sqlite` over `database/sql` instead of a
+   pgx pool), `DATABASE_URL` becoming a file per environment under
+   `storage/`, `db create` and `db drop` becoming file operations, the sqlc
+   engine, a second column in the `g model` type table (`uuid` as `TEXT`
+   with the id made in Go since there is no `gen_random_uuid()`, `datetime`
+   as ISO text with `_time_format` on the connection, `jsonb` as `TEXT`,
+   booleans as integers), store methods without `pgtype`, the test store's
+   `TRUNCATE ... CASCADE` becoming `DELETE FROM`, Kamal needing a volume
+   and a single replica, and `bin/ci` scaffolding a third app. All of that
+   is tractable. What decides it is jobs: River's SQLite driver, added in
+   v0.23, is described by River as an early preview with little real-world
+   use that wants a pool of one connection, so `--jobs` would have to
+   refuse SQLite or ship on a preview. Bogie's premise is the service next
+   to a Rails app that already runs Postgres, and the thing that service
+   most often exists for, a queue, a webhook receiver, a socket gateway, is
+   the thing SQLite serves least well. So Postgres stays the only database
+   until River calls its SQLite driver stable, and then it comes in as
+   `bogie new NAME --database=sqlite3`, Rails's spelling, with Postgres
+   still the default. Not before.
 5. **Gin's future.** A single dependency behind the controller layer, and rule 5
    keeps it there, so swapping is contained. Confirm the layer holds in the scaffold.
 6. **Template drift.** Mitigated by §8.2; only if that job actually runs on every change.

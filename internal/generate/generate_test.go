@@ -234,6 +234,20 @@ func TestParseControllerName(t *testing.T) {
 	}
 }
 
+func TestLooksLikeASingularResource(t *testing.T) {
+	cases := map[string]bool{
+		"post index show": true, "post destroy": true,
+		"posts index show": false, "post index": false, "welcome index": false,
+		"search index": false, "status show": false, "comments show": false,
+	}
+	for spec, want := range cases {
+		parts := strings.Fields(spec)
+		if got := LooksLikeASingularResource(parts[0], parts[1:]); got != want {
+			t.Errorf("LooksLikeASingularResource(%q) = %v, want %v", spec, got, want)
+		}
+	}
+}
+
 func TestControllerRefusesForms(t *testing.T) {
 	for _, bad := range [][]string{{"new"}, {"edit"}, {"index", "index"}} {
 		if _, _, err := Controller("m", "", "comments", bad); err == nil {

@@ -107,7 +107,9 @@ Tests live beside the code they test, stdlib `testing` only.
 One Rails controller is one Go file, `app/controllers/comments_controller.go`
 in the `controllers` package: a `CommentsController` type holding its
 dependencies, `SetupRoutes`, and one method per action, with a test beside
-it. Go has no autoload, so a controller exists only once it is constructed,
+it. Name a resource in the plural, as Rails does: the name is used as typed,
+so `comments` answers at `/comments` and `comment` at `/comment`. Go has no
+autoload, so a controller exists only once it is constructed,
 held and mounted. That is three one-line insertions, each above a marker
 comment, and the generator makes all three, idempotently:
 

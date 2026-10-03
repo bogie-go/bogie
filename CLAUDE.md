@@ -68,7 +68,9 @@ generated app's `.golangci.yml`, which bin/ci enforces.
   and rejected for v1 (§5).
 - **Generator output follows Rails:** `create` / `insert` / `skip` / `conflict`
   per file, `--pretend` for dry runs, never overwrite without `--force`.
-- **Postgres only** in v1. Attribute type mapping (`string`→`text`,
+- **Postgres only** in v1. SQLite was considered and declined on 2026-10-03
+  (§12.4): River's SQLite driver is a preview, so `--jobs` would break, and
+  the database is wired in nine places. Attribute type mapping (`string`→`text`,
   `datetime`→`timestamptz`, `references`→`uuid` + FK, etc.) is in §5.
 - **API-only, no views.** Decided 2026-09-30.
 - **Jobs are River, opt-in via `--jobs`.** Not asynq: no Redis, transactional

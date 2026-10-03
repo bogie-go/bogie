@@ -28,8 +28,10 @@ Generators:
   controller NAME [action ...]      app/controllers/<name>_controller.go, one
                                     Rails controller in one file, REGISTERED:
                                     a field, a wire line and a mount above
-                                    each marker. admin/NAME puts it in the
-                                    admin namespace, the package
+                                    each marker. Name a resource in the
+                                    plural, as Rails does: posts answers at
+                                    /posts, post at /post. admin/NAME puts it
+                                    in the admin namespace, the package
                                     app/controllers/admin_controller/, made
                                     on first use and registered the same way
   service NAME                      app/services/<name>/, ctx first, no HTTP
@@ -128,6 +130,13 @@ func generateIn(root string, args []string, out io.Writer) error {
 			return fmt.Errorf("generate controller: %w", err)
 		}
 		files, wires = append(files, ctlFiles...), append(wires, ctlWires...)
+		// Rails names a resource controller in the plural and uses the name
+		// as typed, so `g controller post show` answers at /post/:id there
+		// too. Say so once, last, since the path is what the caller will
+		// notice.
+		if generate.LooksLikeASingularResource(ctl, attrArgs) {
+			defer say("%12s  Rails names a resource in the plural: %s would answer at /%s; %s answers at /%s\n", "note", generate.Plural(ctl), generate.Plural(ctl), ctl, ctl)
+		}
 	case "service":
 		files, err = generate.Service(module, name)
 		if err != nil {
