@@ -21,6 +21,8 @@ have no equivalent: a `rails new`-style generator, and generators that also
     bogie new blog
     cd blog && bogie server
 
+<p align="center"><img src="docs/welcome.webp" width="640" alt="The welcome page a new app serves at / in development"></p>
+
 A **bogie** is the wheeled frame under a rail car that carries it along the
 track. The car body, your application code, is yours. Bogie never ships a
 runtime dependency into it: the generated app does not import bogie, and if
