@@ -49,7 +49,9 @@ Rails-spelled `db:*` and `credentials:*` tasks work; see
 [`docs/STATUS.md`](docs/STATUS.md) for exactly what, how to set up a machine,
 and what comes next. [`docs/DESIGN.md`](docs/DESIGN.md) has the full design,
 the reasoning behind each choice, what the reference service got wrong, and
-the questions still open. Until the first tagged release, install from a
+the questions still open. [`docs/FROM_RAILS.md`](docs/FROM_RAILS.md) is the
+dictionary: what each Rails thing is called here, where it lives, and what
+has no equivalent. Until the first tagged release, install from a
 clone: `go install .`
 
 No telemetry, now or later.

@@ -11,7 +11,7 @@ reasoning; this file is the state.
 | M0 decide | done, except: edit the launch essay (see Loose ends). `bogie-go.com` registered 2026-10-03 |
 | M1 skeleton: `new`, database, credentials, seeds, `bin/ci` | **done** |
 | M2 generators: `g`/`d` for migration, model, controller, service, job; markers; `doctor`; golden and marker-removal tests; `--jobs` with River | **done** |
-| M3 agent layer: fuller `AGENTS.md`, `docs/FROM_RAILS.md`, a test that catches an unregistered controller | `g scaffold` done 2026-10-03; the rest next |
+| M3 agent layer: fuller `AGENTS.md`, `docs/FROM_RAILS.md`, a test that catches an unregistered controller | `g scaffold` and `FROM_RAILS.md` done 2026-10-03; `doctor` is the registration check; a fuller `AGENTS.md` comes out of M4 |
 | M4 dogfood: regenerate kchat's skeleton and diff | |
 | M5 publish: version from the git tag, Homebrew tap, first release, launch | |
 | M6 `app:update`: three-way merge against the version in `bogie.toml` | after the first tag |
