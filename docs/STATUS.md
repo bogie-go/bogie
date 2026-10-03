@@ -141,7 +141,7 @@ pushing; on a clean tree a green run signs off the commit.
   Go stamped, which is the tag for `go install @vX.Y.Z` and
   `v0.0.0-<date>-<commit>` (`+dirty` if uncommitted) for a build from a
   clone; the same string goes into every generated `bogie.toml` (done
-  2026-10-03). The first tag, the Homebrew tap and the launch essay remain
+  2026-10-03). The first tag and the launch essay remain
   for M5.
 - kchat still imports `roonglit/credentials`; it can move whenever convenient.
 - `g controller` actions are 501 stubs with no dependencies; wiring a
