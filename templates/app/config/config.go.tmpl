@@ -94,6 +94,11 @@ type AppConfig struct {
 	// default true. Set it to false only for a deployment that migrates from
 	// one place on purpose.
 	MigrateAtBoot bool `mapstructure:"migrate_at_boot"`
+
+	// Settings a generator added (bogie g authentication) go above the
+	// marker, one field each, read from the same section and overridden by
+	// the same {{.EnvPrefix}}_<KEY> rule.
+	// bogie:config
 }
 
 // Load reads configuration and validates it.
@@ -211,6 +216,7 @@ func applyEnv(a *AppConfig) error {
 		}
 		a.MigrateAtBoot = b
 	}
+	// bogie:env
 	return nil
 }
 
@@ -233,6 +239,25 @@ func (c Config) validate() error {
 	}
 	if _, err := url.Parse(a.DatabaseURL); err != nil {
 		return fmt.Errorf("config: {{.EnvPrefix}}_DATABASE_URL: %w", err)
+	}
+	// One check per generated setting; a missing secret refuses to boot
+	// rather than serving open.
+	for _, err := range []error{
+		// bogie:validate
+	} {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// requireSecret is the check for a secret a generator added: in production
+// it must be set and at least min bytes long; elsewhere the generated
+// development value or the test's own serves, so nothing is enforced.
+func requireSecret(env, name, value string, min int) error {
+	if env == EnvProduction && len(value) < min {
+		return fmt.Errorf("config: %s must be set in production, at least %d characters", name, min)
 	}
 	return nil
 }

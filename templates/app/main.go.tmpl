@@ -46,20 +46,21 @@ func main() {
 		}
 	}
 
-	var run func(context.Context, []string) error
-	switch command {
-	case "serve":
-		run = runServe{{if .Jobs}}
-	case "worker":
-		run = runWorker{{end}}
-	case "migrate":
-		run = runMigrate
-	case "db":
-		run = runDB
-	case "help", "-h", "--help":
+	// One entry per role or task. A generator that adds a command (bogie g
+	// authentication api_key) registers it above the marker.
+	commands := map[string]func(context.Context, []string) error{
+		"serve":   runServe,{{if .Jobs}}
+		"worker":  runWorker,{{end}}
+		"migrate": runMigrate,
+		"db":      runDB,
+		// bogie:commands
+	}
+	if command == "help" || command == "-h" || command == "--help" {
 		fmt.Print(usage)
 		return
-	default:
+	}
+	run, ok := commands[command]
+	if !ok {
 		// NOT an error. The container may be started with flags this binary does
 		// not know, and refusing to boot over an unrecognised argument is a worse
 		// failure than ignoring it. But say so, so a typo is visible in the log.

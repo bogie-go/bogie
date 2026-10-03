@@ -41,6 +41,10 @@ through the module proxy can lag behind main).
                                                       written and registered on first use
     bogie g service publish_post
     bogie g job send_welcome                          apps made with --jobs
+    bogie g authentication secret|token|api_key       a middleware on a route group, its config
+                                                      keys wired and a development secret written
+                                                      to the credentials; api_key adds a table
+                                                      and `bogie api_keys:create NAME`
     bogie d <generator> NAME                          reverses any of the above
     bogie doctor                                      markers once each, tools pinned, layout
                                                       files, every controller and namespace
@@ -92,7 +96,8 @@ pushing; on a clean tree a green run signs off the commit.
 - Generators are pure in `internal/generate` (clock passed in) and pinned by
   golden files: `go test ./internal/generate -update` rewrites them after an
   intended change; review the diff.
-- Markers (`// bogie:controllers`, `bogie:wire`, `bogie:routes`, `bogie:jobs`)
+- Markers (`// bogie:controllers`, `bogie:wire`, `bogie:routes`, `bogie:jobs`,
+  `bogie:config`, `bogie:env`, `bogie:validate`, `bogie:commands`)
   are edited by `internal/markers`: insert above, idempotent, import added,
   file formatted with `go/format`; every marker checked before any file is
   written. A namespace package carries its own `controllers` and `routes`

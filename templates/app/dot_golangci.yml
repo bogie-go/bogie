@@ -18,9 +18,10 @@ linters:
   exclusions:
     rules:
       # The store's uuid helpers and test helper exist for the models the
-      # generators write, and jobs.go's add for the jobs; an app between
-      # models or before its first job would otherwise be told they are
-      # unused.
-      - path: (app/models/(uuid|store_test)|app/jobs/jobs)\.go
+      # generators write, jobs.go's add for the jobs, and config's
+      # requireSecret for the settings g authentication adds; an app
+      # between models, before its first job or without authentication
+      # would otherwise be told they are unused.
+      - path: (app/models/(uuid|store_test)|app/jobs/jobs|config/config)\.go
         linters:
           - unused

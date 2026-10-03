@@ -218,7 +218,39 @@ transaction with `InsertTx`, so the job commits with the row or not at all.
 backlog never slows a request. Args are stored as JSON: carry ids, not
 records. River's schema is applied by `migrate`, not by db/migrate.
 
-{{end}}### Add a service
+{{end}}### Add authentication
+
+    bogie g authentication secret      # the Rails app calls this service
+    bogie g authentication token       # a user presents a bearer token
+    bogie g authentication api_key     # a machine client presents a key
+
+Each shape is a middleware on a route group, as `before_action` is. The
+generator writes the middleware and its test in `app/middlewares`, a group
+helper on the root Server in `app/controllers/authentication_<shape>.go`,
+and the config: a field, its environment override and a production check,
+above the markers in `config/config.go`, with a development value written
+into the credentials file so the app boots as before. Staging and
+production get theirs with `make credentials ENV=...`, and refuse to boot
+without. Then mount what the guard protects on the group instead of the
+router, in `routes.go`:
+
+    s.Posts.SetupRoutes(s.WithSecret(&r.RouterGroup))   // or WithUser, WithAPIKey
+
+- **secret**: the `X-<App>-Secret` header (`middlewares.SecretHeader`),
+  constant-time compared, Basic auth as a fallback for a browser. The Rails
+  side is one header on its client, from its own credentials.
+- **token**: JWT HS256 with `{{.Name}}.token_secret`. The Rails app mints a
+  token for its user with the `jwt` gem and this service verifies it;
+  `middlewares.Subject(c)` is the subject in a handler. A service that signs
+  users in itself mints with `s.Tokens().Mint(subject, ttl)`.
+- **api_key**: an `api_keys` table with a bcrypt digest, a service, and
+  `bogie api_keys:create NAME`, which prints the key once;
+  `middlewares.APIKeyName(c)` says which key a request presented.
+
+`bogie d authentication <shape>` removes it; the development value stays in
+the credentials file, harmless.
+
+### Add a service
 
     bogie g service publish_post
 

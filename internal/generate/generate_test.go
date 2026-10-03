@@ -296,6 +296,32 @@ func TestScaffoldWithNoAttributes(t *testing.T) {
 	golden(t, "scaffold_ping", files)
 }
 
+func TestAuthentication(t *testing.T) {
+	for _, shape := range AuthenticationShapes {
+		files, wires, err := Authentication("example.com/blog", "blog", shape, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		golden(t, "authentication_"+shape, files)
+		prefixes := AuthenticationWirePrefixes("blog", shape)
+		if len(prefixes) != len(wires) {
+			t.Fatalf("%s: %d wires, %d prefixes", shape, len(wires), len(prefixes))
+		}
+		for i, p := range prefixes {
+			if !strings.HasPrefix(wires[i].Line, p.Line) || p.File != wires[i].File {
+				t.Errorf("%s: prefix %+v does not match %+v", shape, p, wires[i])
+			}
+		}
+	}
+	if _, _, err := Authentication("m", "blog", "oauth", at); err == nil {
+		t.Error("unknown shape accepted")
+	}
+	w := AuthenticationSettings("blog", "token")[0]
+	if w.Env != "BLOG_TOKEN_SECRET" || w.Field != "TokenSecret" || w.Key != "token_secret" {
+		t.Errorf("setting = %+v", w)
+	}
+}
+
 func TestService(t *testing.T) {
 	files, err := Service("example.com/blog", "publish_post")
 	if err != nil {

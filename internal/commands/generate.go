@@ -41,6 +41,14 @@ Generators:
   service NAME                      app/services/<name>/, ctx first, no HTTP
   job NAME                          app/jobs/<name>.go, a River job, REGISTERED
                                     above bogie:jobs (apps made with --jobs)
+  authentication SHAPE              a middleware on a route group, its config
+                                    key with a development value written to
+                                    the credentials, and a WithX group helper
+                                    on the root Server. SHAPE is secret (the
+                                    Rails app calls this service), token
+                                    (bearer JWT a user presents) or api_key
+                                    (keys for machine clients, with a table
+                                    and api_keys:create)
 
 Attributes are field:type, with :index or :uniq after the type. Types:
   string text integer bigint boolean datetime uuid jsonb references
@@ -53,6 +61,7 @@ A references field names the other model: post:references is post_id.
   bogie g controller admin/reports index show
   bogie g service publish_post
   bogie g job send_welcome
+  bogie g authentication secret
 `
 
 // Generate handles `bogie generate` and `bogie g`, in the app around the
@@ -155,6 +164,16 @@ func generateIn(root string, args []string, out io.Writer) error {
 		if err != nil {
 			return fmt.Errorf("generate job: %w", err)
 		}
+	case "authentication":
+		settings, err := readSettings(root)
+		if err != nil {
+			return fmt.Errorf("generate authentication: %w", err)
+		}
+		files, wires, err = generate.Authentication(module, settings.Name, name, nextStamp(root, time.Now()))
+		if err != nil {
+			return fmt.Errorf("generate authentication: %w", err)
+		}
+		runSqlc = name == "api_key"
 	case "migration", "model", "scaffold":
 		runSqlc = true
 	default:
@@ -163,7 +182,7 @@ func generateIn(root string, args []string, out io.Writer) error {
 	}
 
 	attrs, err := generate.ParseAttrs(attrArgs)
-	if runSqlc && err != nil {
+	if runSqlc && generator != "authentication" && err != nil {
 		return fmt.Errorf("generate %s: %w", generator, err)
 	}
 
@@ -227,6 +246,28 @@ func generateIn(root string, args []string, out io.Writer) error {
 	}
 	if err := wire(root, wires, pending, *pretend, report); err != nil {
 		return fmt.Errorf("generate %s: %w", generator, err)
+	}
+
+	// A generated secret gets a development value in the credentials file,
+	// so the app boots as it did; staging and production are given theirs by
+	// hand, and refuse to boot without. New dependencies are tidied in.
+	if generator == "authentication" {
+		for _, s := range generate.AuthenticationSettings(appName(root), name) {
+			if err := addDevelopmentSetting(root, s.Key, *pretend, report); err != nil {
+				return fmt.Errorf("generate authentication: %w", err)
+			}
+		}
+		if !*pretend && name != "secret" {
+			say("%12s  go mod tidy\n", "run")
+			cmd := exec.Command("go", "mod", "tidy")
+			cmd.Dir = root
+			cmd.Stdout = out
+			cmd.Stderr = os.Stderr
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("generate authentication: go mod tidy: %w", err)
+			}
+		}
+		say("%12s  mount the routes it guards in app/controllers/routes.go: s.Posts.SetupRoutes(s.%s(&r.RouterGroup))\n", "next", generate.AuthenticationGroup(name))
 	}
 
 	// The migrations are the schema sqlc compiles against, so a new migration

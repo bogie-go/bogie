@@ -27,6 +27,7 @@ package by hand stays.
   bogie d controller admin/reports
   bogie d service publish_post
   bogie d job send_welcome
+  bogie d authentication token
   bogie d model comment
   bogie d migration add_slug_to_posts
 `
@@ -123,6 +124,17 @@ func destroyIn(root string, args []string, out io.Writer) error {
 	case "job":
 		files, _, err = generate.Job(name)
 		wires = generate.JobWirePrefix(name)
+	case "authentication":
+		var settings Settings
+		settings, err = readSettings(root)
+		if err == nil {
+			files, err = generate.AuthenticationFiles(module, settings.Name, name)
+			wires = generate.AuthenticationWirePrefixes(settings.Name, name)
+		}
+		if name == "api_key" {
+			files = append(files, generate.File{Path: "app/models/api_keys.sql.go"})
+			runSqlc = true
+		}
 	case "model", "scaffold":
 		if generator == "model" {
 			files, err = generate.Model(module, name, nil, time.Time{})

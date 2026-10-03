@@ -108,6 +108,15 @@ func plan(command string, args []string) ([][]string, error) {
 		// The pinned credentials tool, from the app's own go.mod.
 		argv = []string{"go", "tool", "credentials"}
 	default:
+		// A colon task in a family Bogie spells itself (db:, credentials:)
+		// that is not one of them is a typo, and the nearest is named. Any
+		// other colon task is one of the app binary's own subcommands spelled
+		// the Rails way: api_keys:create is `blog api_keys create`, and the
+		// binary says so if it has no such command.
+		if strings.Contains(command, ":") && !knownFamily(command) {
+			argv = append([]string{"go", "run", "."}, strings.Split(command, ":")...)
+			break
+		}
 		return nil, unknown(command)
 	}
 	return [][]string{append(argv, args...)}, nil
@@ -126,6 +135,18 @@ func withArgs(steps [][]string, args []string) [][]string {
 
 // unknown names the nearest Rails task when someone types one Bogie does not
 // have, so `bogie db:migrate:up` points at db:migrate rather than at nothing.
+// knownFamily reports whether a colon task starts like one Bogie spells
+// itself, db: or credentials:.
+func knownFamily(command string) bool {
+	prefix := command[:strings.Index(command, ":")+1]
+	for name := range tasks {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func unknown(command string) error {
 	prefix := command
 	if i := strings.Index(command, ":"); i > 0 {

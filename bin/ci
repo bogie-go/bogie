@@ -77,6 +77,11 @@ generators() {
   "$b" g controller admin/reports index show || return 1
   "$b" g controller admin/audits index || return 1
   "$b" g service publish_post || return 1
+  # The three authentication shapes: config lines, a development secret in
+  # the credentials, new dependencies tidied in, a table for api_key.
+  "$b" g authentication secret || return 1
+  "$b" g authentication token || return 1
+  "$b" g authentication api_key || return 1
   "$b" doctor || return 1
   # Same version on both sides, so this is the no-op path; the merge itself
   # is unit-tested, and a real cross-version run needs the module proxy.
@@ -86,6 +91,9 @@ generators() {
 
   # And back out again: destroy must leave an app that still passes.
   cd "$CI_APP_DIR/blog" || return 1
+  "$b" d authentication api_key || return 1
+  "$b" d authentication token || return 1
+  "$b" d authentication secret || return 1
   "$b" d controller comments || return 1
   "$b" d controller admin/reports || return 1
   "$b" d controller admin/audits || return 1
