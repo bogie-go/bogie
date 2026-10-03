@@ -59,19 +59,120 @@ func TestGenerateControllerRegistersAboveEveryMarker(t *testing.T) {
 	}
 	files := tree(t, root)
 	for file, want := range map[string]string{
-		"app/controllers/application.go": "Comments *comments_controller.Server\n\t// bogie:controllers",
-		"app/application.go":             "server.Comments = comments_controller.NewServer(log)\n\t// bogie:wire",
+		"app/controllers/application.go": "Comments *CommentsController\n\t// bogie:controllers",
+		"app/application.go":             "server.Comments = controllers.NewCommentsController(log)\n\t// bogie:wire",
 		"app/controllers/routes.go":      "s.Comments.SetupRoutes(&r.RouterGroup)\n\t// bogie:routes",
 	} {
 		if !strings.Contains(files[file], want) {
 			t.Errorf("%s: missing %q:\n%s", file, want, files[file])
 		}
 	}
-	if !strings.Contains(files["app/controllers/application.go"], `"example.com/blog/app/controllers/comments_controller"`) {
+	if !strings.Contains(files["app/application.go"], `"example.com/blog/app/controllers"`) {
 		t.Error("import not added")
 	}
-	if _, ok := files["app/controllers/comments_controller/index.go"]; !ok {
-		t.Error("action file not written")
+	if _, ok := files["app/controllers/comments_controller.go"]; !ok {
+		t.Error("controller file not written")
+	}
+}
+
+// A namespaced controller: the first one writes the package and registers
+// it in the root; the second only registers itself in the package; destroy
+// reverses both, and the package goes with its last controller.
+func TestGenerateControllerInANamespaceRoundTrips(t *testing.T) {
+	root := fixture(t)
+	var out bytes.Buffer
+	if err := generateIn(root, []string{"controller", "admin/reports", "index", "show"}, &out); err != nil {
+		t.Fatalf("generate: %v\n%s", err, out.String())
+	}
+	files := tree(t, root)
+	for file, want := range map[string][]string{
+		"app/controllers/application.go":                         {"Admin *admin_controller.Server\n\t// bogie:controllers", `"example.com/blog/app/controllers/admin_controller"`},
+		"app/application.go":                                     {"server.Admin = admin_controller.NewServer(log)\n\tserver.Admin.Reports = admin_controller.NewReportsController(log)\n\t// bogie:wire"},
+		"app/controllers/routes.go":                              {"s.Admin.SetupRoutes(&r.RouterGroup)\n\t// bogie:routes"},
+		"app/controllers/admin_controller/server.go":             {"Reports *ReportsController\n\t// bogie:controllers"},
+		"app/controllers/admin_controller/routes.go":             {"s.Reports.SetupRoutes(admin)\n\t// bogie:routes"},
+		"app/controllers/admin_controller/reports_controller.go": {"type ReportsController struct"},
+	} {
+		for _, w := range want {
+			if !strings.Contains(files[file], w) {
+				t.Errorf("%s: missing %q:\n%s", file, w, files[file])
+			}
+		}
+	}
+
+	// A second controller in the same namespace touches nothing in the root.
+	rootBefore := map[string]string{}
+	for _, f := range []string{"app/controllers/application.go", "app/controllers/routes.go"} {
+		rootBefore[f] = files[f]
+	}
+	out.Reset()
+	if err := generateIn(root, []string{"controller", "admin/audits", "index"}, &out); err != nil {
+		t.Fatalf("second generate: %v\n%s", err, out.String())
+	}
+	files = tree(t, root)
+	for f, before := range rootBefore {
+		if files[f] != before {
+			t.Errorf("%s changed for a second controller in an existing namespace", f)
+		}
+	}
+	if strings.Count(files["app/application.go"], "server.Admin = ") != 1 {
+		t.Errorf("namespace constructed more than once:\n%s", files["app/application.go"])
+	}
+	if !strings.Contains(files["app/controllers/admin_controller/server.go"], "*AuditsController\n\t// bogie:controllers") {
+		t.Error("second controller not registered in the namespace")
+	}
+
+	// Destroy the first: the namespace stays for the second.
+	out.Reset()
+	if err := destroyIn(root, []string{"controller", "admin/reports"}, &out); err != nil {
+		t.Fatalf("destroy: %v\n%s", err, out.String())
+	}
+	files = tree(t, root)
+	if _, ok := files["app/controllers/admin_controller/reports_controller.go"]; ok {
+		t.Error("controller file not removed")
+	}
+	if _, ok := files["app/controllers/admin_controller/server.go"]; !ok {
+		t.Error("namespace removed while it still held a controller")
+	}
+	if strings.Contains(files["app/application.go"], "Reports") || !strings.Contains(files["app/application.go"], "server.Admin = ") {
+		t.Errorf("wrong lines removed:\n%s", files["app/application.go"])
+	}
+
+	// Destroy the last: the namespace goes, and the root is as it began.
+	out.Reset()
+	if err := destroyIn(root, []string{"controller", "admin/audits"}, &out); err != nil {
+		t.Fatalf("destroy: %v\n%s", err, out.String())
+	}
+	files = tree(t, root)
+	for file := range files {
+		if strings.HasPrefix(file, "app/controllers/admin_controller/") {
+			t.Errorf("%s left behind", file)
+		}
+	}
+	for _, f := range []string{"app/controllers/application.go", "app/application.go", "app/controllers/routes.go"} {
+		if strings.Contains(files[f], "Admin") || strings.Contains(files[f], "admin_controller") {
+			t.Errorf("%s still mentions the namespace:\n%s", f, files[f])
+		}
+	}
+}
+
+// --pretend on a new namespace plans every line, including those into the
+// files it would have written, and writes nothing.
+func TestGenerateControllerInANamespacePretendWritesNothing(t *testing.T) {
+	root := fixture(t)
+	before := tree(t, root)
+	var out bytes.Buffer
+	if err := generateIn(root, []string{"controller", "admin/reports", "index", "--pretend"}, &out); err != nil {
+		t.Fatalf("generate: %v\n%s", err, out.String())
+	}
+	after := tree(t, root)
+	if len(after) != len(before) {
+		t.Errorf("files written under --pretend: %d before, %d after", len(before), len(after))
+	}
+	for _, want := range []string{"create  app/controllers/admin_controller/server.go", "Reports *ReportsController", "s.Reports.SetupRoutes(admin)"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("plan lacks %q:\n%s", want, out.String())
+		}
 	}
 }
 

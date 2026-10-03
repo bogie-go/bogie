@@ -17,18 +17,32 @@ const destroyUsage = `Usage: bogie destroy GENERATOR NAME [--pretend]
        bogie d ...
 
 Removes what the generator of the same name created: its files, and for a
-controller the three lines that registered it. Nothing else is touched; a
-file you added to the package by hand stays.
+controller the three lines that registered it. A namespaced controller's
+package goes too once it holds no controller, with the three lines that
+registered the namespace. Nothing else is touched; a file you added to a
+package by hand stays.
 
   bogie d controller comments
+  bogie d controller admin/reports
   bogie d service publish_post
   bogie d job send_welcome
   bogie d model comment
   bogie d migration add_slug_to_posts
 `
 
-// Destroy handles `bogie destroy` and `bogie d`.
+// Destroy handles `bogie destroy` and `bogie d`, in the app around the
+// working directory.
 func Destroy(args []string, out io.Writer) error {
+	root, err := appRoot(".")
+	if err != nil {
+		return err
+	}
+	return destroyIn(root, args, out)
+}
+
+// destroyIn is Destroy with the app root given, so a test can hand it a
+// fixture.
+func destroyIn(root string, args []string, out io.Writer) error {
 	say := func(format string, a ...any) { _, _ = fmt.Fprintf(out, format, a...) }
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" {
 		say(destroyUsage)
@@ -61,10 +75,6 @@ func Destroy(args []string, out io.Writer) error {
 	}
 	name := generate.Snake(positional[0])
 
-	root, err := appRoot(".")
-	if err != nil {
-		return err
-	}
 	module, err := appModule(root)
 	if err != nil {
 		return err
@@ -77,15 +87,35 @@ func Destroy(args []string, out io.Writer) error {
 	runSqlc := false
 	switch generator {
 	case "controller":
-		// Validates the name; the files are whatever is in the package,
-		// since destroy cannot know which actions generate was given.
-		_, _, err = generate.Controller(module, name, nil)
-		wires = generate.WirePrefixes(name)
-		dir := filepath.Join(root, "app", "controllers", name+"_controller")
-		matches, _ := filepath.Glob(filepath.Join(dir, "*.go"))
-		for _, m := range matches {
-			rel, _ := filepath.Rel(root, m)
-			files = append(files, generate.File{Path: filepath.ToSlash(rel)})
+		// The same two files whatever actions generate was given.
+		var ns, ctl string
+		ns, ctl, err = generate.ParseControllerName(positional[0])
+		if err == nil {
+			files, _, err = generate.Controller(module, ns, ctl, nil)
+			wires = generate.WirePrefixes(ns, ctl)
+		}
+		// The namespace lives for its controllers: when this was the last
+		// one, its server.go and routes.go go too, and the root lines that
+		// registered it. Anything else in the package keeps it alive.
+		if err == nil && ns != "" {
+			dir := filepath.Join(root, "app", "controllers", ns+"_controller")
+			removing := map[string]bool{}
+			for _, f := range files {
+				removing[filepath.Base(f.Path)] = true
+			}
+			matches, _ := filepath.Glob(filepath.Join(dir, "*"))
+			empty := len(matches) > 0
+			for _, m := range matches {
+				base := filepath.Base(m)
+				if !removing[base] && base != "server.go" && base != "routes.go" {
+					empty = false
+				}
+			}
+			if empty {
+				rel := "app/controllers/" + ns + "_controller/"
+				files = append(files, generate.File{Path: rel + "server.go"}, generate.File{Path: rel + "routes.go"})
+				wires = append(wires, generate.NamespaceWirePrefixes(ns)...)
+			}
 		}
 	case "service":
 		files, err = generate.Service(module, name)
@@ -138,7 +168,19 @@ func Destroy(args []string, out io.Writer) error {
 		}
 	}
 
-	if err := unwire(root, wires, *pretend, report); err != nil {
+	// A line in a file this run removed (a namespace's server.go, once its
+	// last controller goes) went with the file.
+	removed := map[string]bool{}
+	for _, f := range files {
+		removed[f.Path] = true
+	}
+	var remaining []generate.Wire
+	for _, w := range wires {
+		if !removed[w.File] {
+			remaining = append(remaining, w)
+		}
+	}
+	if err := unwire(root, remaining, *pretend, report); err != nil {
 		return fmt.Errorf("destroy %s: %w", generator, err)
 	}
 

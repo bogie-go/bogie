@@ -6,9 +6,9 @@
 // and become uuid at the store boundary; that conversion living in app/models
 // is what lets this package stay dependency-free.
 //
-// Post, in post.go, is the example resource every new app starts with: the
-// type and its validations. The two errors below are what every model's
-// layers above map to HTTP codes; they live here, not with any one model.
+// `bogie g model` adds a type and its validations here, one file per model.
+// The two errors below are what every model's layers above map to HTTP
+// codes; they live here, not with any one model.
 package domain
 
 import "errors"

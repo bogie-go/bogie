@@ -66,6 +66,15 @@ func TestRemoveByPrefix(t *testing.T) {
 	}
 }
 
+// gofmt aligns fields, so the inserted line's single space may have grown.
+func TestRemoveIgnoresAlignment(t *testing.T) {
+	aligned := strings.Replace(server, "\tPosts *posts_controller.Server", "\tPosts    *posts_controller.Server\n\tComments *comments_controller.Server", 1)
+	out, changed := Remove([]byte(aligned), "Posts *posts_controller.Server")
+	if !changed || strings.Contains(string(out), "posts_controller.Server") || !strings.Contains(string(out), "Comments *comments_controller.Server") {
+		t.Errorf("aligned line not removed, or the wrong one was:\n%s", out)
+	}
+}
+
 func TestAddImportThenFormatSortsIt(t *testing.T) {
 	out, changed, err := AddImport([]byte(server), "example.com/blog/app/controllers/comments_controller")
 	if err != nil || !changed {

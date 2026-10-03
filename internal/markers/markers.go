@@ -34,13 +34,16 @@ func Insert(src []byte, file, marker, line string) (out []byte, changed bool, er
 	return []byte(strings.Join(lines, "\n")), true, nil
 }
 
-// Remove deletes the first line whose trimmed text starts with prefix, so a
-// wire line can be removed whatever arguments it was given. changed is false
-// when no such line exists.
+// Remove deletes the first line whose text starts with prefix, so a wire
+// line can be removed whatever arguments it was given. Runs of spaces and
+// tabs count as one: gofmt aligns a struct's fields, so the line a generator
+// inserted as "Posts *PostsController" may read "Posts    *PostsController"
+// once a longer field joins it. changed is false when no such line exists.
 func Remove(src []byte, prefix string) (out []byte, changed bool) {
 	lines := strings.Split(string(src), "\n")
+	want := strings.Join(strings.Fields(prefix), " ")
 	for i, l := range lines {
-		if strings.HasPrefix(strings.TrimSpace(l), prefix) {
+		if strings.HasPrefix(strings.Join(strings.Fields(l), " "), want) {
 			return []byte(strings.Join(append(lines[:i], lines[i+1:]...), "\n")), true
 		}
 	}

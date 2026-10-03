@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -13,13 +14,21 @@ import (
 	"{{.Module}}/config"
 )
 
-// testServer builds a root server and mounts its routes. Controller fields
-// stay nil here: mounting binds method values, which is safe on a nil
-// pointer, and app/application.go is what constructs them. `bogie doctor`
-// checks that every controller package is both constructed and mounted.
+// testServer builds a root server and mounts its routes. Every controller
+// and namespace field is given an empty value first, by reflection so this
+// test needs no edit when `bogie g controller` adds one: mounting only binds
+// method values and never calls a handler, and app/application.go is what
+// builds the real ones. `bogie doctor` checks that every controller is both
+// constructed and mounted.
 func testServer(env string) *Server {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	s := NewServer(config.Config{Env: env, App: config.AppConfig{Addr: ":0", LogLevel: "info"}}, log)
+	fields := reflect.ValueOf(s).Elem()
+	for i := range fields.NumField() {
+		if f := fields.Field(i); f.Kind() == reflect.Pointer && f.IsNil() && f.CanSet() {
+			f.Set(reflect.New(f.Type().Elem()))
+		}
+	}
 	s.SetupRoutes()
 	return s
 }

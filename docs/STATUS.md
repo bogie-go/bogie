@@ -1,7 +1,7 @@
 # Status
 
 Where Bogie stands, for whoever picks it up next, on whatever machine. Updated
-2026-10-02, at commit `75185ba`. `docs/DESIGN.md` is the design and the
+2026-10-03, on top of commit `1be0831`. `docs/DESIGN.md` is the design and the
 reasoning; this file is the state.
 
 ## Milestones
@@ -21,9 +21,9 @@ reasoning; this file is the state.
 Install: `cd bogie && go install .` (until there is a tagged release; `@latest`
 through the module proxy can lag behind main).
 
-    bogie new NAME [--module=PATH] [--jobs]      a service that builds, migrates, seeds, reads
-                                                 its credentials, serves /healthz and /posts,
-                                                 and passes its own bin/ci
+    bogie new NAME [--module=PATH] [--jobs]      an empty service, as rails new makes: it
+                                                 builds, migrates, reads its credentials,
+                                                 serves /healthz and passes its own bin/ci
     bogie s | server, t | test, lint, ci, worker
     bogie db:prepare db:migrate db:rollback db:migrate:status db:migrate:redo
           db:reset db:seed db:seed:rollback db:create db:drop db:version
@@ -31,14 +31,17 @@ through the module proxy can lag behind main).
     bogie g model comment body:text post:references   migration, queries, domain type,
                                                       store methods, store test; runs sqlc
     bogie g migration add_slug_to_posts slug:string:uniq
-    bogie g controller comments index show create     package, one file per action, a test,
-                                                      and the three registration lines
+    bogie g controller comments index show create     one file, a <Name>Controller type with
+                                                      its routes and actions, a test, and the
+                                                      three registration lines
+    bogie g controller admin/reports index show       the same inside a namespace package,
+                                                      written and registered on first use
     bogie g service publish_post
     bogie g job send_welcome                          apps made with --jobs
     bogie d <generator> NAME                          reverses any of the above
     bogie doctor                                      markers once each, tools pinned, layout
-                                                      files, every controller constructed
-                                                      and mounted
+                                                      files, every controller and namespace
+                                                      constructed and mounted
 
 Every command is spelled as Rails spells it; the app's own binary uses spaces
 (`blog db prepare`) and the tool accepts that too. `bogie help` is the
@@ -48,8 +51,8 @@ Each generated app ships: the six rules in `AGENTS.md` with a recipe per
 generator, `bin/ci` (drop and rebuild the test database, migrate down to zero
 and back, sqlc diff, gofmt, vet, golangci-lint, build, tests, worker boot with
 `--jobs`, then `gh signoff`), a development welcome page at `/`, encrypted
-credentials with env-only fallback, and the `posts` example resource end to
-end, which `destroy` can remove entirely.
+credentials with env-only fallback, and no example resource (removed
+2026-10-03; the generators are the shape to copy).
 
 ## Setting up a new machine
 
@@ -86,7 +89,11 @@ pushing; on a clean tree a green run signs off the commit.
 - Markers (`// bogie:controllers`, `bogie:wire`, `bogie:routes`, `bogie:jobs`)
   are edited by `internal/markers`: insert above, idempotent, import added,
   file formatted with `go/format`; every marker checked before any file is
-  written.
+  written. A namespace package carries its own `controllers` and `routes`
+  markers, nested one level under the root's.
+- A Rails controller is a Go type in one file; a Rails namespace is a Go
+  package (`admin_controller/`). Decided 2026-10-03, DESIGN.md §5; the first
+  cut had a package per controller, which is not what kchat has.
 - `bin/ci` here is the test of record for templates. A failed run leaves the
   scaffolded app under `/tmp/tmp.*` for a look; a green run removes it.
 - The commit messages carry the reasoning; `git log` is worth reading.
@@ -116,5 +123,9 @@ pushing; on a clean tree a green run signs off the commit.
 - `bogie version` prints `dev`; M5 wires it to the git tag and `bogie.toml`.
 - kchat still imports `roonglit/credentials`; it can move whenever convenient.
 - `g controller` actions are 501 stubs with no dependencies; wiring a service
-  into one is by hand (the `posts` example shows the shape). A `g scaffold`
-  that does model, service and controller together is worth considering in M3.
+  into one is by hand (the comments above the `bogie:wire` marker show the
+  line). A `g scaffold` that does model, service and controller together, so
+  a new app can have a wired resource in one command, is worth considering
+  in M3.
+- Nested namespaces (`api/v1/posts`) are refused; v1 supports one level, and a
+  version is a route group inside the namespace's `routes.go`.

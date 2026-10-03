@@ -1,42 +1,39 @@
-==> app/controllers/health_controller/server.go
-// Package health_controller is the HTTP surface of health. One file per action; the
-// routes in routes.go; the dependencies here, as interfaces declared by this
-// package (rule 2), holding only the methods this controller calls.
-package health_controller
+==> app/controllers/health_controller.go
+package controllers
 
 import (
 	"log/slog"
+
+	"github.com/gin-gonic/gin"
 )
 
-// Server holds the controller's dependencies. Add what the actions need as
-// a small interface declared here, and pass the real thing in from
-// app/application.go, where this controller is wired:
+// HealthController is the HTTP surface of health: its dependencies, its routes
+// and its actions, one Rails controller in one file. Dependencies are small
+// interfaces declared here (rule 2), holding only the methods the actions
+// call, and the real thing is passed in from app/application.go, where this
+// controller is wired:
 //
-//	type service interface {
+//	type healthService interface {
 //		Get(ctx context.Context, id string) (domain.Thing, error)
 //	}
-type Server struct {
+type HealthController struct {
 	Log *slog.Logger
 }
 
-// NewServer builds the controller.
-func NewServer(log *slog.Logger) *Server {
-	return &Server{Log: log}
+// NewHealthController builds the controller.
+func NewHealthController(log *slog.Logger) *HealthController {
+	return &HealthController{Log: log}
 }
-==> app/controllers/health_controller/routes.go
-package health_controller
-
-import "github.com/gin-gonic/gin"
 
 // SetupRoutes mounts the controller under its own prefix. Middleware the
-// whole group needs goes here; the exposure boundary stays visible in
-// app/controllers/routes.go, which calls this.
-func (s *Server) SetupRoutes(router *gin.RouterGroup) {
+// whole controller needs goes here; which group it sits in, and so how it is
+// exposed, is decided by the routes.go that calls this.
+func (ctl *HealthController) SetupRoutes(router *gin.RouterGroup) {
 	health := router.Group("/health")
-	_ = health // no actions yet; add them above and mount them here
+	_ = health // no actions yet; add them below and mount them here
 }
-==> app/controllers/health_controller/health_test.go
-package health_controller
+==> app/controllers/health_controller_test.go
+package controllers
 
 import (
 	"io"
@@ -49,13 +46,13 @@ import (
 )
 
 // Every action is mounted: a route that answers 404 was never registered.
-func TestRoutesAreMounted(t *testing.T) {
+func TestHealthRoutesAreMounted(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	NewServer(slog.New(slog.NewTextHandler(io.Discard, nil))).SetupRoutes(&router.RouterGroup)
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	NewHealthController(log).SetupRoutes(&router.RouterGroup)
 
-	routes := []struct{ method, path string }{
-	}
+	routes := []struct{ method, path string }{} // none yet; list each action's route here as you add it
 	for _, r := range routes {
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, httptest.NewRequest(r.method, r.path, nil))

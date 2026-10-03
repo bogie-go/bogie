@@ -24,10 +24,14 @@ func (s *Server) SetupRoutes() {
 	// Unauthenticated, no side effects: what a load balancer polls.
 	r.GET("/healthz", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
 
-	// Each controller mounts its own routes under a group it names.
-	// `bogie g controller` inserts one line above the marker; by hand it is
-	// the same one line, as the example resource shows:
-	s.Posts.SetupRoutes(&r.RouterGroup)
+	// Each controller mounts its own routes under a group it names; a
+	// namespace (`bogie g controller admin/reports`) mounts its group and
+	// the controllers in it, with the middleware they share, in its own
+	// routes.go. `bogie g controller` inserts one line above the marker; by
+	// hand it is the same one line:
+	//
+	//	s.Posts.SetupRoutes(&r.RouterGroup)
+	//
 	// bogie:routes
 
 	// Development only, and only while nothing above claims /.

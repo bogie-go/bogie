@@ -26,10 +26,44 @@ type Wire struct {
 	Import string
 }
 
-// Controller writes app/controllers/<name>_controller/: server.go, routes.go,
-// one file per action, a test that every route is mounted, and the three
-// lines that register it (docs/DESIGN.md §5).
-func Controller(module, name string, actions []string) ([]File, []Wire, error) {
+// ParseControllerName splits what `rails g controller` accepts, posts,
+// admin/posts or Admin::Posts, into a namespace (empty for none) and a name,
+// both snake_case. One level of namespace, as docs/DESIGN.md §5 decides.
+func ParseControllerName(spec string) (ns, name string, err error) {
+	parts := strings.Split(strings.ReplaceAll(spec, "::", "/"), "/")
+	for i, p := range parts {
+		parts[i] = Snake(p)
+	}
+	switch len(parts) {
+	case 1:
+		name = parts[0]
+	case 2:
+		ns, name = parts[0], parts[1]
+		if err := checkNamespace(ns); err != nil {
+			return "", "", err
+		}
+	default:
+		return "", "", fmt.Errorf("%q nests namespaces; one level (admin/posts) is what v1 supports", spec)
+	}
+	if !namePattern.MatchString(name) {
+		return "", "", fmt.Errorf("%q is not a controller name: lowercase letters, digits and underscores", name)
+	}
+	return ns, name, nil
+}
+
+// Controller writes one Rails controller as one Go file: a <Name>Controller
+// type holding its dependencies, SetupRoutes, one method per action, and a
+// test that every route is mounted. With no namespace it goes in the
+// controllers package as app/controllers/<name>_controller.go; with one, in
+// app/controllers/<ns>_controller/<name>_controller.go, the package Namespace
+// writes. Either way it returns the three lines that register it
+// (docs/DESIGN.md §5).
+func Controller(module, ns, name string, actions []string) ([]File, []Wire, error) {
+	if ns != "" {
+		if err := checkNamespace(ns); err != nil {
+			return nil, nil, err
+		}
+	}
 	if !namePattern.MatchString(name) {
 		return nil, nil, fmt.Errorf("%q is not a controller name: lowercase letters, digits and underscores", name)
 	}
@@ -47,20 +81,42 @@ func Controller(module, name string, actions []string) ([]File, []Wire, error) {
 		seen[a] = true
 	}
 
-	pkg := name + "_controller"
+	c := controller{module: module, ns: ns, name: name, actions: actions}
+	files := []File{
+		{Path: c.dir() + name + "_controller.go", Content: c.source()},
+		{Path: c.dir() + name + "_controller_test.go", Content: c.test()},
+	}
+	return files, c.wires(), nil
+}
+
+func checkNamespace(ns string) error {
+	if !namePattern.MatchString(ns) {
+		return fmt.Errorf("%q is not a namespace: lowercase letters, digits and underscores", ns)
+	}
+	return nil
+}
+
+// Namespace writes the package a namespaced controller lives in:
+// app/controllers/<ns>_controller/ (Rails's app/controllers/admin/, with the
+// suffix Go needs so that admin never collides with another import in
+// app/application.go, and internal is not Go's internal) with server.go
+// (the namespace Server, one named field per controller above its own
+// marker) and routes.go (the group every controller in it mounts under,
+// above its own marker), and the three root lines that register the
+// namespace. The command calls it once, when the package does not exist yet.
+func Namespace(module, ns string) ([]File, []Wire, error) {
+	if err := checkNamespace(ns); err != nil {
+		return nil, nil, err
+	}
+	pkg := ns + "_controller"
 	dir := "app/controllers/" + pkg + "/"
-	field := Camel(name)
+	field := Camel(ns)
 	importPath := module + "/app/controllers/" + pkg
 
 	files := []File{
-		{Path: dir + "server.go", Content: controllerServer(module, pkg, name)},
-		{Path: dir + "routes.go", Content: controllerRoutes(pkg, name, actions)},
+		{Path: dir + "server.go", Content: namespaceServer(pkg, ns)},
+		{Path: dir + "routes.go", Content: namespaceRoutes(pkg, ns)},
 	}
-	for _, a := range actions {
-		files = append(files, File{Path: dir + a + ".go", Content: controllerAction(module, pkg, name, a)})
-	}
-	files = append(files, File{Path: dir + name + "_test.go", Content: controllerTest(pkg, name, actions)})
-
 	wires := []Wire{
 		{File: "app/controllers/application.go", Marker: "controllers", Line: fmt.Sprintf("%s *%s.Server", field, pkg), Import: importPath},
 		{File: "app/application.go", Marker: "wire", Line: fmt.Sprintf("server.%s = %s.NewServer(log)", field, pkg), Import: importPath},
@@ -70,61 +126,144 @@ func Controller(module, name string, actions []string) ([]File, []Wire, error) {
 }
 
 // WirePrefixes are what destroy removes: the start of each line Controller
-// inserted, whatever arguments it was later given.
-func WirePrefixes(name string) []Wire {
+// inserted, whatever actions it was given.
+func WirePrefixes(ns, name string) []Wire {
+	c := controller{ns: ns, name: name}
 	field := Camel(name)
-	pkg := name + "_controller"
+	if ns == "" {
+		return []Wire{
+			{File: "app/controllers/application.go", Line: c.typeField()},
+			{File: "app/application.go", Line: "server." + field + " ="},
+			{File: "app/controllers/routes.go", Line: "s." + field + ".SetupRoutes("},
+		}
+	}
 	return []Wire{
-		{File: "app/controllers/application.go", Line: field + " *" + pkg + ".Server"},
+		{File: c.dir() + "server.go", Line: c.typeField()},
+		{File: "app/application.go", Line: "server." + Camel(ns) + "." + field + " ="},
+		{File: c.dir() + "routes.go", Line: "s." + field + ".SetupRoutes("},
+	}
+}
+
+// NamespaceWirePrefixes are what destroy removes once a namespace holds no
+// controller: the start of each line Namespace inserted.
+func NamespaceWirePrefixes(ns string) []Wire {
+	field := Camel(ns)
+	return []Wire{
+		{File: "app/controllers/application.go", Line: field + " *" + ns + "_controller.Server"},
 		{File: "app/application.go", Line: "server." + field + " ="},
 		{File: "app/controllers/routes.go", Line: "s." + field + ".SetupRoutes("},
 	}
 }
 
-func controllerServer(module, pkg, name string) string {
-	return fmt.Sprintf(`// Package %[1]s is the HTTP surface of %[2]s. One file per action; the
-// routes in routes.go; the dependencies here, as interfaces declared by this
-// package (rule 2), holding only the methods this controller calls.
-package %[1]s
+// controller is one Rails controller: the names every file and line derive
+// from, computed once.
+type controller struct {
+	module, ns, name string
+	actions          []string
+}
 
-import (
-	"log/slog"
-)
+func (c controller) pkg() string {
+	if c.ns == "" {
+		return "controllers"
+	}
+	return c.ns + "_controller"
+}
 
-// Server holds the controller's dependencies. Add what the actions need as
-// a small interface declared here, and pass the real thing in from
-// app/application.go, where this controller is wired:
+func (c controller) dir() string {
+	if c.ns == "" {
+		return "app/controllers/"
+	}
+	return "app/controllers/" + c.ns + "_controller/"
+}
+
+func (c controller) typeName() string { return Camel(c.name) + "Controller" }
+func (c controller) typeField() string {
+	return Camel(c.name) + " *" + c.typeName()
+}
+
+// prefix is the URL every action sits under, for the comments.
+func (c controller) prefix() string {
+	if c.ns == "" {
+		return "/" + c.name
+	}
+	return "/" + c.ns + "/" + c.name
+}
+
+// wires are the three lines that register the controller: a field on the
+// Server that holds it (the root's, or the namespace's), its construction in
+// app/application.go, and its mount in the routes file of the same Server.
+func (c controller) wires() []Wire {
+	field := Camel(c.name)
+	if c.ns == "" {
+		return []Wire{
+			{File: "app/controllers/application.go", Marker: "controllers", Line: c.typeField()},
+			{File: "app/application.go", Marker: "wire", Line: fmt.Sprintf("server.%s = controllers.New%s(log)", field, c.typeName()), Import: c.module + "/app/controllers"},
+			{File: "app/controllers/routes.go", Marker: "routes", Line: fmt.Sprintf("s.%s.SetupRoutes(&r.RouterGroup)", field)},
+		}
+	}
+	nsField := Camel(c.ns)
+	return []Wire{
+		{File: c.dir() + "server.go", Marker: "controllers", Line: c.typeField()},
+		{File: "app/application.go", Marker: "wire", Line: fmt.Sprintf("server.%s.%s = %s.New%s(log)", nsField, field, c.pkg(), c.typeName()), Import: c.module + "/app/controllers/" + c.pkg()},
+		{File: c.dir() + "routes.go", Marker: "routes", Line: fmt.Sprintf("s.%s.SetupRoutes(%s)", field, c.ns)},
+	}
+}
+
+func (c controller) source() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "package %s\n\n", c.pkg())
+	if len(c.actions) == 0 {
+		b.WriteString("import (\n\t\"log/slog\"\n\n\t\"github.com/gin-gonic/gin\"\n)\n\n")
+	} else {
+		fmt.Fprintf(&b, "import (\n\t\"log/slog\"\n\t\"net/http\"\n\n\t\"github.com/gin-gonic/gin\"\n\n\t%q\n)\n\n", c.module+"/app/views")
+	}
+
+	fmt.Fprintf(&b, `// %[1]s is the HTTP surface of %[2]s: its dependencies, its routes
+// and its actions, one Rails controller in one file. Dependencies are small
+// interfaces declared here (rule 2), holding only the methods the actions
+// call, and the real thing is passed in from app/application.go, where this
+// controller is wired:
 //
-//	type service interface {
+//	type %[3]sService interface {
 //		Get(ctx context.Context, id string) (domain.Thing, error)
 //	}
-type Server struct {
+type %[1]s struct {
 	Log *slog.Logger
 }
 
-// NewServer builds the controller.
-func NewServer(log *slog.Logger) *Server {
-	return &Server{Log: log}
-}
-`, pkg, name)
+// New%[1]s builds the controller.
+func New%[1]s(log *slog.Logger) *%[1]s {
+	return &%[1]s{Log: log}
 }
 
-func controllerRoutes(pkg, name string, actions []string) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "package %s\n\nimport \"github.com/gin-gonic/gin\"\n\n", pkg)
-	b.WriteString("// SetupRoutes mounts the controller under its own prefix. Middleware the\n")
-	b.WriteString("// whole group needs goes here; the exposure boundary stays visible in\n")
-	b.WriteString("// app/controllers/routes.go, which calls this.\n")
-	b.WriteString("func (s *Server) SetupRoutes(router *gin.RouterGroup) {\n")
-	fmt.Fprintf(&b, "\t%s := router.Group(\"/%s\")\n", name, name)
-	if len(actions) == 0 {
-		fmt.Fprintf(&b, "\t_ = %s // no actions yet; add them above and mount them here\n", name)
+// SetupRoutes mounts the controller under its own prefix. Middleware the
+// whole controller needs goes here; which group it sits in, and so how it is
+// exposed, is decided by the routes.go that calls this.
+func (ctl *%[1]s) SetupRoutes(router *gin.RouterGroup) {
+	%[2]s := router.Group("/%[2]s")
+`, c.typeName(), c.name, lowerCamel(c.name))
+	if len(c.actions) == 0 {
+		fmt.Fprintf(&b, "\t_ = %s // no actions yet; add them below and mount them here\n", c.name)
 	}
-	for _, a := range actions {
+	for _, a := range c.actions {
 		method, path := routeFor(a)
-		fmt.Fprintf(&b, "\t%s.%s(%q, s.%s)\n", name, method, path, Camel(a))
+		fmt.Fprintf(&b, "\t%s.%s(%q, ctl.%s)\n", c.name, method, path, Camel(a))
 	}
 	b.WriteString("}\n")
+
+	for _, a := range c.actions {
+		method, path := routeFor(a)
+		fmt.Fprintf(&b, `
+// %[1]s handles %[2]s %[3]s%[4]s.
+//
+// A handler converts HTTP into domain values, calls one service function,
+// and converts the result back. Nothing below app/controllers sees
+// *gin.Context (rule 5).
+func (ctl *%[5]s) %[1]s(c *gin.Context) {
+	c.JSON(http.StatusNotImplemented, views.ErrorMessage("%[6]s#%[7]s is not implemented yet"))
+}
+`, Camel(a), method, c.prefix(), path, c.typeName(), c.name, a)
+	}
 	return b.String()
 }
 
@@ -138,46 +277,81 @@ func routeFor(action string) (method, path string) {
 	return "GET", "/" + action
 }
 
-func controllerAction(module, pkg, name, action string) string {
-	method, path := routeFor(action)
-	return fmt.Sprintf(`package %[1]s
-
-import (
-	"net/http"
-
-	"github.com/gin-gonic/gin"
-
-	%[6]q
-)
-
-// %[2]s handles %[3]s /%[4]s%[5]s.
-//
-// A handler converts HTTP into domain values, calls one service function,
-// and converts the result back. Nothing below app/controllers sees
-// *gin.Context (rule 5).
-func (s *Server) %[2]s(c *gin.Context) {
-	c.JSON(http.StatusNotImplemented, views.ErrorMessage("%[4]s#%[7]s is not implemented yet"))
-}
-`, pkg, Camel(action), method, name, path, module+"/app/views", action)
-}
-
-func controllerTest(pkg, name string, actions []string) string {
+// test checks every action is mounted. A plain controller is mounted on a
+// bare router; a namespaced one through its namespace Server, so the test
+// also fails if the namespace's routes.go lost the mount line.
+func (c controller) test() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "package %s\n\n", pkg)
+	fmt.Fprintf(&b, "package %s\n\n", c.pkg())
 	b.WriteString("import (\n\t\"io\"\n\t\"log/slog\"\n\t\"net/http\"\n\t\"net/http/httptest\"\n\t\"testing\"\n\n\t\"github.com/gin-gonic/gin\"\n)\n\n")
 	b.WriteString("// Every action is mounted: a route that answers 404 was never registered.\n")
-	fmt.Fprintf(&b, "func TestRoutesAreMounted(t *testing.T) {\n")
+	fmt.Fprintf(&b, "func Test%sRoutesAreMounted(t *testing.T) {\n", Camel(c.name))
 	b.WriteString("\tgin.SetMode(gin.TestMode)\n\trouter := gin.New()\n")
-	b.WriteString("\tNewServer(slog.New(slog.NewTextHandler(io.Discard, nil))).SetupRoutes(&router.RouterGroup)\n\n")
-	b.WriteString("\troutes := []struct{ method, path string }{\n")
-	for _, a := range actions {
-		method, path := routeFor(a)
-		fmt.Fprintf(&b, "\t\t{http.Method%s, \"/%s%s\"},\n", methodConst[method], name, strings.ReplaceAll(path, ":id", "1"))
+	b.WriteString("\tlog := slog.New(slog.NewTextHandler(io.Discard, nil))\n")
+	if c.ns == "" {
+		fmt.Fprintf(&b, "\tNew%s(log).SetupRoutes(&router.RouterGroup)\n\n", c.typeName())
+	} else {
+		b.WriteString("\tns := NewServer(log)\n")
+		fmt.Fprintf(&b, "\tns.%s = New%s(log)\n", Camel(c.name), c.typeName())
+		b.WriteString("\tns.SetupRoutes(&router.RouterGroup)\n\n")
 	}
-	b.WriteString("\t}\n\tfor _, r := range routes {\n")
+	b.WriteString("\troutes := []struct{ method, path string }{")
+	if len(c.actions) == 0 {
+		b.WriteString("} // none yet; list each action's route here as you add it\n")
+	} else {
+		b.WriteString("\n")
+		for _, a := range c.actions {
+			method, path := routeFor(a)
+			fmt.Fprintf(&b, "\t\t{http.Method%s, \"%s%s\"},\n", methodConst[method], c.prefix(), strings.ReplaceAll(path, ":id", "1"))
+		}
+		b.WriteString("\t}\n")
+	}
+	b.WriteString("\tfor _, r := range routes {\n")
 	b.WriteString("\t\trec := httptest.NewRecorder()\n")
 	b.WriteString("\t\trouter.ServeHTTP(rec, httptest.NewRequest(r.method, r.path, nil))\n")
 	b.WriteString("\t\tif rec.Code == http.StatusNotFound {\n")
 	b.WriteString("\t\t\tt.Errorf(\"%s %s is not mounted\", r.method, r.path)\n\t\t}\n\t}\n}\n")
 	return b.String()
+}
+
+func namespaceServer(pkg, ns string) string {
+	return fmt.Sprintf(`// Package %[1]s is the %[2]s namespace: the controllers mounted under
+// /%[2]s, as Rails's "namespace :%[2]s" and the %[3]s:: module. One file per
+// controller; the group and its shared middleware in routes.go.
+package %[1]s
+
+import (
+	"log/slog"
+)
+
+// Server holds the namespace's controllers, one NAMED field each, so adding
+// one is one line here, one in app/application.go and one in routes.go.
+// "bogie g controller %[2]s/NAME" inserts all three.
+type Server struct {
+	Log *slog.Logger
+
+	// bogie:controllers
+}
+
+// NewServer builds the namespace. Its controllers are constructed and
+// assigned in app/application.go, where every dependency is wired.
+func NewServer(log *slog.Logger) *Server {
+	return &Server{Log: log}
+}
+`, pkg, ns, Camel(ns))
+}
+
+func namespaceRoutes(pkg, ns string) string {
+	return fmt.Sprintf(`package %[1]s
+
+import "github.com/gin-gonic/gin"
+
+// SetupRoutes mounts every controller in the namespace under /%[2]s.
+// Middleware the whole namespace shares, an auth check or a shared secret,
+// goes on the group here, so the exposure boundary is visible in one place.
+func (s *Server) SetupRoutes(router *gin.RouterGroup) {
+	%[2]s := router.Group("/%[2]s")
+	// bogie:routes
+}
+`, pkg, ns)
 }

@@ -12,48 +12,63 @@ import (
 
 // wire inserts each line above its marker, adds the import it needs, and
 // formats the file. Every file is checked for its marker before any file is
-// written, so a missing marker means nothing changed anywhere.
-func wire(root string, wires []generate.Wire, pretend bool, report func(scaffold.Action)) error {
+// written, so a missing marker means nothing changed anywhere. Several lines
+// may go into one file (a namespace's construction, then its controller's),
+// so each file is read once, every line inserted, and the file written once.
+// pending holds the files this run would have written under --pretend, so a
+// line can still be planned into a file that is new in the same run.
+func wire(root string, wires []generate.Wire, pending map[string][]byte, pretend bool, report func(scaffold.Action)) error {
 	type edit struct {
-		path    string
 		content []byte
 		changed bool
 	}
-	var edits []edit
-	for _, w := range wires {
-		path := filepath.Join(root, filepath.FromSlash(w.File))
-		src, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		out, changed, err := markers.Insert(src, w.File, w.Marker, w.Line)
-		if err != nil {
-			return err
-		}
-		if w.Import != "" && changed {
-			out, _, err = markers.AddImport(out, w.Import)
+	files := map[string]*edit{}
+	var order []string
+	ops := make([]scaffold.Op, len(wires))
+	for i, w := range wires {
+		e, ok := files[w.File]
+		if !ok {
+			src, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(w.File)))
 			if err != nil {
+				if src, ok = pending[w.File]; !ok || !pretend {
+					return err
+				}
+			}
+			e = &edit{content: src}
+			files[w.File] = e
+			order = append(order, w.File)
+		}
+		out, changed, err := markers.Insert(e.content, w.File, w.Marker, w.Line)
+		if err != nil {
+			return err
+		}
+		if changed && w.Import != "" {
+			if out, _, err = markers.AddImport(out, w.Import); err != nil {
 				return fmt.Errorf("%s: %w", w.File, err)
 			}
 		}
+		e.content, e.changed = out, e.changed || changed
+		ops[i] = scaffold.OpIdentical
 		if changed {
-			if out, err = markers.Format(out); err != nil {
-				return fmt.Errorf("%s: %w", w.File, err)
-			}
+			ops[i] = "insert"
 		}
-		edits = append(edits, edit{path, out, changed})
 	}
-
-	for i, e := range edits {
-		op := scaffold.OpIdentical
-		if e.changed {
-			op = "insert"
-		}
-		report(scaffold.Action{Op: op, Path: wires[i].File + ": " + wires[i].Line})
-		if pretend || !e.changed {
+	for i, w := range wires {
+		report(scaffold.Action{Op: ops[i], Path: w.File + ": " + w.Line})
+	}
+	if pretend {
+		return nil
+	}
+	for _, file := range order {
+		e := files[file]
+		if !e.changed {
 			continue
 		}
-		if err := os.WriteFile(e.path, e.content, 0o644); err != nil {
+		out, err := markers.Format(e.content)
+		if err != nil {
+			return fmt.Errorf("%s: %w", file, err)
+		}
+		if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(file)), out, 0o644); err != nil {
 			return err
 		}
 	}

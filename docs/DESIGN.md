@@ -103,7 +103,8 @@ app/
     application.go            root Server, one NAMED field per controller
     routes.go                 the whole routing table
     welcome.go                the development page at /, as `rails new` has; gone once a route claims /
-    <name>_controller/        server.go · routes.go · one file per action
+    <name>_controller.go      one file per Rails controller: a <Name>Controller type, its routes, its actions
+    <ns>_controller/          one package per Rails namespace: server.go · routes.go · <name>_controller.go …
   middlewares/                request id · logging · recover
   services/<name>/            ctx first, knows nothing about HTTP
   models/                     sqlc output + the store
@@ -244,6 +245,62 @@ marker is missing it stops and names the file — it does not guess. `bogie doct
 checks that every marker exists exactly once. Keep C in reserve if marker drift
 proves common.
 
+**Controllers and namespaces, decided 2026-10-03.** The first cut made every
+Rails controller a Go package (`posts_controller/`, one file per action). That
+is not what kchat has: its `internal_controller` holds conversations, inboxes,
+messages and tags, so the package is Rails's `Internal::` module and the file
+is the Rails controller. Bogie now maps Rails's two things to Go's two things,
+and `g controller` follows Rails's own spelling, where a slash (or `::`) means
+a namespace:
+
+- **A Rails controller is a Go type in one file.** `bogie g controller posts
+  index show` writes `app/controllers/posts_controller.go` in the `controllers`
+  package: `type PostsController struct` holding its dependencies as
+  consumer-declared interfaces, `SetupRoutes`, and one method per action. The
+  test sits beside it. Three one-line wires as before, with no import: a
+  `Posts *PostsController` field, `server.Posts = controllers.NewPostsController(log)`,
+  and `s.Posts.SetupRoutes(&r.RouterGroup)`. The type is named
+  `PostsController`, not `Posts`, because it matches `posts_controller.rb` one
+  for one and says what the file is in a directory that also holds
+  `application.go`, `routes.go` and `welcome.go`.
+- **A Rails namespace is a Go package.** `bogie g controller internal/conversations
+  index show` writes `app/controllers/internal_controller/conversations_controller.go`
+  with `type ConversationsController`. If the package does not exist, the
+  generator first writes its `server.go` (the namespace `Server`, one named
+  field per controller above its own `// bogie:controllers`) and `routes.go`
+  (the `/internal` group, where middleware the whole namespace shares goes,
+  above its own `// bogie:routes`), and registers the namespace in the root
+  with the three root wires. The markers nest one level; the generator checks
+  the namespace's markers in the content it is about to write.
+- **All construction stays in `app/application.go`.** The namespace `Server`
+  is a holder plus routes. The controller's wire line is
+  `server.Internal.Conversations = internal_controller.NewConversationsController(log)`,
+  inserted after the namespace's own `server.Internal = ...`, so a dependency
+  is never threaded through a namespace constructor.
+- **The namespace lives for its controllers.** `d controller internal/conversations`
+  removes the controller and its three lines; when that leaves the package
+  holding only `server.go` and `routes.go`, it removes those and the root
+  registration too, since an empty namespace is an unused group variable
+  that does not compile.
+- **The `_controller` suffix stays on namespace packages**, the one place the
+  folder name departs from Rails's `app/controllers/admin/`. Considered and
+  rejected on 2026-10-03: a plain `admin/` package is imported into
+  `app/application.go` beside every service and layout package, so a
+  namespace named like a service (`posts`), or `jobs`, `models`, `config`,
+  collides the moment both exist, and Go's only remedy is a hand-written
+  import alias on a line the generator wrote. A namespace literally called
+  `internal` would also be a Go `internal/` directory, importable only from
+  inside `app/controllers`, which `app/application.go` is not. The suffix
+  removes both, matches kchat, and ST1003 is already off for it. One level of
+  namespace in v1; a version such as `v1` is a route group inside the
+  namespace's `routes.go`, as kchat's `/internal/v1` is.
+
+The file rule is one sentence: one file per Rails controller, one package per
+Rails namespace. kchat's `conversations.go` already obeys it; "one file per
+action" is gone. `doctor` checks that every `*Controller` type is constructed
+and mounted, in the root or in its namespace, and that every `*_controller`
+package is.
+
 Attribute types for `g model` / `g migration` map Rails-style names to Postgres
 types: `string`→`text`, `text`→`text`, `integer`→`integer`, `bigint`→`bigint`,
 `boolean`→`boolean`, `datetime`→`timestamptz`, `uuid`→`uuid`, `jsonb`→`jsonb`,
@@ -359,7 +416,7 @@ deliverable, not an afterthought.
   controller` gets the registration right every time; one that hand-writes a
   controller has to rediscover it.
 - **Guardrails fail loudly**: `sqlc generate` in CI, `golangci-lint`, `go vet`,
-  `bogie doctor`, and a test that fails if a controller package is not registered.
+  `bogie doctor`, and a test that fails if a controller is not registered.
 - **Decisions are written down where they'd be found.** kchat's CLAUDE.md records
   the case of a nil-guard that exists for one reason and silently serves another.
   The template comments should name what a line is *for*.
@@ -430,8 +487,19 @@ Extraction, in order:
    Dockerfile, the Kamal files.
 2. Strip everything channel-shaped: LINE, Meta, `omnichat`, gateway, bus, media,
    templates, ingest.
-3. Keep one small example resource end to end — migration, query, model,
-   service, controller, test — so a new app has a working shape to copy.
+3. ~~Keep one small example resource end to end — migration, query, model,
+   service, controller, test — so a new app has a working shape to copy.~~
+   Reversed 2026-10-03: `bogie new` makes an empty app, as `rails new` does.
+   The example made every new app start by deleting three things, and its
+   seed outlived `d model post`, which broke `db:prepare` on the emptied
+   app. The working shape now comes from the generators themselves, and
+   `bin/ci` proves it by generating a model, a model that references it, a
+   migration, a controller, a namespace and a service into a fresh app and
+   running that app's pipeline, then destroying them all and running it
+   again. An app with no models compiles and serves: `db.Migrations` embeds
+   the directory with `all:`, the app's `bin/ci` and `make sqlc` skip sqlc
+   when `db/queries` is empty, and the tool's `g model` runs sqlc as soon as
+   there is a query file.
 4. Turn the positional root wiring into named fields with markers (§5).
 5. Convert the global `sqlc` install to a pinned tool.
 6. Add River behind `--jobs`: one `river.Worker[Args]` per file in

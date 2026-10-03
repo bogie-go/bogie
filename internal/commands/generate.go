@@ -25,9 +25,13 @@ Generators:
   model NAME [field:type ...]       the migration, db/queries/<table>.sql,
                                     app/domain/<name>.go and the store's
                                     app/models/<table>.go; then runs sqlc
-  controller NAME [action ...]      app/controllers/<name>_controller/ with
-                                    one file per action, REGISTERED: a field,
-                                    a wire line and a mount above each marker
+  controller NAME [action ...]      app/controllers/<name>_controller.go, one
+                                    Rails controller in one file, REGISTERED:
+                                    a field, a wire line and a mount above
+                                    each marker. admin/NAME puts it in the
+                                    admin namespace, the package
+                                    app/controllers/admin_controller/, made
+                                    on first use and registered the same way
   service NAME                      app/services/<name>/, ctx first, no HTTP
   job NAME                          app/jobs/<name>.go, a River job, REGISTERED
                                     above bogie:jobs (apps made with --jobs)
@@ -39,6 +43,7 @@ A references field names the other model: post:references is post_id.
   bogie g model comment body:text post:references
   bogie g migration add_slug_to_posts slug:string:uniq
   bogie g controller comments index show create
+  bogie g controller admin/reports index show
   bogie g service publish_post
   bogie g job send_welcome
 `
@@ -103,10 +108,26 @@ func generateIn(root string, args []string, out io.Writer) error {
 	runSqlc := false
 	switch generator {
 	case "controller":
-		files, wires, err = generate.Controller(module, name, attrArgs)
+		ns, ctl, err := generate.ParseControllerName(positional[0])
 		if err != nil {
 			return fmt.Errorf("generate controller: %w", err)
 		}
+		// The namespace package is written on first use, with the three
+		// root lines that register it; after that only the controller's
+		// own lines are inserted.
+		if ns != "" {
+			if _, err := os.Stat(filepath.Join(root, "app", "controllers", ns+"_controller", "server.go")); err != nil {
+				files, wires, err = generate.Namespace(module, ns)
+				if err != nil {
+					return fmt.Errorf("generate controller: %w", err)
+				}
+			}
+		}
+		ctlFiles, ctlWires, err := generate.Controller(module, ns, ctl, attrArgs)
+		if err != nil {
+			return fmt.Errorf("generate controller: %w", err)
+		}
+		files, wires = append(files, ctlFiles...), append(wires, ctlWires...)
 	case "service":
 		files, err = generate.Service(module, name)
 		if err != nil {
@@ -163,11 +184,19 @@ func generateIn(root string, args []string, out io.Writer) error {
 	report := func(a scaffold.Action) { say("%12s  %s\n", a.Op, a.Path) }
 
 	// Every marker is checked before any file is written: a controller that
-	// cannot be registered is not half-written.
+	// cannot be registered is not half-written. A marker in a file this run
+	// writes (a new namespace's server.go) is checked in that content.
+	pending := map[string][]byte{}
+	for _, f := range toWrite {
+		pending[f.Path] = f.Content
+	}
 	for _, w := range wires {
-		src, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(w.File)))
-		if err != nil {
-			return err
+		src, ok := pending[w.File]
+		if !ok {
+			src, err = os.ReadFile(filepath.Join(root, filepath.FromSlash(w.File)))
+			if err != nil {
+				return err
+			}
 		}
 		if err := markers.Check(src, w.File, w.Marker); err != nil {
 			return fmt.Errorf("generate %s: %w", generator, err)
@@ -177,7 +206,7 @@ func generateIn(root string, args []string, out io.Writer) error {
 	if _, err := scaffold.Write(root, toWrite, scaffold.Options{Force: *force, Pretend: *pretend, Report: report}); err != nil {
 		return fmt.Errorf("generate %s: %w", generator, err)
 	}
-	if err := wire(root, wires, *pretend, report); err != nil {
+	if err := wire(root, wires, pending, *pretend, report); err != nil {
 		return fmt.Errorf("generate %s: %w", generator, err)
 	}
 

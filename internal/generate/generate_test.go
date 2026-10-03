@@ -154,7 +154,7 @@ func TestInflections(t *testing.T) {
 }
 
 func TestController(t *testing.T) {
-	files, wires, err := Controller("example.com/blog", "comments", []string{"index", "show", "create", "search"})
+	files, wires, err := Controller("example.com/blog", "", "comments", []string{"index", "show", "create", "search"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,21 +162,88 @@ func TestController(t *testing.T) {
 	if len(wires) != 3 || wires[0].Marker != "controllers" || wires[1].Marker != "wire" || wires[2].Marker != "routes" {
 		t.Errorf("wires = %+v", wires)
 	}
-	if wires[1].Line != "server.Comments = comments_controller.NewServer(log)" {
-		t.Errorf("wire line = %q", wires[1].Line)
+	if wires[0].Line != "Comments *CommentsController" || wires[0].Import != "" {
+		t.Errorf("field line = %+v", wires[0])
+	}
+	if wires[1].Line != "server.Comments = controllers.NewCommentsController(log)" || wires[1].Import != "example.com/blog/app/controllers" {
+		t.Errorf("wire line = %+v", wires[1])
+	}
+	if wires[2].Line != "s.Comments.SetupRoutes(&r.RouterGroup)" {
+		t.Errorf("mount line = %q", wires[2].Line)
+	}
+}
+
+// A namespace is a package, written once; the controller in it is one file,
+// registered on the namespace's Server and constructed from app/application.go.
+func TestControllerInANamespace(t *testing.T) {
+	nsFiles, nsWires, err := Namespace("example.com/blog", "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, wires, err := Controller("example.com/blog", "admin", "reports", []string{"index", "show"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden(t, "controller_admin_reports", append(nsFiles, files...))
+
+	if nsWires[0].Line != "Admin *admin_controller.Server" || nsWires[1].Line != "server.Admin = admin_controller.NewServer(log)" || nsWires[2].Line != "s.Admin.SetupRoutes(&r.RouterGroup)" {
+		t.Errorf("namespace wires = %+v", nsWires)
+	}
+	want := []Wire{
+		{File: "app/controllers/admin_controller/server.go", Marker: "controllers", Line: "Reports *ReportsController"},
+		{File: "app/application.go", Marker: "wire", Line: "server.Admin.Reports = admin_controller.NewReportsController(log)", Import: "example.com/blog/app/controllers/admin_controller"},
+		{File: "app/controllers/admin_controller/routes.go", Marker: "routes", Line: "s.Reports.SetupRoutes(admin)"},
+	}
+	for i, w := range want {
+		if wires[i] != w {
+			t.Errorf("wire %d = %+v, want %+v", i, wires[i], w)
+		}
+	}
+	// The prefixes destroy removes by must match the lines, and the
+	// namespace's own line must not match its controllers' lines.
+	for i, p := range WirePrefixes("admin", "reports") {
+		if !strings.HasPrefix(wires[i].Line, p.Line) || p.File != wires[i].File {
+			t.Errorf("prefix %d %+v does not match %+v", i, p, wires[i])
+		}
+	}
+	for i, p := range NamespaceWirePrefixes("admin") {
+		if !strings.HasPrefix(nsWires[i].Line, p.Line) {
+			t.Errorf("namespace prefix %d %q does not match %q", i, p.Line, nsWires[i].Line)
+		}
+		if strings.HasPrefix(wires[i].Line, p.Line) {
+			t.Errorf("namespace prefix %d %q would also remove the controller's %q", i, p.Line, wires[i].Line)
+		}
+	}
+}
+
+func TestParseControllerName(t *testing.T) {
+	for spec, want := range map[string][2]string{
+		"posts": {"", "posts"}, "Posts": {"", "posts"}, "blog_posts": {"", "blog_posts"},
+		"admin/posts": {"admin", "posts"}, "Admin::Posts": {"admin", "posts"}, "Admin/BlogPosts": {"admin", "blog_posts"},
+		"internal/reports": {"internal", "reports"}, // the package is internal_controller, so Go's internal rule never applies
+	} {
+		ns, name, err := ParseControllerName(spec)
+		if err != nil || ns != want[0] || name != want[1] {
+			t.Errorf("ParseControllerName(%q) = %q, %q, %v; want %v", spec, ns, name, err, want)
+		}
+	}
+	for _, bad := range []string{"", "a/b/c", "admin/", "/posts", "Admin::", "1posts"} {
+		if _, _, err := ParseControllerName(bad); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
 	}
 }
 
 func TestControllerRefusesForms(t *testing.T) {
 	for _, bad := range [][]string{{"new"}, {"edit"}, {"index", "index"}} {
-		if _, _, err := Controller("m", "comments", bad); err == nil {
+		if _, _, err := Controller("m", "", "comments", bad); err == nil {
 			t.Errorf("%v accepted", bad)
 		}
 	}
 }
 
 func TestControllerWithNoActions(t *testing.T) {
-	files, _, err := Controller("example.com/blog", "health", nil)
+	files, _, err := Controller("example.com/blog", "", "health", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,0 +1,126 @@
+==> app/controllers/admin_controller/server.go
+// Package admin_controller is the admin namespace: the controllers mounted under
+// /admin, as Rails's "namespace :admin" and the Admin:: module. One file per
+// controller; the group and its shared middleware in routes.go.
+package admin_controller
+
+import (
+	"log/slog"
+)
+
+// Server holds the namespace's controllers, one NAMED field each, so adding
+// one is one line here, one in app/application.go and one in routes.go.
+// "bogie g controller admin/NAME" inserts all three.
+type Server struct {
+	Log *slog.Logger
+
+	// bogie:controllers
+}
+
+// NewServer builds the namespace. Its controllers are constructed and
+// assigned in app/application.go, where every dependency is wired.
+func NewServer(log *slog.Logger) *Server {
+	return &Server{Log: log}
+}
+==> app/controllers/admin_controller/routes.go
+package admin_controller
+
+import "github.com/gin-gonic/gin"
+
+// SetupRoutes mounts every controller in the namespace under /admin.
+// Middleware the whole namespace shares, an auth check or a shared secret,
+// goes on the group here, so the exposure boundary is visible in one place.
+func (s *Server) SetupRoutes(router *gin.RouterGroup) {
+	admin := router.Group("/admin")
+	// bogie:routes
+}
+==> app/controllers/admin_controller/reports_controller.go
+package admin_controller
+
+import (
+	"log/slog"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+
+	"example.com/blog/app/views"
+)
+
+// ReportsController is the HTTP surface of reports: its dependencies, its routes
+// and its actions, one Rails controller in one file. Dependencies are small
+// interfaces declared here (rule 2), holding only the methods the actions
+// call, and the real thing is passed in from app/application.go, where this
+// controller is wired:
+//
+//	type reportsService interface {
+//		Get(ctx context.Context, id string) (domain.Thing, error)
+//	}
+type ReportsController struct {
+	Log *slog.Logger
+}
+
+// NewReportsController builds the controller.
+func NewReportsController(log *slog.Logger) *ReportsController {
+	return &ReportsController{Log: log}
+}
+
+// SetupRoutes mounts the controller under its own prefix. Middleware the
+// whole controller needs goes here; which group it sits in, and so how it is
+// exposed, is decided by the routes.go that calls this.
+func (ctl *ReportsController) SetupRoutes(router *gin.RouterGroup) {
+	reports := router.Group("/reports")
+	reports.GET("", ctl.Index)
+	reports.GET("/:id", ctl.Show)
+}
+
+// Index handles GET /admin/reports.
+//
+// A handler converts HTTP into domain values, calls one service function,
+// and converts the result back. Nothing below app/controllers sees
+// *gin.Context (rule 5).
+func (ctl *ReportsController) Index(c *gin.Context) {
+	c.JSON(http.StatusNotImplemented, views.ErrorMessage("reports#index is not implemented yet"))
+}
+
+// Show handles GET /admin/reports/:id.
+//
+// A handler converts HTTP into domain values, calls one service function,
+// and converts the result back. Nothing below app/controllers sees
+// *gin.Context (rule 5).
+func (ctl *ReportsController) Show(c *gin.Context) {
+	c.JSON(http.StatusNotImplemented, views.ErrorMessage("reports#show is not implemented yet"))
+}
+==> app/controllers/admin_controller/reports_controller_test.go
+package admin_controller
+
+import (
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+)
+
+// Every action is mounted: a route that answers 404 was never registered.
+func TestReportsRoutesAreMounted(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	ns := NewServer(log)
+	ns.Reports = NewReportsController(log)
+	ns.SetupRoutes(&router.RouterGroup)
+
+	routes := []struct{ method, path string }{
+		{http.MethodGet, "/admin/reports"},
+		{http.MethodGet, "/admin/reports/1"},
+	}
+	for _, r := range routes {
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, httptest.NewRequest(r.method, r.path, nil))
+		if rec.Code == http.StatusNotFound {
+			t.Errorf("%s %s is not mounted", r.method, r.path)
+		}
+	}
+}

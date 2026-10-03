@@ -12,12 +12,10 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 {{end}}
-	"{{.Module}}/app/controllers"
-	"{{.Module}}/app/controllers/posts_controller"{{if .Jobs}}
+	"{{.Module}}/app/controllers"{{if .Jobs}}
 	"{{.Module}}/app/jobs"{{end}}
 	"{{.Module}}/app/models"
 	"{{.Module}}/app/services/migrate"
-	"{{.Module}}/app/services/posts"
 	"{{.Module}}/config"
 	"{{.Module}}/lib/logger"
 )
@@ -90,10 +88,12 @@ func NewApplication(ctx context.Context) (*Application, error) {
 	server := controllers.NewServer(cfg, log)
 
 	// Each controller is built here, with its dependencies, and assigned to
-	// its NAMED field on the root server. `bogie g controller` inserts one
-	// line above the marker; by hand it is the same one line, as the example
-	// resource shows:
-	server.Posts = posts_controller.NewServer(posts.New(store), log)
+	// its NAMED field on the root server, or on its namespace's. `bogie g
+	// controller` inserts one line above the marker; by hand it is the same
+	// one line, with the controller's dependencies passed in:
+	//
+	//	server.Posts = controllers.NewPostsController(posts.New(store), log)
+	//
 	// bogie:wire
 	server.SetupRoutes()
 
