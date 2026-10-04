@@ -47,7 +47,7 @@ its Postgres in Compose on port 5440, so it stays clear of the Rails app's 5432.
 sqlc and goose are pinned in the generated app's `go.mod` under `tool`, so
 there is nothing else to install globally.
 
-Optional, for `bin/ci`:
+Optional, for `bin/ci` (it skips the lint step, with a notice, when golangci-lint is missing):
 [golangci-lint v2](https://golangci-lint.run/) and
 `gh extension install basecamp/gh-signoff`.
 
