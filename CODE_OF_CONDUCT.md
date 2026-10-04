@@ -36,7 +36,7 @@ This Code of Conduct applies within all community spaces, and also applies when 
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the community leaders responsible for enforcement at the maintainer privately through GitHub: open a private report from the repository's [Security tab](https://github.com/bogie-go/bogie/security/advisories/new). If that isn't available, open an issue asking the maintainer (@roonglit) for a private channel, without any details of the report. All complaints will be reviewed and investigated promptly and fairly.
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the community leaders responsible for enforcement at the project's maintainers, privately through GitHub: open a private report from the repository's [Security tab](https://github.com/bogie-go/bogie/security/advisories/new). If that isn't available, open an issue asking the maintainers for a private channel, without any details of the report. All complaints will be reviewed and investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the reporter of any incident.
 

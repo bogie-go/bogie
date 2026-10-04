@@ -7,14 +7,14 @@ Please don't open a public issue for a security problem.
 Report it privately through GitHub: on the repository's **Security** tab,
 choose **Report a vulnerability**
 (<https://github.com/bogie-go/bogie/security/advisories/new>). Only the
-maintainer sees the report, and the fix can be discussed in that advisory
+project's maintainers see the report, and the fix can be discussed in that advisory
 before anything is public.
 
 If that option isn't available, open an issue that says you have something to
-report privately, with no details, and the maintainer will arrange a private
+report privately, with no details, and a maintainer will arrange a private
 channel.
 
-Bogie has one maintainer, so replies may take a few days.
+Replies may take a few days.
 
 ## What counts
 
