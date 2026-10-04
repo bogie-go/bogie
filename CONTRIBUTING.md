@@ -170,8 +170,12 @@ into every app's `AGENTS.md`):
 ## Security
 
 Please don't post the details of a security problem in a public issue.
-Open an issue that says you have something to report privately, without
-details, and the maintainer will arrange a private channel.
+[SECURITY.md](SECURITY.md) says how to report one privately.
+
+## Code of conduct
+
+Everyone taking part is expected to follow the
+[Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 
