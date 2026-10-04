@@ -71,7 +71,10 @@ example resource (removed 2026-10-03; the generators are the shape to copy).
 
 ## Setting up a new machine
 
-1. Go 1.25 or newer (`mise use go@latest` or the installer).
+1. Go 1.26 or newer (`mise use go@latest` or the installer). The tool itself
+   builds with 1.25, but a generated app needs 1.26: sqlc v1.31 requires it,
+   and with an older Go on PATH `go test -cover` (so `bogie test` and
+   `bin/ci`) fails under the auto-downloaded toolchain.
 2. Docker with Compose v2; the generated apps' Postgres runs there on port 5440.
 3. golangci-lint v2: `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest`.
    `bin/ci` looks on PATH, then in `$(go env GOPATH)/bin`, and fails loudly if
