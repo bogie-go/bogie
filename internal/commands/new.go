@@ -95,7 +95,15 @@ func New(args []string, out io.Writer) error {
 	}
 
 	if !*pretend {
-		say("\nNext:\n  cd %s\n  make up             # postgres on :5440, via docker compose\n  bogie db:prepare    # create, migrate, seed\n  bogie server\n  curl localhost:8080/healthz\n", name)
+		// The same steps, in the same order, as the README's Quickstart.
+		say("\nNext:\n"+
+			"  cd %s\n"+
+			"  make up                                         # postgres on :5440, via docker compose\n"+
+			"  bogie g scaffold post title:string body:text    # a first resource, wired in\n"+
+			"  bogie db:prepare                                # create, migrate, seed\n"+
+			"  bogie s                                         # serves on :8080 (bogie server)\n"+
+			"\nThen, from another terminal:\n"+
+			"  curl localhost:8080/healthz\n", name)
 	}
 	return nil
 }
