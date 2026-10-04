@@ -201,10 +201,24 @@ func (ctl *%[8]s) Show(c *gin.Context) {
 	fmt.Fprintf(&b, "\t%s, err := ctl.Store.Create%s(c.Request.Context(), %s)\n", recv, typ, s.fromRequest(""))
 	fmt.Fprintf(&b, "\tif err != nil {\n\t\tctl.fail(c, err)\n\t\treturn\n\t}\n\tc.JSON(http.StatusCreated, %sView(%s))\n}\n\n", lowerCamel(s.name), recv)
 
-	fmt.Fprintf(&b, "// Update handles PATCH /%s/:id.\n", s.table)
-	fmt.Fprintf(&b, "func (ctl *%s) Update(c *gin.Context) {\n", ctl)
-	b.WriteString(s.bind())
-	fmt.Fprintf(&b, "\t%s, err := ctl.Store.Update%s(c.Request.Context(), %s)\n", recv, typ, s.fromRequest("c.Param(\"id\")"))
+	fmt.Fprintf(&b, "// Update handles PATCH /%s/:id.", s.table)
+	if len(s.attrs) == 0 {
+		fmt.Fprintf(&b, "\nfunc (ctl *%s) Update(c *gin.Context) {\n", ctl)
+		fmt.Fprintf(&b, "\t%s, err := ctl.Store.Update%s(c.Request.Context(), %s)\n", recv, typ, s.fromRequest("c.Param(\"id\")"))
+	} else {
+		// As in Rails's find-then-update: load the record, decode the body
+		// over its current values so a key left out keeps its value, then
+		// save, so validation sees the whole record.
+		fmt.Fprintf(&b, " Only the fields in the body change, as\n")
+		fmt.Fprintf(&b, "// in Rails: the %s is loaded, the body is decoded over its current values,\n", s.name)
+		b.WriteString("// so a key left out keeps its value, and the result is saved and validated\n// whole.\n")
+		fmt.Fprintf(&b, "func (ctl *%s) Update(c *gin.Context) {\n", ctl)
+		fmt.Fprintf(&b, "\t%s, err := ctl.Store.Get%s(c.Request.Context(), c.Param(\"id\"))\n", recv, typ)
+		b.WriteString("\tif err != nil {\n\t\tctl.fail(c, err)\n\t\treturn\n\t}\n")
+		fmt.Fprintf(&b, "\treq := %s\n", s.toRequest(recv))
+		b.WriteString("\tif err := c.ShouldBindJSON(&req); err != nil {\n\t\tc.JSON(http.StatusBadRequest, views.Error(err))\n\t\treturn\n\t}\n")
+		fmt.Fprintf(&b, "\t%s, err = ctl.Store.Update%s(c.Request.Context(), %s)\n", recv, typ, s.fromRequest("c.Param(\"id\")"))
+	}
 	fmt.Fprintf(&b, "\tif err != nil {\n\t\tctl.fail(c, err)\n\t\treturn\n\t}\n\tc.JSON(http.StatusOK, %sView(%s))\n}\n\n", lowerCamel(s.name), recv)
 
 	fmt.Fprintf(&b, `// Destroy handles DELETE /%[1]s/:id.
@@ -276,6 +290,34 @@ func (s scaffold) fromRequest(id string) string {
 		parts = append(parts, fmt.Sprintf("%s: req.%s", a.goName(), a.goName()))
 	}
 	return fmt.Sprintf("domain.%s{%s}", s.typ(), strings.Join(parts, ", "))
+}
+
+// toRequest is the request body prefilled with a stored value's fields, for
+// PATCH to decode over.
+func (s scaffold) toRequest(recv string) string {
+	parts := make([]string, len(s.attrs))
+	for i, a := range s.attrs {
+		parts[i] = fmt.Sprintf("%s: %s.%s", a.goName(), recv, a.goName())
+	}
+	return fmt.Sprintf("views.%sRequest{%s}", s.typ(), strings.Join(parts, ", "))
+}
+
+// edited is a second JSON value and Go literal per attribute type, unlike
+// sample's, for the PATCH test to change one field with. Types sample has
+// no literal for have none here either.
+func edited(a Attr) (jsonValue, goLiteral string) {
+	switch a.Type {
+	case "string", "text":
+		return `"Edited"`, `"Edited"`
+	case "integer", "bigint":
+		return "8", "8"
+	case "boolean":
+		return "false", "false"
+	case "datetime", "jsonb":
+		return "", ""
+	default: // uuid, references
+		return `"00000000-0000-4000-8000-000000000001"`, `"00000000-0000-4000-8000-000000000001"`
+	}
 }
 
 // sample is a JSON value and the Go literal it decodes to, per attribute
@@ -439,6 +481,8 @@ func Test%[1]sCreateInvalidIs422(t *testing.T) {
 `, many, helper, fake, s.table)
 	}
 
+	b.WriteString(s.patchTest(fake, helper))
+
 	fmt.Fprintf(&b, `func Test%[1]sDestroyAnswers204(t *testing.T) {
 	store := &%[2]s{}
 	rec := %[3]s(t, store, http.MethodDelete, "/%[4]s/a", "")
@@ -458,5 +502,50 @@ func Test%[1]sUnexpectedErrorIs500WithoutDetail(t *testing.T) {
 	}
 }
 `, many, fake, helper, s.table)
+	return b.String()
+}
+
+// patchTest proves PATCH changes only what the body names: the stored value
+// has every attribute set, the body sends one of them, and the store is
+// asked to save that one changed and the rest as they were. Models without
+// an attribute the test can write a literal for get no such test.
+func (s scaffold) patchTest(fake, helper string) string {
+	var lits []Attr
+	for _, a := range s.attrs {
+		if _, lit := sample(a); lit != "" {
+			lits = append(lits, a)
+		}
+	}
+	if len(lits) == 0 {
+		return ""
+	}
+	typ, many := s.typ(), s.many()
+	stored := []string{`ID: "a"`}
+	for _, a := range lits {
+		_, lit := sample(a)
+		stored = append(stored, fmt.Sprintf("%s: %s", a.goName(), lit))
+	}
+	sent := lits[0]
+	jv, lit := edited(sent)
+	var b strings.Builder
+	fmt.Fprintf(&b, "// PATCH is partial, as in Rails: a field the body leaves out keeps its\n// stored value rather than being blanked.\n")
+	fmt.Fprintf(&b, "func Test%sUpdateChangesOnlyTheFieldsSent(t *testing.T) {\n", many)
+	fmt.Fprintf(&b, "\tstore := &%s{one: domain.%s{%s}}\n", fake, typ, strings.Join(stored, ", "))
+	fmt.Fprintf(&b, "\trec := %s(t, store, http.MethodPatch, \"/%s/a\", `{%q:%s}`)\n\n", helper, s.table, sent.Name, jv)
+	b.WriteString("\tif rec.Code != http.StatusOK {\n\t\tt.Fatalf(\"status = %d: %s\", rec.Code, rec.Body)\n\t}\n")
+	fmt.Fprintf(&b, "\tif store.got.%s != %s {\n\t\tt.Errorf(\"store got %s = %%v, want %%v\", store.got.%s, %s)\n\t}\n", sent.goName(), lit, sent.goName(), sent.goName(), lit)
+	for _, a := range lits[1:] {
+		_, keep := sample(a)
+		fmt.Fprintf(&b, "\tif store.got.%s != %s {\n\t\tt.Errorf(\"store got %s = %%v, want it kept\", store.got.%s)\n\t}\n", a.goName(), keep, a.goName(), a.goName())
+	}
+	b.WriteString("}\n\n")
+	fmt.Fprintf(&b, `func Test%[1]sUpdateUnknownIs404(t *testing.T) {
+	rec := %[2]s(t, &%[3]s{err: domain.ErrNotFound}, http.MethodPatch, "/%[4]s/nope", `+"`{}`"+`)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %%d, want 404", rec.Code)
+	}
+}
+
+`, many, helper, fake, s.table)
 	return b.String()
 }

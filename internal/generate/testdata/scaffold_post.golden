@@ -330,14 +330,22 @@ func (ctl *PostsController) Create(c *gin.Context) {
 	c.JSON(http.StatusCreated, postView(p))
 }
 
-// Update handles PATCH /posts/:id.
+// Update handles PATCH /posts/:id. Only the fields in the body change, as
+// in Rails: the post is loaded, the body is decoded over its current values,
+// so a key left out keeps its value, and the result is saved and validated
+// whole.
 func (ctl *PostsController) Update(c *gin.Context) {
-	var req views.PostRequest
+	p, err := ctl.Store.GetPost(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		ctl.fail(c, err)
+		return
+	}
+	req := views.PostRequest{Title: p.Title, Body: p.Body, Score: p.Score, PublishedAt: p.PublishedAt, AuthorID: p.AuthorID}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, views.Error(err))
 		return
 	}
-	p, err := ctl.Store.UpdatePost(c.Request.Context(), domain.Post{ID: c.Param("id"), Title: req.Title, Body: req.Body, Score: req.Score, PublishedAt: req.PublishedAt, AuthorID: req.AuthorID})
+	p, err = ctl.Store.UpdatePost(c.Request.Context(), domain.Post{ID: c.Param("id"), Title: req.Title, Body: req.Body, Score: req.Score, PublishedAt: req.PublishedAt, AuthorID: req.AuthorID})
 	if err != nil {
 		ctl.fail(c, err)
 		return
@@ -516,6 +524,36 @@ func TestPostsCreateMalformedJSONIs400(t *testing.T) {
 	rec := postsRequest(t, &fakePostsStore{}, http.MethodPost, "/posts", `{"nope":`)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", rec.Code)
+	}
+}
+
+// PATCH is partial, as in Rails: a field the body leaves out keeps its
+// stored value rather than being blanked.
+func TestPostsUpdateChangesOnlyTheFieldsSent(t *testing.T) {
+	store := &fakePostsStore{one: domain.Post{ID: "a", Title: "Hello", Body: "Hello", Score: 7, AuthorID: "00000000-0000-4000-8000-000000000000"}}
+	rec := postsRequest(t, store, http.MethodPatch, "/posts/a", `{"title":"Edited"}`)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
+	}
+	if store.got.Title != "Edited" {
+		t.Errorf("store got Title = %v, want %v", store.got.Title, "Edited")
+	}
+	if store.got.Body != "Hello" {
+		t.Errorf("store got Body = %v, want it kept", store.got.Body)
+	}
+	if store.got.Score != 7 {
+		t.Errorf("store got Score = %v, want it kept", store.got.Score)
+	}
+	if store.got.AuthorID != "00000000-0000-4000-8000-000000000000" {
+		t.Errorf("store got AuthorID = %v, want it kept", store.got.AuthorID)
+	}
+}
+
+func TestPostsUpdateUnknownIs404(t *testing.T) {
+	rec := postsRequest(t, &fakePostsStore{err: domain.ErrNotFound}, http.MethodPatch, "/posts/nope", `{}`)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", rec.Code)
 	}
 }
 
