@@ -110,6 +110,28 @@ func TestPruneImportsDropsTheUnreferenced(t *testing.T) {
 	}
 }
 
+// A versioned import path (.../pgx/v5) names a package by the segment
+// before the version, not "v5" itself: pgx.Tx, never v5.Tx. Pruning must
+// look for that name, or it drops an import still in use.
+func TestPruneImportsKeepsAVersionedImportStillUsed(t *testing.T) {
+	src := []byte(`package app
+
+import (
+	"context"
+
+	"github.com/jackc/pgx/v5"
+)
+
+type Application struct {
+	Jobs *river.Client[pgx.Tx]
+}
+`)
+	out := string(PruneImports(src))
+	if !strings.Contains(out, `"github.com/jackc/pgx/v5"`) {
+		t.Errorf("a referenced versioned import was dropped:\n%s", out)
+	}
+}
+
 func TestCheck(t *testing.T) {
 	if err := Check([]byte(server), "x.go", "controllers"); err != nil {
 		t.Error(err)

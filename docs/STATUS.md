@@ -41,7 +41,11 @@ Install: `go install github.com/bogie-go/bogie@latest` for the newest tag,
     bogie g controller admin/reports index show       the same inside a namespace package,
                                                       written and registered on first use
     bogie g service publish_post
-    bogie g job send_welcome                          apps made with --jobs
+    bogie g job send_welcome                          on an app with no jobs,
+                                                      adds River first (as if
+                                                      --jobs had been passed
+                                                      to new), merged in the
+                                                      same way as app:update
     bogie g authentication secret|token|api_key       a middleware on a route group, its config
                                                       keys wired and a development secret written
                                                       to the credentials; api_key adds a table
@@ -67,7 +71,10 @@ example resource (removed 2026-10-03; the generators are the shape to copy).
 
 ## Setting up a new machine
 
-1. Go 1.25 or newer (`mise use go@latest` or the installer).
+1. Go 1.26 or newer (`mise use go@latest` or the installer). The tool itself
+   builds with 1.25, but a generated app needs 1.26: sqlc v1.31 requires it,
+   and with an older Go on PATH `go test -cover` (so `bogie test` and
+   `bin/ci`) fails under the auto-downloaded toolchain.
 2. Docker with Compose v2; the generated apps' Postgres runs there on port 5440.
 3. golangci-lint v2: `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest`.
    `bin/ci` looks on PATH, then in `$(go env GOPATH)/bin`, and fails loudly if

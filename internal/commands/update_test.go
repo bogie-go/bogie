@@ -1,7 +1,9 @@
 package commands
 
 import (
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -109,5 +111,73 @@ func TestReadSettingsAndRewriteVersion(t *testing.T) {
 	b, _ := os.ReadFile(filepath.Join(root, Marker))
 	if !strings.Contains(string(b), "bogie = \"v0.2.0\"") || !strings.Contains(string(b), "# written by new") {
 		t.Errorf("rewritten marker:\n%s", b)
+	}
+}
+
+func TestRewriteJobs(t *testing.T) {
+	root := t.TempDir()
+	toml := "bogie = \"v0.1.0\"\nname = \"blog\"\nmodule = \"example.com/blog\"\njobs = false\n"
+	if err := os.WriteFile(filepath.Join(root, Marker), []byte(toml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := rewriteJobs(root, true); err != nil {
+		t.Fatal(err)
+	}
+	s, err := readSettings(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.Jobs {
+		t.Errorf("settings after rewriteJobs(true) = %+v, want Jobs true", s)
+	}
+	b, _ := os.ReadFile(filepath.Join(root, Marker))
+	if !strings.Contains(string(b), "jobs = true") {
+		t.Errorf("rewritten marker:\n%s", b)
+	}
+}
+
+// enableJobs refuses an app that has not been brought to this bogie's
+// version yet: base would be rendered from the wrong templates and every
+// unrelated template change since would show up as noise in what is meant
+// to be a jobs-only diff.
+func TestEnableJobsRefusesAStaleVersion(t *testing.T) {
+	root := t.TempDir()
+	toml := "bogie = \"v0.0.0-stale\"\nname = \"blog\"\nmodule = \"example.com/blog\"\njobs = false\n"
+	if err := os.WriteFile(filepath.Join(root, Marker), []byte(toml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := enableJobs(root, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "app:update") {
+		t.Errorf("enableJobs on a stale version: err = %v, want a mention of app:update", err)
+	}
+}
+
+// enableJobs touches several files in one diff, so it refuses on an
+// uncommitted change exactly as app:update does, and for the same reason.
+func TestEnableJobsRefusesADirtyTree(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := New([]string{"blog", "--skip-tidy"}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	root, err := filepath.Abs("blog")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+	if out, err := exec.Command("git", "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	if out, err := exec.Command("git", "add", "-A").CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v: %s", err, out)
+	}
+	if out, err := exec.Command("git", "commit", "-q", "-m", "init").CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v: %s", err, out)
+	}
+	if err := os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte("dirty\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err = enableJobs(root, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "uncommitted changes") {
+		t.Errorf("enableJobs on a dirty tree: err = %v, want a mention of uncommitted changes", err)
 	}
 }
