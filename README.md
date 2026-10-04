@@ -11,9 +11,7 @@ out of Gin, sqlc, goose, River and Kamal, with generators that also wire the cod
   <a href="https://goreportcard.com/report/github.com/bogie-go/bogie"><img src="https://goreportcard.com/badge/github.com/bogie-go/bogie" alt="Go Report Card"></a>
   <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/bogie-go/bogie" alt="Go version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/bogie-go/bogie" alt="MIT License"></a>
-  <!-- After the first tag, uncomment:
-  <a href="https://github.com/bogie-go/bogie/releases"><img src="https://img.shields.io/github/v/release/bogie-go/bogie?include_prereleases&sort=semver" alt="Release"></a>
-  -->
+  <a href="https://github.com/bogie-go/bogie/releases/latest"><img src="https://img.shields.io/github/v/release/bogie-go/bogie?sort=semver" alt="Release"></a>
 </p>
 
 <p align="center"><img src="docs/assets/bogie-demo.gif" width="720" alt="Terminal demo, about 38 seconds: bogie new demoapp, make up to start Postgres, bogie g controller and bogie g scaffold post printing their create and insert lines, bogie db:prepare, bogie s, then curl calls that return a 501 stub from the new controller, create a post with a 201, and list it back"></p>
