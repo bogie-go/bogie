@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/bogie-go/bogie/internal/generate"
+	"github.com/bogie-go/bogie/internal/markers"
 	"github.com/bogie-go/bogie/internal/scaffold"
 	"github.com/bogie-go/bogie/templates"
 )
@@ -392,6 +394,171 @@ func rewriteVersion(root, version string) error {
 		}
 	}
 	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o644)
+}
+
+// rewriteJobs sets the jobs line of the marker, as enableJobs does once it
+// has merged in what --jobs adds.
+func rewriteJobs(root string, on bool) error {
+	path := filepath.Join(root, Marker)
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(string(b), "\n")
+	for i, l := range lines {
+		if strings.HasPrefix(strings.TrimSpace(l), "jobs ") || strings.HasPrefix(strings.TrimSpace(l), "jobs=") {
+			lines[i] = fmt.Sprintf("jobs = %v", on)
+		}
+	}
+	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o644)
+}
+
+// enableJobs turns on River for an app `bogie new` made without --jobs. It is
+// the same trick as `bogie app:update`, with Jobs standing in for the version:
+// render the app once as it is (Jobs false) and once as it would be (Jobs
+// true), and merge the difference into the app. Only the files --jobs
+// touches ever differ between the two renders, so only those show up as
+// anything but identical, and a file the user already edited (app/application.go,
+// most likely) merges rather than being overwritten.
+func enableJobs(root string, out io.Writer) error {
+	say := func(format string, a ...any) { _, _ = fmt.Fprintf(out, format, a...) }
+	settings, err := readSettings(root)
+	if err != nil {
+		return fmt.Errorf("enable jobs: %w", err)
+	}
+	current := Version()
+	if settings.Version != current {
+		return fmt.Errorf("enable jobs: this app is at bogie %s and this bogie is %s; run `bogie app:update` first", settings.Version, current)
+	}
+	if dirty, derr := gitDirty(root); derr == nil && dirty {
+		return fmt.Errorf("enable jobs: the git tree has uncommitted changes; commit or stash them, since this touches several files in one diff")
+	}
+
+	render := func(jobs bool) (map[string][]byte, error) {
+		dir, err := os.MkdirTemp("", "bogie-jobs-")
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = os.RemoveAll(dir) }()
+		vars := scaffold.Vars{
+			Name:          settings.Name,
+			Module:        settings.Module,
+			EnvPrefix:     strings.ToUpper(settings.Name),
+			LayoutVersion: current,
+			Jobs:          jobs,
+			Mascot:        templates.MascotDataURI(),
+		}
+		if _, err := scaffold.Render(templates.App, "app", dir, vars, scaffold.Options{}); err != nil {
+			return nil, err
+		}
+		return readTree(dir)
+	}
+	base, err := render(false)
+	if err != nil {
+		return fmt.Errorf("enable jobs: render: %w", err)
+	}
+	theirs, err := render(true)
+	if err != nil {
+		return fmt.Errorf("enable jobs: render: %w", err)
+	}
+	// Two of theirs's lines land at an anchor another generator also writes
+	// to: the next import after app/controllers, and the command map above
+	// bogie:commands, which gofmt column-aligns, so even an untouched entry's
+	// spacing shifts once a longer key joins. A blind 3-way merge cannot tell
+	// two independent insertions apart there, so those two lines are
+	// stripped out of theirs before merging and added back afterwards
+	// through the same marker mechanism every other generator uses for
+	// exactly this.
+	jobsImport := settings.Module + "/app/jobs"
+	jobsCommand := `"worker": runWorker,`
+	if src, ok := theirs["app/application.go"]; ok {
+		out, _ := markers.Remove(src, fmt.Sprintf("%q", jobsImport))
+		theirs["app/application.go"] = out
+	}
+	if src, ok := theirs["main.go"]; ok {
+		out, changed := markers.Remove(src, jobsCommand)
+		if changed {
+			if out, err = markers.Format(out); err != nil {
+				return fmt.Errorf("enable jobs: %w", err)
+			}
+		}
+		theirs["main.go"] = out
+	}
+	ours, err := readTree(root)
+	if err != nil {
+		return err
+	}
+	results, err := merge(ours, base, theirs, "without jobs", "with jobs")
+	if err != nil {
+		return fmt.Errorf("enable jobs: %w", err)
+	}
+
+	conflicts := 0
+	for _, r := range results {
+		if r.op == opIdentical {
+			continue // most files: nothing --jobs touches
+		}
+		say("%12s  %s\n", r.op, r.path)
+		if r.op == opConflict {
+			conflicts++
+		}
+		if r.content == nil {
+			continue
+		}
+		abs := filepath.Join(root, filepath.FromSlash(r.path))
+		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			return err
+		}
+		mode := os.FileMode(0o644)
+		if strings.HasPrefix(r.path, "bin/") {
+			mode = 0o755
+		}
+		if err := os.WriteFile(abs, r.content, mode); err != nil {
+			return err
+		}
+	}
+	if conflicts > 0 {
+		return fmt.Errorf("enable jobs: %d conflict(s); resolve them, then run bogie doctor and bin/ci", conflicts)
+	}
+
+	// The two lines stripped out above go back in now, the same way `g
+	// controller` or `g authentication` would have added them: one marker
+	// insert, one import, into whatever is on disk now, next to anything
+	// another generator put there.
+	report := func(a scaffold.Action) { say("%12s  %s\n", a.Op, a.Path) }
+	if err := wire(root, []generate.Wire{{File: "main.go", Marker: "commands", Line: jobsCommand}}, nil, false, report); err != nil {
+		return fmt.Errorf("enable jobs: %w", err)
+	}
+	appGo := filepath.Join(root, "app", "application.go")
+	src, err := os.ReadFile(appGo)
+	if err != nil {
+		return err
+	}
+	if out, changed, aerr := markers.AddImport(src, jobsImport); aerr != nil {
+		return fmt.Errorf("enable jobs: %w", aerr)
+	} else if changed {
+		if out, err = markers.Format(out); err != nil {
+			return fmt.Errorf("enable jobs: %w", err)
+		}
+		if err := os.WriteFile(appGo, out, 0o644); err != nil {
+			return err
+		}
+		say("%12s  app/application.go: import %q\n", "insert", jobsImport)
+	}
+
+	if err := rewriteJobs(root, true); err != nil {
+		return err
+	}
+	say("%12s  %s: jobs = true\n", "updated", Marker)
+	say("%12s  go mod tidy\n", "run")
+	cmd := exec.Command("go", "mod", "tidy")
+	cmd.Dir = root
+	cmd.Stdout = out
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("enable jobs: go mod tidy: %w", err)
+	}
+	return nil
 }
 
 // gitDirty reports whether the app's git tree has uncommitted changes. An

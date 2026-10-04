@@ -64,7 +64,7 @@ Use whatever the Go ecosystem provides. Wire it once. Build only what is missing
 | CI | **`bin/ci`**, run locally, Rails 8.1 style; `gh signoff` records the green run on the commit | **gap** (a port) |
 | Task runner | `make` | ecosystem |
 | Logging | `log/slog` | stdlib |
-| Tool versions | Go 1.25+ (what gin v1.12 needs); `tool` directive in `go.mod` | ecosystem |
+| Tool versions | Go 1.25+ for the tool (what gin v1.12 needs), Go 1.26+ for a generated app (what sqlc v1.31 needs); `tool` directive in `go.mod` | ecosystem |
 | Project generator (`rails new`) | **bogie new** | **gap** |
 | Generators (`rails g`) that also *wire* | **bogie g** | **gap** |
 | One command surface (`rails db:*`, `rails s`) | app binary + `bogie` proxy | **gap** |
@@ -568,6 +568,40 @@ Extraction, in order:
    brings its schema change with it instead of needing a hand-copied
    migration. The web process holds a client it never starts, so it only
    inserts; the worker process starts the same client. River v0.48.0.
+6a. **`g job` on an app with no jobs adds them first.** Built 2026-10-04,
+    once the asymmetry was noticed: `--jobs` is opt-in at `new` time, but
+    there was no way back in short of hand-copying nine files. `g job`
+    renders the app twice, Jobs false and Jobs true, and merges the
+    difference into the app exactly as `app:update` merges a version
+    change — base and theirs now vary `Jobs` instead of (or alongside) the
+    recorded version. Only the files `--jobs` touches ever differ between
+    the two renders, so only those show up as anything but identical, and a
+    file the user has already edited merges rather than being overwritten.
+    Refuses, as `app:update` does, on a dirty git tree, since it touches
+    several files in one diff; also refuses an app not yet brought to this
+    bogie's version, since base would otherwise be rendered from the wrong
+    templates and every unrelated template change since would show up as
+    noise in what is meant to be a jobs-only diff. Caught on a scaffolded app
+    that already had generators run on it, not a bare one: two of theirs's
+    lines land at an anchor another generator also writes to (the next
+    import after `app/controllers`, and the command map above
+    `bogie:commands`, which gofmt column-aligns, so even an untouched entry's
+    spacing shifts once a longer key joins) — a blind 3-way merge cannot
+    tell two independent insertions apart there, so those two lines are
+    stripped out of theirs before merging and added back afterwards through
+    the same marker mechanism (`markers.Insert`, `markers.AddImport`) every
+    other generator already uses for exactly this. Chasing it down also
+    surfaced a real, independent bug in `markers.PruneImports`: it named a
+    versioned import (`.../pgx/v5`) by its last path segment ("v5") rather
+    than the package's actual name ("pgx"), so destroying any controller or
+    service on a --jobs app silently deleted the still-used pgx import and
+    broke the build. Fixed the same day: a last segment matching `v[0-9]+`
+    is skipped in favor of the segment before it.
+    The alternative considered to all of this was flipping the default to
+    jobs-on with `--no-jobs` to opt out, rejected because it taxes every app
+    with the worker role and River's dependencies for a problem that was
+    really "no way back",
+    not "the wrong default."
 7. **Later:** regenerate a clean app with the tool and diff it against kchat.
 
 **Done 2026-10-03 (M4).** `bogie new kchat --module=github.com/klangtech/kchat

@@ -85,6 +85,10 @@ generators() {
   "$b" g authentication secret || return 1
   "$b" g authentication token || return 1
   "$b" g authentication api_key || return 1
+  # This app has no jobs; the first `g job` adds River itself, the same way
+  # `app:update` merges a layout change, before writing the job as usual. The
+  # app's own bin/ci below then also covers the worker role it just gained.
+  "$b" g job send_welcome || return 1
   "$b" doctor || return 1
   # Same version on both sides, so this is the no-op path; the merge itself
   # is unit-tested, and a real cross-version run needs the module proxy.
@@ -94,6 +98,7 @@ generators() {
 
   # And back out again: destroy must leave an app that still passes.
   cd "$CI_APP_DIR/blog" || return 1
+  "$b" d job send_welcome || return 1
   "$b" d authentication api_key || return 1
   "$b" d authentication token || return 1
   "$b" d authentication secret || return 1
