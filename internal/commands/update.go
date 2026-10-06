@@ -189,12 +189,20 @@ func Update(args []string, out io.Writer) error {
 		return err
 	}
 	say("%12s  %s: bogie = %q\n", "updated", Marker, current)
+
+	// A tool this version pins that the app does not have yet. `go mod tidy`
+	// adds what the new templates IMPORT, and a tool directive is imported by
+	// nothing, so tidy would leave it out and the tool would be missing the
+	// moment something tried to run it: an app that gained .air.toml here
+	// without the reload tool serves without reloading and says why.
+	for _, tool := range missingTools(theirs["go.mod"], root) {
+		say("%12s  go get -tool %s\n", "run", tool)
+		if err := goIn(root, out, "get", "-tool", tool); err != nil {
+			return fmt.Errorf("app:update: go get -tool %s: %w", tool, err)
+		}
+	}
 	say("%12s  go mod tidy\n", "run")
-	cmd := exec.Command("go", "mod", "tidy")
-	cmd.Dir = root
-	cmd.Stdout = out
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	if err := goIn(root, out, "mod", "tidy"); err != nil {
 		return fmt.Errorf("app:update: go mod tidy: %w", err)
 	}
 	if conflicts > 0 {
@@ -584,4 +592,44 @@ func sortStrings(s []string) {
 			s[j], s[j-1] = s[j-1], s[j]
 		}
 	}
+}
+
+// missingTools names the tool directives this version's go.mod template
+// carries that the app's go.mod does not. Order follows the template, so the
+// report reads the way the file does.
+func missingTools(template []byte, root string) []string {
+	have, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		return nil
+	}
+	var missing []string
+	for _, tool := range toolDirectives(template) {
+		if !strings.Contains(string(have), tool) {
+			missing = append(missing, tool)
+		}
+	}
+	return missing
+}
+
+// toolDirectives reads the module paths under a go.mod's tool directive, in
+// either form: a parenthesised block, or one `tool path` line.
+func toolDirectives(src []byte) []string {
+	var tools []string
+	inBlock := false
+	for _, line := range strings.Split(string(src), "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case line == "" || strings.HasPrefix(line, "//"):
+			continue
+		case inBlock && line == ")":
+			inBlock = false
+		case inBlock:
+			tools = append(tools, line)
+		case line == "tool (":
+			inBlock = true
+		case strings.HasPrefix(line, "tool "):
+			tools = append(tools, strings.TrimSpace(strings.TrimPrefix(line, "tool ")))
+		}
+	}
+	return tools
 }

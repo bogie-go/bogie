@@ -181,3 +181,54 @@ func TestEnableJobsRefusesADirtyTree(t *testing.T) {
 		t.Errorf("enableJobs on a dirty tree: err = %v, want a mention of uncommitted changes", err)
 	}
 }
+
+func TestToolDirectivesReadsBothForms(t *testing.T) {
+	block := []byte(`module blog
+
+go 1.26.0
+
+require github.com/gin-gonic/gin v1.12.0
+
+// A comment that is not a tool.
+tool (
+	github.com/air-verse/air
+	github.com/pressly/goose/v3/cmd/goose
+)
+`)
+	got := toolDirectives(block)
+	want := []string{"github.com/air-verse/air", "github.com/pressly/goose/v3/cmd/goose"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("toolDirectives(block) = %v, want %v", got, want)
+	}
+
+	if got := toolDirectives([]byte("module blog\n\ntool github.com/air-verse/air\n")); len(got) != 1 || got[0] != "github.com/air-verse/air" {
+		t.Errorf("toolDirectives(single) = %v", got)
+	}
+	if got := toolDirectives([]byte("module blog\n")); len(got) != 0 {
+		t.Errorf("toolDirectives(none) = %v, want empty", got)
+	}
+}
+
+// The case a developer actually hits: app:update brings .air.toml to an app
+// generated before reload existed, and go mod tidy cannot add the tool
+// because nothing imports it.
+func TestMissingToolsNamesWhatTidyWouldNotAdd(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module blog\n\ngo 1.26.0\n\ntool (\n\tgithub.com/pressly/goose/v3/cmd/goose\n)\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	template := []byte("module blog\n\ntool (\n\tgithub.com/air-verse/air\n\tgithub.com/pressly/goose/v3/cmd/goose\n)\n")
+
+	got := missingTools(template, root)
+	if len(got) != 1 || got[0] != "github.com/air-verse/air" {
+		t.Errorf("missingTools = %v, want just the reload tool", got)
+	}
+
+	// Once it is there, nothing is missing.
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), template, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := missingTools(template, root); len(got) != 0 {
+		t.Errorf("missingTools = %v, want none", got)
+	}
+}
