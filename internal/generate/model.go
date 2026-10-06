@@ -151,7 +151,7 @@ func domainType(name string, attrs []Attr) string {
 
 func store(module, name, table string, attrs []Attr) string {
 	typ := Camel(name)
-	recv := name[:1]
+	recv := paramName(name, "s")
 	var b strings.Builder
 	b.WriteString("package models\n\n")
 	b.WriteString("import (\n\t\"context\"\n\t\"errors\"\n\t\"fmt\"\n\n\t\"github.com/jackc/pgx/v5\"\n")

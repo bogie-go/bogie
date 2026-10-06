@@ -1,0 +1,45 @@
+# Live reload for development, used by `bogie server` and `bogie worker`.
+#
+# Air rebuilds and restarts the binary when a watched file changes. It is a
+# development tool only: `{{.EnvPrefix}}_ENV=production` runs the compiled
+# binary, and a container never sees this file. Delete it and `bogie server`
+# goes back to a plain `go run . serve`.
+#
+# The worker reuses this file with two flags that point it at its own binary
+# and command, so there is one set of settings rather than two that drift.
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  # The same build the Dockerfile runs, into tmp/ rather than bin/, so a
+  # reload can never be confused with `make build` output.
+  cmd = "go build -o ./tmp/{{.Name}} ."
+  entrypoint = ["./tmp/{{.Name}}", "serve"]
+
+  # .sql as well as .go: migrations and seeds are embedded in the binary, so
+  # a new migration needs a rebuild before the server can apply it at boot.
+  include_ext = ["go", "sql"]
+
+  # db/queries is sqlc's INPUT, not its output. Watching it rebuilds against
+  # half-generated models the moment `bogie g model` writes a query file;
+  # app/models is watched instead, which is what sqlc actually writes.
+  exclude_dir = ["bin", "tmp", "vendor", "testdata", "db/queries", ".git", ".kamal"]
+
+  # A test file cannot change what the server does; `make test` runs those.
+  exclude_regex = ["_test\\.go$"]
+
+  # SIGINT, not SIGKILL: the app drains in-flight requests and closes its
+  # connection pool on signal, and killing it outright skips both.
+  send_interrupt = true
+  kill_delay = "2s"
+
+  # Stop the old binary when a build fails, so a dead port says "it does not
+  # compile". Leaving it running would serve code that no longer exists on
+  # disk, which looks exactly like a successful reload.
+  stop_on_error = true
+
+  # A generator writes several files at once; one rebuild for the batch.
+  delay = 1000
+
+[misc]
+  clean_on_exit = true

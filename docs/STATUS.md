@@ -26,6 +26,9 @@ Install: `go install github.com/bogie-go/bogie@latest` for the newest tag,
                                                  builds, migrates, reads its credentials,
                                                  serves /healthz and passes its own bin/ci
     bogie s | server, t | test, lint, ci, worker
+                                                 server and worker rebuild and restart
+                                                 on save in development (Air, .air.toml);
+                                                 production runs the compiled binary
     bogie db:prepare db:migrate db:rollback db:migrate:status db:migrate:redo
           db:reset db:seed db:seed:rollback db:create db:drop db:version
     bogie credentials:edit [-e production] | credentials:show | credentials:get
@@ -143,6 +146,14 @@ pushing; on a clean tree a green run signs off the commit.
   `bogie-go/bogie-go.com` repo, `main` at the root, plain HTML, DNS at
   GoDaddy. Edit `index.html` there and push. In M5 it gets a `go-import`
   meta tag so `bogie-go.com/bogie` can be the vanity import path.
+- **Issue #11**, the rest of it: `bin/setup`, a documented native-Postgres
+  path next to the Compose one in both READMEs, and an actionable hint when
+  the server cannot reach Postgres (connection refused vs auth vs migration,
+  original error kept). Live reload landed 2026-10-06 and took the `bin/dev`
+  half of that issue with it, minus the script: Foreman is a Ruby gem and a
+  `Procfile.dev` nothing reads is worse than none, so `bogie server` and
+  `bogie worker` reload on their own and running both is still two terminals
+  (DESIGN.md §12.12). `bin/dev` is worth revisiting with `bin/setup`.
 - `bogie-go/credentials` changelog has no 1.4.0 entry; 1.5.0 is the path move.
 - Release, for M5: `bin/release v0.1.0` from a clean, pushed `main`. It runs
   `bin/ci` (green signs off), tags, pushes the tag and creates the GitHub

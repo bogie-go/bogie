@@ -31,6 +31,12 @@ func Proxy(command string, args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	// In development, `server` and `worker` run under live reload instead.
+	if reload, hint := reloadSteps(root, command, args); reload != nil {
+		steps = reload
+	} else if hint != "" {
+		_, _ = fmt.Fprintln(out, hint)
+	}
 
 	for _, argv := range steps {
 		cmd := exec.Command(argv[0], argv[1:]...)
@@ -192,4 +198,71 @@ func appRoot(dir string) (string, error) {
 		}
 		dir = parent
 	}
+}
+
+// airConfig is the live reload configuration `bogie new` writes. Its presence
+// is what turns reload on: delete it and `bogie server` is a plain
+// `go run . serve` again, which is the escape hatch when a reload misbehaves.
+const airConfig = ".air.toml"
+
+// airModule is the reload tool, pinned in the app's own go.mod. An app
+// generated before reload existed has the config file only after
+// `bogie app:update`, and the module only after `go mod tidy`, so both are
+// checked and a missing one explains itself rather than failing in `go tool`.
+const airModule = "github.com/air-verse/air"
+
+// reloadSteps returns the live-reload form of `server` and `worker`, or nil
+// when reload does not apply and the plain `go run` should stand. The second
+// result is a line to print first when reload was wanted but unavailable.
+//
+// Reload is development-only, like Rails's own: production runs the compiled
+// binary, and a container never rebuilds itself. It is also skipped when args
+// were given, because those are one-off questions (`bogie server --help`)
+// rather than the long-running loop reload exists for.
+func reloadSteps(root, command string, args []string) ([][]string, string) {
+	if command != "server" && command != "worker" {
+		return nil, ""
+	}
+	if len(args) > 0 {
+		return nil, ""
+	}
+	settings, err := readSettings(root)
+	if err != nil {
+		return nil, ""
+	}
+	// The app resolves <PREFIX>_ENV itself and defaults to development; the
+	// tool reads the same variable so the two can never disagree about which
+	// environment this is.
+	if env := os.Getenv(strings.ToUpper(settings.Name) + "_ENV"); env != "" && env != "development" {
+		return nil, ""
+	}
+	if _, err := os.Stat(filepath.Join(root, airConfig)); err != nil {
+		return nil, ""
+	}
+	if !hasModule(root, airModule) {
+		return nil, fmt.Sprintf("%s is present but %s is not in go.mod; running without reload (add it with: go get -tool %s)", airConfig, airModule, airModule)
+	}
+
+	argv := []string{"go", "tool", "air", "-c", airConfig}
+	if command == "worker" {
+		// One config for both roles. The worker overrides only what must
+		// differ: its own binary, so the two builds cannot race on one path,
+		// its own command, and its own error log.
+		bin := "./tmp/" + settings.Name + "-worker"
+		argv = append(argv,
+			"--build.cmd", "go build -o "+bin+" .",
+			"--build.full_bin", bin+" worker",
+			"--build.log", "worker-build-errors.log",
+		)
+	}
+	return [][]string{argv}, ""
+}
+
+// hasModule reports whether the app's go.mod mentions a module path.
+func hasModule(root, module string) bool {
+	b, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(b), module)
 }

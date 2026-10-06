@@ -27,10 +27,13 @@ credentials: ## edit the encrypted settings (development); ENV=production for it
 build: ## compile the binary
 	go build -o bin/{{.Name}} .
 
-server: ## run the HTTP server
+# One boot, one set of logs, no watcher. `bogie server` runs the same thing
+# under live reload in development; this is what to run when a reload would
+# get in the way, or when reload itself is the suspect.
+server: ## run the HTTP server (bogie server adds live reload)
 	go run . serve
 {{if .Jobs}}
-worker: ## work the job queue
+worker: ## work the job queue (bogie worker adds live reload)
 	go run . worker
 {{end}}
 

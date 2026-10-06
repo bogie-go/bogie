@@ -19,7 +19,7 @@ step() {
   printf '\n\033[1m== %s\033[0m\n' "$name"
   t=$(date +%s)
   case "$command" in
-    lint|signoff|scaffold|image|generators|serves|teardown|jobs|teardown_jobs) "$command" ;;
+    lint|signoff|scaffold|image|generators|serves|reloads|teardown|jobs|teardown_jobs) "$command" ;;
     *) sh -c "$command" ;;
   esac
   if [ $? -eq 0 ]; then
@@ -70,7 +70,12 @@ generators() {
   cd "$CI_APP_DIR/blog" || return 1
   b="$CI_APP_DIR/bogie"
   "$b" g scaffold post title:string body:text || return 1
-  "$b" g model comment body:text post:references score:integer published_at:datetime meta:jsonb || return 1
+  # "session" and "category" are not arbitrary: a model whose name starts
+  # with s, or a scaffold whose name starts with c, once generated a
+  # parameter that shadowed the Store receiver or the *gin.Context and did
+  # not compile. Only building the generated code catches that.
+  "$b" g model session body:text post:references score:integer published_at:datetime meta:jsonb || return 1
+  "$b" g scaffold category name:string || return 1
   "$b" g migration add_slug_to_posts slug:string:index || return 1
   "$b" g controller comments index show create update destroy search || return 1
   # A namespace: the first controller writes the package, the second joins it.
@@ -104,7 +109,8 @@ generators() {
   "$b" d controller admin/audits || return 1
   "$b" d service publish_post || return 1
   "$b" d migration add_slug_to_posts || return 1
-  "$b" d model comment || return 1
+  "$b" d scaffold category || return 1
+  "$b" d model session || return 1
   "$b" d scaffold post || return 1
   "$b" doctor || return 1
   cd "$OLDPWD" || return 1
@@ -127,6 +133,51 @@ serves() {
   cd "$OLDPWD" || return 1
   [ "$body" = ok ] || { echo "GET /healthz = $body"; return 1; }
   echo "GET /healthz = ok"
+}
+
+# Live reload, the way a developer gets it: `bogie server` in development runs
+# the app under Air, so a saved file rebuilds and restarts it. Checks the tool
+# is pinned in the app's own go.mod, that the server comes up under reload, and
+# that editing a file brings it back on its own.
+reloads() {
+  [ -d "$CI_APP_DIR/blog" ] || { echo "no generated app"; return 1; }
+  cd "$CI_APP_DIR/blog" || return 1
+  test -f .air.toml || { echo "the app has no .air.toml"; cd "$OLDPWD"; return 1; }
+  go tool air -v >/dev/null 2>&1 || { echo "go tool air does not resolve from the app's go.mod"; cd "$OLDPWD"; return 1; }
+
+  # Polls a path until it answers, so "it came back" means the rebuilt binary
+  # is serving, not that the old one had not been stopped yet.
+  reload_up() {
+    i=0
+    until curl -fs "localhost:18081$1" >/dev/null 2>&1; do
+      i=$((i + 1))
+      [ $i -ge 120 ] && return 1
+      sleep 0.5
+    done
+  }
+  reload_stop() {
+    kill $pid 2>/dev/null
+    wait $pid 2>/dev/null
+    # Air's child is the binary it built; it goes with the parent, but a
+    # leftover would hold :18081 for the next run.
+    pkill -f "$CI_APP_DIR/blog/tmp/blog" 2>/dev/null
+    cd "$OLDPWD" || return 1
+  }
+
+  # Development, because reload is development-only, so this needs the
+  # development database rather than the test one bin/ci rebuilt.
+  go run . db prepare >"$CI_APP_DIR/reload.log" 2>&1 || { cat "$CI_APP_DIR/reload.log"; cd "$OLDPWD"; return 1; }
+  BLOG_ADDR=:18081 "$CI_APP_DIR/bogie" server >>"$CI_APP_DIR/reload.log" 2>&1 &
+  pid=$!
+  reload_up /healthz || { echo "did not come up under reload"; cat "$CI_APP_DIR/reload.log"; reload_stop; return 1; }
+
+  # A route that does not exist yet: it can only answer if the file was
+  # noticed, rebuilt and restarted.
+  sed -i 's|r.GET("/healthz".*|&\n\tr.GET("/reloaded", func(c *gin.Context) { c.String(http.StatusOK, "yes") })|' app/controllers/routes.go
+  reload_up /reloaded || { echo "a new route did not appear after the file changed"; cat "$CI_APP_DIR/reload.log"; reload_stop; return 1; }
+  sed -i '/"\/reloaded"/d' app/controllers/routes.go
+  reload_stop
+  echo "reload: served, picked up a new route on save, served it"
 }
 
 # A second app, with --jobs: the worker role, River, g job and d job, and
@@ -185,6 +236,7 @@ step "Generated app: its own bin/ci" "scaffold"
 step "Generated app: image builds"   "image"
 step "Generators: into that app"    "generators"
 step "Generated app: serves"        "serves"
+step "Generated app: live reload"   "reloads"
 step "Generated app: tear down"     "teardown"
 step "With --jobs: scaffold, g job, d job, its own bin/ci" "jobs"
 step "With --jobs: tear down"       "teardown_jobs"

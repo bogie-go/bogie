@@ -19,6 +19,7 @@ and nothing else.
     make db-migrate     apply pending migrations; db-rollback, db-migrate-status, db-reset as in Rails
     make g_migration_<name>   author a migration (go tool goose)
     make server         run the HTTP server (go run . serve); migrates at boot
+    bogie server        the same, with live reload in development (Air)
     make test           go test -race -cover ./...
     make lint           gofmt check, go vet, golangci-lint
     bin/ci              every check, run locally; green ends with gh signoff
@@ -26,7 +27,11 @@ and nothing else.
 `bogie` runs the same commands from any subdirectory, spelled as Rails spells
 them: `bogie db:prepare`, `db:migrate`, `db:rollback`, `db:seed`,
 `credentials:edit -e production`, `server` (`s`), `test` (`t`). The tool adds the Rails
-spelling and nothing else; the app never imports it. A newer Bogie moves the
+spelling and nothing else; the app never imports it. In development
+`bogie server` and `bogie worker` run under Air, so a saved file rebuilds
+and restarts the process; `.air.toml` holds the settings and deleting it
+turns reload off. `make server` never reloads, which is the thing to run
+when you want one boot and one set of logs. A newer Bogie moves the
 app to its layout with `bogie app:update`, a three-way merge of the files the
 templates produce against the version `bogie.toml` records; your edits and
 everything the generators wrote are kept, and a real overlap leaves conflict

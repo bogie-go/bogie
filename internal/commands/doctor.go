@@ -67,7 +67,14 @@ func Doctor(out io.Writer) error {
 	}
 
 	gomod, _ := read("go.mod")
-	for _, tool := range []string{"github.com/pressly/goose/v3/cmd/goose", "github.com/sqlc-dev/sqlc/cmd/sqlc", "github.com/bogie-go/credentials/cmd/credentials"} {
+	tools := []string{"github.com/pressly/goose/v3/cmd/goose", "github.com/sqlc-dev/sqlc/cmd/sqlc", "github.com/bogie-go/credentials/cmd/credentials"}
+	// Live reload is opt-out: the tool is expected only where its config is,
+	// so an app that deleted .air.toml is not nagged about a tool it removed
+	// on purpose, and one that kept it is told when `go mod tidy` has not run.
+	if exists(airConfig) == nil {
+		tools = append(tools, airModule)
+	}
+	for _, tool := range tools {
 		var err error
 		if !strings.Contains(string(gomod), tool) {
 			err = fmt.Errorf("not under the tool directive in go.mod")

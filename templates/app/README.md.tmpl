@@ -6,7 +6,7 @@ purpose and `AGENTS.md` says how to work in it.
 
     make up                   # postgres on :5440, via docker compose
     bogie db:prepare          # create, migrate, seed
-    bogie s                   # server: migrates, then serves; or: make server
+    bogie s                   # server: migrates, serves, reloads on save; or: make server
     curl localhost:8080/healthz
     bogie test                # or: make test
     bin/ci                    # every check, locally; green signs off the commit
@@ -14,3 +14,9 @@ purpose and `AGENTS.md` says how to work in it.
 `make help` lists the rest. `bogie` spells every command the way Rails does,
 `db:migrate`, `db:rollback`, `credentials:edit`, and works from any
 subdirectory; every command runs the app's own code.
+
+In development `bogie server` and `bogie worker` rebuild and restart when a
+watched file changes, which includes a new migration, since migrations are
+embedded in the binary and applied at boot. `.air.toml` holds the settings;
+delete it, or run `make server`, for a single boot with no watcher. Nothing
+reloads outside development: production runs the compiled binary.

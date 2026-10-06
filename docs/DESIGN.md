@@ -63,6 +63,7 @@ Use whatever the Go ecosystem provides. Wire it once. Build only what is missing
 | Lint / test | golangci-lint, `go test` | ecosystem |
 | CI | **`bin/ci`**, run locally, Rails 8.1 style; `gh signoff` records the green run on the commit | **gap** (a port) |
 | Task runner | `make` | ecosystem |
+| Live reload (`bin/dev`, Spring) | **Air**, pinned as a `tool` dep; `bogie server` and `bogie worker` run under it in development only — decided §12.12 | ecosystem |
 | Logging | `log/slog` | stdlib |
 | Tool versions | Go 1.25+ for the tool (what gin v1.12 needs), Go 1.26+ for a generated app (what sqlc v1.31 needs); `tool` directive in `go.mod` | ecosystem |
 | Project generator (`rails new`) | **bogie new** | **gap** |
@@ -802,6 +803,41 @@ best metaphor for a scaffold, but a common word), **Ballast**, **Turnout**,
     second finds nothing to do. The flag exists for a deployment that
     migrates from one place on purpose. The run is capped at two minutes so
     a stuck lock fails a deploy loudly instead of hanging it.
+12. **Live reload.** ~~Open~~ **Decided 2026-10-06: Air, in development
+    only, behind `bogie server` and `bogie worker`.** Rails has `bin/dev`;
+    Go's equivalent is a watcher that rebuilds and restarts. Air is the
+    ecosystem tool (`go get -tool github.com/air-verse/air`), so it is glue
+    rather than a gap, pinned in the app's own `go.mod` next to goose and
+    sqlc. `.air.toml` ships with the app; its presence is the switch, so
+    deleting it returns `bogie server` to a plain `go run . serve`, and
+    `make server` never reloads at all. Three settings are load-bearing and
+    were each confirmed against a running app:
+    - `send_interrupt = true`, because the app drains in-flight requests and
+      closes its pool on signal and Air's default `SIGKILL` skips both.
+    - `stop_on_error = true`, because with `false` Air re-runs the *stale*
+      binary: the port answers while serving code that is no longer on disk,
+      which is indistinguishable from a successful reload.
+    - `exclude_dir` includes `db/queries`, sqlc's input rather than its
+      output; watching it rebuilds against half-generated models the moment
+      `bogie g model` writes a query file.
+
+    The worker reuses the one config with `--build.cmd`, `--build.full_bin`
+    and `--build.log` overrides pointed at `tmp/<name>-worker`, so the two
+    roles cannot race on one binary path and there is no second file to
+    drift. Reload is skipped when args are given (`bogie server --help` is a
+    question, not the development loop) and whenever `<PREFIX>_ENV` is
+    anything but development, read from the same variable the app reads so
+    the two can never disagree.
+
+    Not adopted: **Foreman** and a `Procfile.dev`, which issue #11 proposed.
+    Foreman is a Ruby gem and a fresh clone must need only Go; a
+    `Procfile.dev` with nothing reading it is worse than no file, because it
+    looks load-bearing. Running web and worker together is still two
+    terminals, as it was before reload, and `bin/dev` is left to the issue
+    #11 pass that also covers `bin/setup` and the connection-refused hint.
+    **hivemind**/**overmind** were weighed as Go Procfile runners and
+    declined: what they add over `trap` plus `wait` does not pay for a
+    dependency.
 
 ---
 

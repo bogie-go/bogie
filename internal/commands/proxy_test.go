@@ -104,3 +104,97 @@ func TestAppRootOutsideAnApp(t *testing.T) {
 		t.Error("appRoot outside an app succeeded")
 	}
 }
+
+// reloadApp writes the three files reloadSteps reads: the marker that names
+// the app, the reload config whose presence turns reload on, and a go.mod
+// holding the reload tool.
+func reloadApp(t *testing.T, withAir bool) string {
+	t.Helper()
+	root := t.TempDir()
+	write := func(name, content string) {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(Marker, "bogie = \"0.1.0\"\nname = \"blog\"\nmodule = \"blog\"\njobs = true\n")
+	write(airConfig, "root = \".\"\n")
+	gomod := "module blog\n\ngo 1.25\n"
+	if withAir {
+		gomod += "\ntool (\n\t" + airModule + "\n)\n"
+	}
+	write("go.mod", gomod)
+	t.Setenv("BLOG_ENV", "")
+	return root
+}
+
+func TestReloadRunsAirInDevelopment(t *testing.T) {
+	root := reloadApp(t, true)
+
+	steps, hint := reloadSteps(root, "server", nil)
+	if hint != "" {
+		t.Errorf("hint = %q, want none", hint)
+	}
+	if got, want := joined(steps), "go tool air -c .air.toml"; got != want {
+		t.Errorf("server = %q, want %q", got, want)
+	}
+
+	// The worker reuses the one config, pointed at its own binary so the two
+	// builds cannot overwrite each other.
+	steps, _ = reloadSteps(root, "worker", nil)
+	got := joined(steps)
+	for _, want := range []string{
+		"go tool air -c .air.toml",
+		"--build.cmd go build -o ./tmp/blog-worker .",
+		"--build.full_bin ./tmp/blog-worker worker",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("worker = %q, missing %q", got, want)
+		}
+	}
+}
+
+func TestReloadIsDevelopmentOnly(t *testing.T) {
+	root := reloadApp(t, true)
+	for _, env := range []string{"production", "test"} {
+		t.Setenv("BLOG_ENV", env)
+		if steps, _ := reloadSteps(root, "server", nil); steps != nil {
+			t.Errorf("BLOG_ENV=%s reloads; want the plain binary", env)
+		}
+	}
+}
+
+func TestReloadStandsAsideForOneOffsAndOtherCommands(t *testing.T) {
+	root := reloadApp(t, true)
+	// `bogie server --help` is a question, not the development loop.
+	if steps, _ := reloadSteps(root, "server", []string{"--help"}); steps != nil {
+		t.Error("server --help reloads; want the plain binary")
+	}
+	for _, command := range []string{"db:migrate", "test", "ci", "console"} {
+		if steps, _ := reloadSteps(root, command, nil); steps != nil {
+			t.Errorf("%s reloads; only server and worker do", command)
+		}
+	}
+}
+
+func TestReloadWithoutItsConfigOrToolFallsBack(t *testing.T) {
+	// No config: reload is off, silently, which is how it is turned off.
+	root := reloadApp(t, true)
+	if err := os.Remove(filepath.Join(root, airConfig)); err != nil {
+		t.Fatal(err)
+	}
+	steps, hint := reloadSteps(root, "server", nil)
+	if steps != nil || hint != "" {
+		t.Errorf("steps = %v, hint = %q; want neither", steps, hint)
+	}
+
+	// Config but no tool: an app that has not tidied since app:update. It
+	// still serves, and says what to run.
+	root = reloadApp(t, false)
+	steps, hint = reloadSteps(root, "server", nil)
+	if steps != nil {
+		t.Error("ran air although go.mod does not have it")
+	}
+	if !strings.Contains(hint, "go get -tool "+airModule) {
+		t.Errorf("hint = %q, want the command that adds the tool", hint)
+	}
+}

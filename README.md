@@ -71,7 +71,8 @@ cd blog
 make up                                         # Postgres on :5440 via docker compose
 bogie g scaffold post title:string body:text    # migration, SQL, domain type, store, controller, wired
 bogie db:prepare                                # create, migrate, seed
-bogie s                                         # serves on :8080; migrates at boot
+bogie s                                         # serves on :8080; migrates at boot,
+                                                #   rebuilds and restarts on save
 ```
 
 From another terminal:

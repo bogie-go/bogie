@@ -1,6 +1,8 @@
-# Build output. bin/ci is a script and stays.
+# Build output. bin/ci is a script and stays; tmp/ is where live reload
+# builds and logs while you work (bogie server).
 /bin/*
 !/bin/ci
+/tmp/
 *.test
 *.out
 .DS_Store

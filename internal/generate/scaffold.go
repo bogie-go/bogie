@@ -113,7 +113,7 @@ func (s scaffold) views() string {
 // error mapping, and the domain-to-wire conversions.
 func (s scaffold) controller() string {
 	typ, many, ctl, iface := s.typ(), s.many(), s.ctl(), s.storeIface()
-	recv := s.name[:1]
+	recv := paramName(s.name, "c")
 	var b strings.Builder
 	fmt.Fprintf(&b, `package controllers
 
@@ -396,7 +396,7 @@ func Test%[5]sShowUnknownIs404(t *testing.T) {
 	}
 }
 
-`, s.module+"/app/domain", fake, typ, s.name[:1], many, helper, ctl, s.table, s.table)
+`, s.module+"/app/domain", fake, typ, paramName(s.name, "f"), many, helper, ctl, s.table, s.table)
 
 	// Create: the body goes through to the store, and the answer is 201.
 	var jsonParts []string

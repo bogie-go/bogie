@@ -105,3 +105,23 @@ func lowerCamel(s string) string {
 	}
 	return strings.ToLower(c[:1]) + c[1:]
 }
+
+// paramName names the domain value a generated method takes. Normally the
+// model's first letter, as Go prefers, but the method it lands in already has
+// a variable of its own: s for a *Store receiver, c for the *gin.Context an
+// action handles, f for a test's fake store. A model whose first letter is
+// that one takes its name in full instead — session domain.Session, comment
+// domain.Comment — which reads no worse and cannot collide. The generated
+// files parse either way, so only the compiler catches this; see the golden
+// tests for one model per taken letter.
+func paramName(name, taken string) string {
+	if first := name[:1]; first != taken {
+		return first
+	}
+	if full := lowerCamel(name); full != taken {
+		return full
+	}
+	// A model whose whole name is the taken letter. Nothing short is safe,
+	// so make it obviously its own thing.
+	return name + "Val"
+}

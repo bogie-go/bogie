@@ -355,3 +355,63 @@ func TestJob(t *testing.T) {
 		t.Errorf("wires = %+v", wires)
 	}
 }
+
+// The generated files parse whatever name a model has, so a parameter that
+// shadows a variable already in scope is a type error no golden file and no
+// format.Source call would notice. Every method the generators write holds one
+// of these: s for the *Store receiver, c for the *gin.Context an action
+// handles, f for the fake store in a controller test.
+func TestGeneratedParamDoesNotShadow(t *testing.T) {
+	for _, c := range []struct {
+		generator, name, file, shadowed string
+	}{
+		// The Store's methods all have receiver s.
+		{"model", "session", "app/models/sessions.go", ", s domain.Session)"},
+		// An action's own variable is c *gin.Context.
+		{"scaffold", "comment", "app/controllers/comments_controller.go", "c, err := ctl.Store."},
+		// The fake store a controller test builds has receiver f.
+		{"scaffold", "form", "app/controllers/forms_controller_test.go", ", f domain.Form)"},
+	} {
+		t.Run(c.generator+" "+c.name, func(t *testing.T) {
+			var files []File
+			var err error
+			if c.generator == "model" {
+				files, err = Model("example.com/blog", c.name, nil, at)
+			} else {
+				files, _, err = Scaffold("example.com/blog", c.name, nil, at)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, f := range files {
+				if f.Path != c.file {
+					continue
+				}
+				found = true
+				if strings.Contains(f.Content, c.shadowed) {
+					t.Errorf("%s declares %q, shadowing a variable already in scope", f.Path, c.shadowed)
+				}
+			}
+			if !found {
+				t.Fatalf("%s did not write %s; the generators moved and this test no longer checks anything", c.generator, c.file)
+			}
+		})
+	}
+}
+
+func TestParamName(t *testing.T) {
+	for _, c := range []struct{ name, taken, want string }{
+		{"post", "s", "p"},
+		{"session", "s", "session"},
+		{"comment", "c", "comment"},
+		{"comment", "s", "c"},
+		{"form", "f", "form"},
+		{"api_key", "s", "a"},
+		{"s", "s", "sVal"},
+	} {
+		if got := paramName(c.name, c.taken); got != c.want {
+			t.Errorf("paramName(%q, %q) = %q, want %q", c.name, c.taken, got, c.want)
+		}
+	}
+}
