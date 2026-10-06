@@ -74,6 +74,11 @@ func Doctor(out io.Writer) error {
 	if exists(airConfig) == nil {
 		tools = append(tools, airModule)
 	}
+	// The Procfile runner goes with the worker: an app with jobs has two
+	// development processes and a bin/dev to run them both.
+	if exists("bin/dev") == nil {
+		tools = append(tools, hivemindModule)
+	}
 	for _, tool := range tools {
 		var err error
 		if !strings.Contains(string(gomod), tool) {
@@ -84,6 +89,13 @@ func Doctor(out io.Writer) error {
 
 	for _, f := range []string{"db/sqlc.yaml", "db/db.go", "bin/ci", "docker-compose.yml", "AGENTS.md"} {
 		check(f, exists(f))
+	}
+	// bin/dev reads Procfile.dev, so one without the other does not run.
+	// Both arrive with jobs, which is why neither is required outright.
+	if exists("app/jobs/jobs.go") == nil {
+		for _, f := range []string{"bin/dev", "Procfile.dev"} {
+			check(f, exists(f))
+		}
 	}
 	if err := exists("config/master.key"); err != nil {
 		check("config/master.key", fmt.Errorf("missing; development reads the environment only until someone copies it over"))

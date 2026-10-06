@@ -1,6 +1,6 @@
 MAKEFLAGS += --no-print-directory
 
-.PHONY: help up down reset logs psql credentials build server test sqlc vet fmt lint ci tidy db-create db-drop db-prepare db-reset db-migrate db-migrate-down db-rollback db-migrate-to db-rollback-to db-migrate-status db-version db-migrate-redo db-seed db-seed-down g_migration_% g_seed_%
+.PHONY: help up down reset logs psql credentials build server dev test sqlc vet fmt lint ci tidy db-create db-drop db-prepare db-reset db-migrate db-migrate-down db-rollback db-migrate-to db-rollback-to db-migrate-status db-version db-migrate-redo db-seed db-seed-down g_migration_% g_seed_%
 
 help: ## every task
 	@grep -E '^[a-z_%-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -35,6 +35,9 @@ server: ## run the HTTP server (bogie server adds live reload)
 {{if .Jobs}}
 worker: ## work the job queue (bogie worker adds live reload)
 	go run . worker
+
+dev: ## every development process in one terminal, from Procfile.dev
+	@bin/dev
 {{end}}
 
 test: ## run the suite with coverage, in the test environment (needs: make up, then {{.EnvPrefix}}_ENV=test bogie db:prepare once)

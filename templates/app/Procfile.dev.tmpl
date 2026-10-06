@@ -1,0 +1,15 @@
+{{if .Jobs}}# The development processes, in the format Foreman made standard. Read by
+# bin/dev, which runs them with hivemind; `overmind start` reads the same file
+# if you have it, and gives you `overmind connect worker` to attach a debugger
+# to one process. The runner is yours to swap; this file is the contract.
+#
+# Both lines go through Air, so each process rebuilds and restarts on its own
+# when a file it watches changes. Air runs one process per invocation, so the
+# worker points it at its own binary and build log: two builds writing one
+# path would overwrite each other.
+#
+# Nothing here is used in production. The container runs the compiled binary,
+# one role per process, as .kamal/ declares.
+web: go tool air -c .air.toml
+worker: go tool air -c .air.toml --build.cmd "go build -o ./tmp/{{.Name}}-worker ." --build.full_bin "./tmp/{{.Name}}-worker worker" --build.log worker-build-errors.log
+{{end}}

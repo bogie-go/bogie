@@ -63,7 +63,8 @@ Use whatever the Go ecosystem provides. Wire it once. Build only what is missing
 | Lint / test | golangci-lint, `go test` | ecosystem |
 | CI | **`bin/ci`**, run locally, Rails 8.1 style; `gh signoff` records the green run on the commit | **gap** (a port) |
 | Task runner | `make` | ecosystem |
-| Live reload (`bin/dev`, Spring) | **Air**, pinned as a `tool` dep; `bogie server` and `bogie worker` run under it in development only — decided §12.12 | ecosystem |
+| Live reload (Spring) | **Air**, pinned as a `tool` dep; `bogie server` and `bogie worker` run under it in development only — decided §12.12 | ecosystem |
+| Dev processes (`bin/dev`, Foreman) | **hivemind** on a `Procfile.dev`, with `--jobs` only; overmind reads the same file — decided §12.13 | ecosystem |
 | Logging | `log/slog` | stdlib |
 | Tool versions | Go 1.25+ for the tool (what gin v1.12 needs), Go 1.26+ for a generated app (what sqlc v1.31 needs); `tool` directive in `go.mod` | ecosystem |
 | Project generator (`rails new`) | **bogie new** | **gap** |
@@ -829,15 +830,45 @@ best metaphor for a scaffold, but a common word), **Ballast**, **Turnout**,
     anything but development, read from the same variable the app reads so
     the two can never disagree.
 
-    Not adopted: **Foreman** and a `Procfile.dev`, which issue #11 proposed.
-    Foreman is a Ruby gem and a fresh clone must need only Go; a
-    `Procfile.dev` with nothing reading it is worse than no file, because it
-    looks load-bearing. Running web and worker together is still two
-    terminals, as it was before reload, and `bin/dev` is left to the issue
-    #11 pass that also covers `bin/setup` and the connection-refused hint.
-    **hivemind**/**overmind** were weighed as Go Procfile runners and
-    declined: what they add over `trap` plus `wait` does not pay for a
-    dependency.
+    **Foreman is not adopted**, as issue #11 proposed it: it is a Ruby gem,
+    and a fresh clone must need only Go.
+
+13. **`bin/dev` and `Procfile.dev`.** ~~Open~~ **Decided 2026-10-06:
+    hivemind, with jobs only.** This revises the same day's first answer in
+    §12.12, which declined a `Procfile.dev` on the grounds that nothing
+    would read it, and declined hivemind and overmind as not worth a
+    dependency over `trap` plus `wait`. Both halves were wrong once the
+    runner was actually tried:
+
+    - A `Procfile.dev` **is** read — by hivemind, and by `overmind start`
+      unchanged, so the file is the contract and the runner is the
+      developer's choice. That was the only objection to it.
+    - hivemind is not a shell script's worth of value. It uses a pty, so
+      Air still believes it is on a terminal: output arrives prefixed
+      `web | ` / `worker | ` **and** keeps Air's own colours, which is the
+      thing it was written to solve. A `trap`-and-`wait` script gets one or
+      the other, never both.
+
+    It is pinned as a `tool` dep like the rest, and costs less than Air did:
+    four modules, and no version change to anything the app already had.
+    `bin/dev` and `Procfile.dev` are `{{if .Jobs}}`, because without a
+    worker there is one process and `bogie server` is already the whole
+    loop; `bogie g job` adds both to an app that had none through the same
+    double-render merge it uses for the rest, and both merge paths already
+    write `bin/` executable.
+
+    **overmind** is documented as a drop-in rather than used: it needs tmux,
+    which cannot come from `go get -tool`, so bogie would be imposing a
+    non-Go runtime dependency on every clone to give one developer
+    `overmind connect worker`. Reading the same `Procfile.dev` costs nothing
+    and loses nothing. Most of what overmind adds over hivemind — restart
+    one process, restart it when it dies — is what Air already does: save
+    the file. What it genuinely adds is an interactive tty per process, for
+    attaching dlv to the worker, and that is worth having on the machines
+    that want it.
+
+    `bin/setup` and the connection-refused hint remain the open half of
+    issue #11.
 
 ---
 

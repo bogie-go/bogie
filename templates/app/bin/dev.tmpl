@@ -1,0 +1,34 @@
+{{if .Jobs}}#!/bin/sh
+# bin/dev: every development process, in one terminal.
+#
+# Rails' bin/dev, ported. It runs what Procfile.dev lists — the HTTP server
+# and the job worker — each under Air, so saving a file rebuilds and restarts
+# only the process that needs it. One Ctrl-C stops all of them, and the app
+# drains in-flight requests and jobs on the way out.
+#
+#   bin/dev                  everything in Procfile.dev
+#   bin/dev web              one process by name, comma-separated for more
+#   make dev                 the same as bin/dev
+#   bogie dev                the same, from any subdirectory
+#
+# Without jobs there is one process and nothing to manage, so a generated app
+# has this file only when it has a worker; `bogie server` is the whole loop
+# otherwise.
+#
+# The runner is hivemind, pinned in go.mod so a fresh clone needs only Go.
+# Procfile.dev is the standard format, so `overmind start` runs the same two
+# processes if you would rather have tmux and `overmind connect worker`.
+set -eu
+cd "$(dirname "$0")/.." || exit 1
+
+# Hivemind gives a process this long to stop before killing it. Its default is
+# 5s; Air needs its own kill_delay plus a moment to tear down, so leave room
+# rather than have a reload look like a crash.
+timeout=${HIVEMIND_TIMEOUT:-12}
+
+# A process name, or several, limits the run to those: `bin/dev worker`.
+if [ $# -gt 0 ]; then
+  exec go tool hivemind -t "$timeout" -l "$1" Procfile.dev
+fi
+exec go tool hivemind -t "$timeout" Procfile.dev
+{{end}}

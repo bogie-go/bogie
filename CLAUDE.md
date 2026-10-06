@@ -89,9 +89,12 @@ generated app's `.golangci.yml`, which bin/ci enforces.
 - **Live reload is Air, development only.** `bogie server` and `bogie worker`
   run the app under Air (pinned as a `tool` dep, settings in the app's
   `.air.toml`); `make server` and `make worker` never reload, and nothing
-  reloads outside development. Deleting `.air.toml` turns it off. Foreman and
-  a `Procfile.dev` were declined (Ruby dependency; a file nothing reads),
-  so `bin/dev` does not exist yet — §12.12 and issue #11.
+  reloads outside development. Deleting `.air.toml` turns it off — §12.12.
+- **`bin/dev` is hivemind on a `Procfile.dev`, `--jobs` only.** Both files are
+  `{{if .Jobs}}`: without a worker there is one process and `bogie server` is
+  the loop. Foreman stays declined (Ruby); overmind is documented as a
+  drop-in on the same Procfile.dev rather than used, because it needs tmux
+  and that cannot come from `go get -tool` — §12.13.
 - **No telemetry.** MIT, single maintainer.
 
 ## The six rules the generated app enforces
@@ -115,8 +118,9 @@ tests that assert a named error and no partial write.
 ## Open questions (DESIGN.md §12)
 
 Whether migrate-at-boot stays the default (§12.11). Views, jobs, credentials,
-live reload (§12.12) and the domain package name (`app/domain/`, fixed) are
-decided.
+live reload (§12.12), `bin/dev` (§12.13) and the domain package name
+(`app/domain/`, fixed) are decided. `bin/setup` and an actionable hint when
+Postgres is unreachable are the open half of issue #11.
 
 ## Milestones
 

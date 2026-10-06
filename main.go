@@ -24,7 +24,7 @@ Inside an app (found by its bogie.toml, from any subdirectory):
   destroy, d GENERATOR     remove what generate made, registration included
   doctor                   markers, pinned tools, layout: all intact?
   app:update               move the app to this Bogie's layout: a three-way merge
-  server, s                run it; migrates at boot
+  server, s                run it; migrates at boot, reloads on save
   worker                   work the job queue (apps made with --jobs)
   test, t [PKGS]           go test -race -cover ./...
   lint                     gofmt, vet, golangci-lint
