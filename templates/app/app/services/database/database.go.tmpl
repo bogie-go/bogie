@@ -13,17 +13,104 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/url"
 	"strings"
+	"syscall"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	_ "github.com/jackc/pgx/v5/stdlib" // database/sql driver
 )
 
-// duplicateDatabase is Postgres' SQLSTATE for CREATE DATABASE against a name
-// that is already taken.
-const duplicateDatabase = "42P04"
+// Postgres SQLSTATEs this package reacts to by name rather than by number.
+const (
+	// CREATE DATABASE against a name already taken.
+	duplicateDatabase = "42P04"
+	// Connected, but the database in the URL does not exist.
+	invalidCatalogName = "3D000"
+	// Reached the server; it rejected the user or the password.
+	invalidPassword = "28P01"
+	invalidAuth     = "28000"
+)
+
+// bundledPort is the port docker-compose.yml publishes. Postgres' own default
+// is 5432, and the Rails app next door almost certainly has it, so the
+// bundled container uses this one instead. A failure against this port is
+// almost always "the container is not running"; against any other it is
+// someone's own Postgres, and `make up` would be the wrong advice.
+const bundledPort = "5440"
+
+// Hint explains what to do about a database error and returns anything it
+// does not recognise unchanged. The original error is always kept: a hint
+// tells you which of several things went wrong, it does not replace the
+// evidence.
+//
+// Three failures look alike at a glance and want opposite responses, which is
+// why they are told apart here rather than left to the reader: nothing is
+// listening, the server rejected the credentials, or the server is fine and
+// the database simply has not been created yet.
+func Hint(err error, databaseURL string) error {
+	if err == nil {
+		return nil
+	}
+	var pgErr *pgconn.PgError
+	switch {
+	case unreachable(err):
+		return fmt.Errorf("%w\n\n%s", err, startPostgres(databaseURL))
+	case errors.As(err, &pgErr) && (pgErr.Code == invalidPassword || pgErr.Code == invalidAuth):
+		return fmt.Errorf("%w\n\nPostgres is running at %s and refused these credentials.\nThe URL comes from {{.EnvPrefix}}_DATABASE_URL if it is set, otherwise from\nthe encrypted settings: bogie credentials:edit", err, endpoint(databaseURL))
+	case errors.As(err, &pgErr) && pgErr.Code == invalidCatalogName:
+		return fmt.Errorf("%w\n\nPostgres is running at %s; this database is not there yet.\nCreate and migrate it:  bogie db:prepare\nFor the test database:   {{.EnvPrefix}}_ENV=test bogie db:prepare", err, endpoint(databaseURL))
+	}
+	return err
+}
+
+// unreachable reports whether nothing answered: the connection was refused,
+// the host does not resolve, or it timed out. Checked through the error chain
+// rather than by message, with a string fallback for a driver that wraps the
+// cause without keeping it.
+func unreachable(err error) bool {
+	if errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.EHOSTUNREACH) || errors.Is(err, syscall.ENETUNREACH) {
+		return true
+	}
+	var dns *net.DNSError
+	if errors.As(err, &dns) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	text := err.Error()
+	for _, s := range []string{"connection refused", "no such host", "i/o timeout", "network is unreachable"} {
+		if strings.Contains(text, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// startPostgres says how to start the server the URL points at. The bundled
+// container has a command; someone else's Postgres does not, so it gets told
+// what to check instead of being given advice that cannot work.
+func startPostgres(databaseURL string) string {
+	where := endpoint(databaseURL)
+	if _, port, err := net.SplitHostPort(where); err == nil && port == bundledPort {
+		return "Nothing is listening on " + where + ", which is the bundled Postgres.\nStart it, then create the database:\n  make up\n  bogie db:prepare"
+	}
+	return "Nothing is listening on " + where + ".\nStart your Postgres service, then:  bogie db:prepare\nTo point somewhere else, set {{.EnvPrefix}}_DATABASE_URL (or edit the\nencrypted settings: bogie credentials:edit)"
+}
+
+// endpoint is the host:port a URL points at, for a message that names where
+// the failure was rather than making the reader decode the URL.
+func endpoint(databaseURL string) string {
+	u, err := url.Parse(databaseURL)
+	if err != nil || u.Host == "" {
+		return "the configured database"
+	}
+	return u.Host
+}
 
 // maintenance splits a database URL into the name it points at and a URL for
 // the same server's "postgres" database.

@@ -15,6 +15,7 @@ import (
 	"{{.Module}}/app/controllers"{{if .Jobs}}
 	"{{.Module}}/app/jobs"{{end}}
 	"{{.Module}}/app/models"
+	"{{.Module}}/app/services/database"
 	"{{.Module}}/app/services/migrate"
 	"{{.Module}}/config"
 	"{{.Module}}/lib/logger"
@@ -58,13 +59,16 @@ func NewApplication(ctx context.Context) (*Application, error) {
 	// worse.
 	if cfg.App.MigrateAtBoot {
 		if err := migrate.Run(ctx, cfg.App.DatabaseURL, log); err != nil {
-			return nil, err
+			// database.Hint tells apart the three ways this fails -- nothing
+			// listening, credentials refused, database not created yet --
+			// because the pgx error alone reads the same for all of them.
+			return nil, database.Hint(err, cfg.App.DatabaseURL)
 		}
 	}
 
 	store, err := models.Open(ctx, cfg.App.DatabaseURL)
 	if err != nil {
-		return nil, err
+		return nil, database.Hint(err, cfg.App.DatabaseURL)
 	}
 {{if .Jobs}}
 	// River runs on the same Postgres, so a job enqueued in a transaction

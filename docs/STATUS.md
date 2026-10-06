@@ -146,10 +146,13 @@ pushing; on a clean tree a green run signs off the commit.
   `bogie-go/bogie-go.com` repo, `main` at the root, plain HTML, DNS at
   GoDaddy. Edit `index.html` there and push. In M5 it gets a `go-import`
   meta tag so `bogie-go.com/bogie` can be the vanity import path.
-- **Issue #11**, the rest of it: `bin/setup`, a documented native-Postgres
-  path next to the Compose one in both READMEs, and an actionable hint when
-  the server cannot reach Postgres (connection refused vs auth vs migration,
-  original error kept). Live reload landed 2026-10-06 (DESIGN.md §12.12).
+- **Issue #11**, the rest of it: `bin/setup`, and a documented
+  native-Postgres path next to the Compose one in both READMEs. Live reload
+  landed 2026-10-06 (DESIGN.md §12.12), and so did the actionable hint: a
+  failure to reach Postgres now says which of the three things went wrong
+  (nothing listening, credentials refused, database not created) and what to
+  run, keeping the original error. `app/services/database.Hint`, applied in
+  `NewApplication` and in the `db`/`migrate` subcommands.
 - **`bin/dev`**: built with hivemind on a `Procfile.dev`, then withdrawn
   before release because Ctrl-C orphans a process roughly one time in eight
   and it then holds the port. DESIGN.md §12.13 has the failure rates, why

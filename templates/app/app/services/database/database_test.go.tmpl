@@ -1,6 +1,14 @@
 package database
 
-import "testing"
+import (
+	"errors"
+	"fmt"
+	"strings"
+	"syscall"
+	"testing"
+
+	"github.com/jackc/pgx/v5/pgconn"
+)
 
 func TestMaintenance(t *testing.T) {
 	name, admin, err := maintenance("postgres://u:secret@localhost:5440/{{.Name}}_test?sslmode=disable")
@@ -18,5 +26,56 @@ func TestMaintenance(t *testing.T) {
 func TestMaintenanceRefusesAURLWithoutADatabase(t *testing.T) {
 	if _, _, err := maintenance("postgres://localhost:5440/"); err == nil {
 		t.Error("a URL naming no database was accepted")
+	}
+}
+
+// The three failures Hint exists to tell apart. Issue #11 reported the first
+// one as a bare pgx dump, which reads the same whether Postgres is down, the
+// password is wrong, or the database was never created.
+func TestHintTellsTheFailuresApart(t *testing.T) {
+	const bundled = "postgres://postgres:postgres@localhost:5440/{{.Name}}_development?sslmode=disable"
+
+	refused := fmt.Errorf("failed to connect: dial tcp 127.0.0.1:5440: connect: %w", syscall.ECONNREFUSED)
+	got := Hint(refused, bundled).Error()
+	for _, want := range []string{"localhost:5440", "make up", "bogie db:prepare"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("connection refused hint is missing %q:\n%s", want, got)
+		}
+	}
+	if !strings.Contains(got, "connect: connection refused") {
+		t.Errorf("the original error was lost:\n%s", got)
+	}
+
+	// Someone else's Postgres: `make up` would be the wrong advice.
+	own := Hint(refused, "postgres://me@localhost:5432/{{.Name}}_development").Error()
+	if strings.Contains(own, "make up") {
+		t.Errorf("a non-bundled port was told to run make up:\n%s", own)
+	}
+	if !strings.Contains(own, "{{.EnvPrefix}}_DATABASE_URL") {
+		t.Errorf("a non-bundled port was not told how to repoint:\n%s", own)
+	}
+
+	// Reached the server, wrong credentials.
+	auth := Hint(&pgconn.PgError{Code: invalidPassword, Message: "password authentication failed"}, bundled).Error()
+	if !strings.Contains(auth, "credentials") || strings.Contains(auth, "Nothing is listening") {
+		t.Errorf("auth failure read as unreachable:\n%s", auth)
+	}
+
+	// Reached the server, no such database.
+	missing := Hint(&pgconn.PgError{Code: invalidCatalogName, Message: "database does not exist"}, bundled).Error()
+	if !strings.Contains(missing, "bogie db:prepare") || strings.Contains(missing, "Nothing is listening") {
+		t.Errorf("missing database read as unreachable:\n%s", missing)
+	}
+}
+
+func TestHintLeavesWhatItDoesNotKnowAlone(t *testing.T) {
+	if Hint(nil, "postgres://localhost:5440/x") != nil {
+		t.Error("Hint(nil) returned an error")
+	}
+	// A syntax error in a query is not a connection problem; adding "start
+	// Postgres" to it would send the reader the wrong way.
+	other := errors.New("models: create widget: syntax error at or near \"slect\"")
+	if got := Hint(other, "postgres://localhost:5440/x"); got.Error() != other.Error() {
+		t.Errorf("Hint rewrote an unrelated error:\n%s", got)
 	}
 }

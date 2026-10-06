@@ -37,7 +37,7 @@ way down, and there is no undo.
 // is also the only thing that can roll them back, so it has to expose that.
 // Shipping the goose CLI alongside would be a second artifact carrying its own
 // copy of the migrations, which is the version skew embedding avoids.
-func runMigrate(ctx context.Context, args []string) error {
+func runMigrate(ctx context.Context, args []string) (err error) {
 	if len(args) == 0 {
 		fmt.Fprint(os.Stderr, migrateUsage)
 		return fmt.Errorf("migrate: no command given")
@@ -49,6 +49,9 @@ func runMigrate(ctx context.Context, args []string) error {
 	}
 	log := logger.New(cfg.App.LogLevel, cfg.Env)
 	url := cfg.App.DatabaseURL
+	// Every branch below ends in a connection, so the hint goes on once here
+	// rather than at each return.
+	defer func() { err = database.Hint(err, url) }()
 
 	rest := args[1:]
 	confirmed := false
@@ -122,7 +125,7 @@ undo: this is not a rollback of one migration, it is every table at once.
 // Separate from `{{.Name}} migrate` because it is a different object: migrate
 // changes a schema inside a database, this creates and destroys the database
 // holding it. Rails draws the same line between db:create and db:migrate.
-func runDB(ctx context.Context, args []string) error {
+func runDB(ctx context.Context, args []string) (err error) {
 	if len(args) == 0 {
 		fmt.Fprint(os.Stderr, dbUsage)
 		return fmt.Errorf("db: no command given")
@@ -134,6 +137,9 @@ func runDB(ctx context.Context, args []string) error {
 	}
 	log := logger.New(cfg.App.LogLevel, cfg.Env)
 	url := cfg.App.DatabaseURL
+	// Every branch below ends in a connection, so the hint goes on once here
+	// rather than at each return.
+	defer func() { err = database.Hint(err, url) }()
 
 	confirmed := false
 	for _, a := range args[1:] {
