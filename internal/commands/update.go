@@ -550,15 +550,6 @@ func enableJobs(root string, out io.Writer) error {
 		return err
 	}
 	say("%12s  %s: jobs = true\n", "updated", Marker)
-
-	// bin/dev arrived with the files above, and it runs Procfile.dev through
-	// hivemind. Nothing imports hivemind, so `go mod tidy` will not add it
-	// the way it adds River: the tool directive has to be asked for, or
-	// bin/dev would be written and then fail on its first run.
-	say("%12s  go get -tool %s\n", "run", hivemindModule)
-	if err := goIn(root, out, "get", "-tool", hivemindModule); err != nil {
-		return fmt.Errorf("enable jobs: go get -tool %s: %w", hivemindModule, err)
-	}
 	say("%12s  go mod tidy\n", "run")
 	if err := goIn(root, out, "mod", "tidy"); err != nil {
 		return fmt.Errorf("enable jobs: go mod tidy: %w", err)

@@ -64,7 +64,7 @@ Use whatever the Go ecosystem provides. Wire it once. Build only what is missing
 | CI | **`bin/ci`**, run locally, Rails 8.1 style; `gh signoff` records the green run on the commit | **gap** (a port) |
 | Task runner | `make` | ecosystem |
 | Live reload (Spring) | **Air**, pinned as a `tool` dep; `bogie server` and `bogie worker` run under it in development only — decided §12.12 | ecosystem |
-| Dev processes (`bin/dev`, Foreman) | **hivemind** on a `Procfile.dev`, with `--jobs` only; overmind reads the same file — decided §12.13 | ecosystem |
+| Dev processes (`bin/dev`, Foreman) | none: two terminals. hivemind on a `Procfile.dev` was built and withdrawn over Ctrl-C orphaning a process — §12.13 | **open** |
 | Logging | `log/slog` | stdlib |
 | Tool versions | Go 1.25+ for the tool (what gin v1.12 needs), Go 1.26+ for a generated app (what sqlc v1.31 needs); `tool` directive in `go.mod` | ecosystem |
 | Project generator (`rails new`) | **bogie new** | **gap** |
@@ -833,42 +833,55 @@ best metaphor for a scaffold, but a common word), **Ballast**, **Turnout**,
     **Foreman is not adopted**, as issue #11 proposed it: it is a Ruby gem,
     and a fresh clone must need only Go.
 
-13. **`bin/dev` and `Procfile.dev`.** ~~Open~~ **Decided 2026-10-06:
-    hivemind, with jobs only.** This revises the same day's first answer in
-    §12.12, which declined a `Procfile.dev` on the grounds that nothing
-    would read it, and declined hivemind and overmind as not worth a
-    dependency over `trap` plus `wait`. Both halves were wrong once the
-    runner was actually tried:
+13. **`bin/dev` and `Procfile.dev`.** **Tried 2026-10-06 and withdrawn
+    before release: hivemind on a `Procfile.dev`, with `--jobs` only.** The
+    design was right and the implementation worked; it is the shutdown that
+    does not, and the measurements are here so the next attempt starts from
+    them rather than repeating them.
 
-    - A `Procfile.dev` **is** read — by hivemind, and by `overmind start`
-      unchanged, so the file is the contract and the runner is the
-      developer's choice. That was the only objection to it.
-    - hivemind is not a shell script's worth of value. It uses a pty, so
-      Air still believes it is on a terminal: output arrives prefixed
-      `web | ` / `worker | ` **and** keeps Air's own colours, which is the
-      thing it was written to solve. A `trap`-and-`wait` script gets one or
-      the other, never both.
+    What was built: `bin/dev` and `Procfile.dev`, both `{{if .Jobs}}`, two
+    Air instances (one per role, the worker pointed at its own binary), with
+    hivemind pinned as a `tool` dep. It started both processes, reloaded
+    each independently, and cost four modules with no version change to
+    anything the app already had.
 
-    It is pinned as a `tool` dep like the rest, and costs less than Air did:
-    four modules, and no version change to anything the app already had.
-    `bin/dev` and `Procfile.dev` are `{{if .Jobs}}`, because without a
-    worker there is one process and `bogie server` is already the whole
-    loop; `bogie g job` adds both to an app that had none through the same
-    double-render merge it uses for the rest, and both merge paths already
-    write `bin/` executable.
+    **Why it was withdrawn.** Ctrl-C leaves a process running, permanently,
+    about one time in eight. Hivemind puts each child in its own process
+    group, so the app never receives the terminal's SIGINT directly and
+    depends on Air forwarding it; Air logs `Interrupting...`, sometimes
+    never finishes, hivemind kills Air at its timeout, and the binary Air
+    built is orphaned. It then holds the port, so the next `bin/dev` cannot
+    start. Measured over repeated start/stop cycles:
 
-    **overmind** is documented as a drop-in rather than used: it needs tmux,
-    which cannot come from `go get -tool`, so bogie would be imposing a
-    non-Go runtime dependency on every clone to give one developer
-    `overmind connect worker`. Reading the same `Procfile.dev` costs nothing
-    and loses nothing. Most of what overmind adds over hivemind — restart
-    one process, restart it when it dies — is what Air already does: save
-    the file. What it genuinely adds is an interactive tty per process, for
-    attaching dlv to the worker, and that is worth having on the machines
-    that want it.
+    | how it was stopped | failed |
+    | --- | --- |
+    | `kill -INT`, detached, no tty | 1 in 3 |
+    | the same, with `exec` collapsing the shell layers | 6 in 10 |
+    | **a real Ctrl-C through a tty (tmux)** | **1 in 8** |
 
-    `bin/setup` and the connection-refused hint remain the open half of
-    issue #11.
+    Two things to carry forward. `exec` is **not** the fix: removing the
+    `sh -c` layers between hivemind, Air and the binary made it worse, not
+    better, so the signal is being lost inside Air rather than in a shell.
+    And a test that signals a detached process with no controlling terminal
+    over-reports this roughly threefold, because hivemind is pty-based: any
+    future attempt has to be driven through a real tty to mean anything.
+
+    This is why `bogie server` is unaffected and shipped: run in a terminal,
+    Ctrl-C signals the whole foreground group — `bogie`, `go tool`, Air
+    **and** the binary — so the app is interrupted directly rather than
+    through Air, and it drains every time.
+
+    A next attempt could have `bin/dev` clean up after the runner, since it
+    is our script: run hivemind as a child rather than `exec`ing it, and
+    trap EXIT to kill any surviving binary under `tmp/`. That is a
+    workaround for an unexplained hang, not a fix, and it needs ten or more
+    tty-driven cycles before it is believable.
+
+    **Foreman stays declined** regardless: it is a Ruby gem, and a fresh
+    clone must need only Go. **overmind** needs tmux, which cannot come from
+    `go get -tool`. Running the server and the worker together is two
+    terminals, as it was before. `bin/setup` and the connection-refused hint
+    remain the open half of issue #11.
 
 ---
 

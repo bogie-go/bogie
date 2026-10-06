@@ -25,12 +25,10 @@ Install: `go install github.com/bogie-go/bogie@latest` for the newest tag,
     bogie new NAME [--module=PATH] [--jobs]      an empty service, as rails new makes: it
                                                  builds, migrates, reads its credentials,
                                                  serves /healthz and passes its own bin/ci
-    bogie s | server, t | test, lint, ci, worker, dev
+    bogie s | server, t | test, lint, ci, worker
                                                  server and worker rebuild and restart
                                                  on save in development (Air, .air.toml);
-                                                 production runs the compiled binary.
-                                                 dev runs both from Procfile.dev with
-                                                 hivemind (--jobs apps): bin/dev
+                                                 production runs the compiled binary
     bogie db:prepare db:migrate db:rollback db:migrate:status db:migrate:redo
           db:reset db:seed db:seed:rollback db:create db:drop db:version
     bogie credentials:edit [-e production] | credentials:show | credentials:get
@@ -151,9 +149,12 @@ pushing; on a clean tree a green run signs off the commit.
 - **Issue #11**, the rest of it: `bin/setup`, a documented native-Postgres
   path next to the Compose one in both READMEs, and an actionable hint when
   the server cannot reach Postgres (connection refused vs auth vs migration,
-  original error kept). Live reload and `bin/dev` landed 2026-10-06
-  (DESIGN.md §12.12 and §12.13), so what remains of that issue is first-run
-  setup and that hint.
+  original error kept). Live reload landed 2026-10-06 (DESIGN.md §12.12).
+- **`bin/dev`**: built with hivemind on a `Procfile.dev`, then withdrawn
+  before release because Ctrl-C orphans a process roughly one time in eight
+  and it then holds the port. DESIGN.md §12.13 has the failure rates, why
+  `bogie server` is unaffected, the `exec` dead end, and the one idea worth
+  trying next. Worth another pass with `bin/setup`.
 - `bogie-go/credentials` changelog has no 1.4.0 entry; 1.5.0 is the path move.
 - Release, for M5: `bin/release v0.1.0` from a clean, pushed `main`. It runs
   `bin/ci` (green signs off), tags, pushes the tag and creates the GitHub

@@ -9,18 +9,16 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/pressly/goose/v3 v3.27.3{{if .Jobs}}
-	github.com/DarthSim/hivemind v1.1.0
 	github.com/riverqueue/river v0.48.0
 	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.48.0{{end}}
 )
 
 // Pinned here so a fresh clone needs only Go: `go tool goose`, `go tool
-// sqlc`, the live reload `bogie server` uses and the Procfile runner
-// `bin/dev` uses, never a global install that drifts from what the binary
-// embeds or what the committed models were generated with.
+// sqlc` and the live reload `bogie server` uses, never a global install
+// that drifts from what the binary embeds or what the committed models
+// were generated with.
 tool (
-	github.com/air-verse/air{{if .Jobs}}
-	github.com/DarthSim/hivemind{{end}}
+	github.com/air-verse/air
 	github.com/bogie-go/credentials/cmd/credentials
 	github.com/pressly/goose/v3/cmd/goose
 	github.com/sqlc-dev/sqlc/cmd/sqlc

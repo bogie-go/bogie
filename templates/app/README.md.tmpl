@@ -19,12 +19,7 @@ In development `bogie server` and `bogie worker` rebuild and restart when a
 watched file changes, which includes a new migration, since migrations are
 embedded in the binary and applied at boot. `.air.toml` holds the settings;
 delete it, or run `make server`, for a single boot with no watcher. Nothing
-reloads outside development: production runs the compiled binary.
-{{if .Jobs}}
-    bin/dev                   # server and worker together, one Ctrl-C stops both
-    bin/dev worker            # just one of them
+reloads outside development: production runs the compiled binary.{{if .Jobs}}
 
-`bin/dev` runs what `Procfile.dev` lists, each process under its own Air, with
-hivemind pinned in `go.mod` so it needs nothing but Go. `Procfile.dev` is the
-standard format, so `overmind start` runs the same two processes if you would
-rather have tmux and `overmind connect worker`.{{end}}
+The worker runs beside it, in its own terminal and with the same reload:
+`bogie worker`.{{end}}

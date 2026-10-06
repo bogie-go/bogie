@@ -211,11 +211,6 @@ const airConfig = ".air.toml"
 // checked and a missing one explains itself rather than failing in `go tool`.
 const airModule = "github.com/air-verse/air"
 
-// hivemindModule runs Procfile.dev for bin/dev. Pinned in the app's go.mod
-// for the same reason: a fresh clone needs only Go. Procfile.dev is the
-// standard format, so overmind reads it too for anyone who wants tmux.
-const hivemindModule = "github.com/DarthSim/hivemind"
-
 // reloadSteps returns the live-reload form of `server` and `worker`, or nil
 // when reload does not apply and the plain `go run` should stand. The second
 // result is a line to print first when reload was wanted but unavailable.

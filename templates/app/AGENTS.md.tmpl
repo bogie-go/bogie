@@ -20,8 +20,7 @@ and nothing else.
     make g_migration_<name>   author a migration (go tool goose)
     make server         run the HTTP server (go run . serve); migrates at boot
     bogie server        the same, with live reload in development (Air)
-{{if .Jobs}}    bin/dev             server and worker together, from Procfile.dev
-{{end}}    make test           go test -race -cover ./...
+    make test           go test -race -cover ./...
     make lint           gofmt check, go vet, golangci-lint
     bin/ci              every check, run locally; green ends with gh signoff
 
@@ -32,10 +31,8 @@ spelling and nothing else; the app never imports it. In development
 `bogie server` and `bogie worker` run under Air, so a saved file rebuilds
 and restarts the process; `.air.toml` holds the settings and deleting it
 turns reload off. `make server` never reloads, which is the thing to run
-when you want one boot and one set of logs.{{if .Jobs}} `bin/dev` (`make dev`,
-`bogie dev`) runs the server and the worker together from `Procfile.dev`, each
-under its own Air, with one Ctrl-C to stop both; `bin/dev worker` runs one of
-them. `overmind start` reads the same Procfile.dev if you have it.{{end}} A newer Bogie moves the
+when you want one boot and one set of logs.{{if .Jobs}} The worker is a second
+process in a second terminal: `bogie worker`, which reloads the same way.{{end}} A newer Bogie moves the
 app to its layout with `bogie app:update`, a three-way merge of the files the
 templates produce against the version `bogie.toml` records; your edits and
 everything the generators wrote are kept, and a real overlap leaves conflict

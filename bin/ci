@@ -19,7 +19,7 @@ step() {
   printf '\n\033[1m== %s\033[0m\n' "$name"
   t=$(date +%s)
   case "$command" in
-    lint|signoff|scaffold|image|generators|serves|reloads|teardown|jobs|dev_processes|teardown_jobs) "$command" ;;
+    lint|signoff|scaffold|image|generators|serves|reloads|teardown|jobs|teardown_jobs) "$command" ;;
     *) sh -c "$command" ;;
   esac
   if [ $? -eq 0 ]; then
@@ -140,8 +140,8 @@ serves() {
 }
 
 # stop_group interrupts the process group of something started inside the
-# generated app: Air or hivemind, each of which runs the app as a child that
-# a plain `kill` on the parent would orphan. Processes are matched by their
+# generated app: Air, which runs the app as a child that a plain `kill` on
+# the parent would orphan. Processes are matched by their
 # working directory as well as their command, so a developer running bin/ci
 # while their own `air` is up elsewhere never has it signalled.
 stop_group() { # $1 = command pattern, $2 = app directory
@@ -230,59 +230,6 @@ jobs() {
   "$CI_JOBS_DIR/blog/bin/ci"
 }
 
-# bin/dev, the way a developer gets it: both processes from Procfile.dev under
-# one command, each reloading on its own, and ONE Ctrl-C stopping everything.
-# A leftover process here would hold the port for the next run, so the check is
-# as much about the shutdown as the startup.
-dev_processes() {
-  [ -d "$CI_JOBS_DIR/blog" ] || { echo "no --jobs app"; return 1; }
-  cd "$CI_JOBS_DIR/blog" || return 1
-  test -x bin/dev || { echo "bin/dev missing or not executable"; cd "$OLDPWD"; return 1; }
-  test -f Procfile.dev || { echo "no Procfile.dev for bin/dev to read"; cd "$OLDPWD"; return 1; }
-  go tool hivemind --version >/dev/null 2>&1 || { echo "go tool hivemind does not resolve from the app's go.mod"; cd "$OLDPWD"; return 1; }
-
-  go run . db prepare >"$CI_JOBS_DIR/dev.log" 2>&1 || { cat "$CI_JOBS_DIR/dev.log"; cd "$OLDPWD"; return 1; }
-  BLOG_ADDR=:18082 setsid bin/dev >>"$CI_JOBS_DIR/dev.log" 2>&1 &
-  i=0
-  until curl -fs localhost:18082/healthz >/dev/null 2>&1; do
-    i=$((i + 1))
-    if [ $i -ge 150 ]; then
-      echo "bin/dev did not serve"; cat "$CI_JOBS_DIR/dev.log"
-      pkill -f "tmp/blog(-worker)? (serve|worker)" 2>/dev/null
-      cd "$OLDPWD"; return 1
-    fi
-    sleep 0.5
-  done
-  # The worker is the second process, and the reason bin/dev exists.
-  i=0
-  until pgrep -f "tmp/blog-worker worker" >/dev/null 2>&1; do
-    i=$((i + 1))
-    if [ $i -ge 60 ]; then
-      echo "the worker never started under bin/dev"; cat "$CI_JOBS_DIR/dev.log"
-      pkill -f "tmp/blog(-worker)? (serve|worker)" 2>/dev/null
-      cd "$OLDPWD"; return 1
-    fi
-    sleep 0.5
-  done
-
-  # One signal to hivemind's group, as Ctrl-C sends to the foreground group.
-  stop_group "hivemind -t" "$CI_JOBS_DIR/blog"
-  i=0
-  while [ $i -lt 40 ]; do
-    if ! pgrep -f "tmp/blog(-worker)? (serve|worker)" >/dev/null 2>&1; then break; fi
-    i=$((i + 1))
-    sleep 0.5
-  done
-  if pgrep -f "tmp/blog(-worker)? (serve|worker)" >/dev/null 2>&1; then
-    echo "a process outlived bin/dev:"
-    pgrep -af "tmp/blog(-worker)? (serve|worker)"
-    pkill -f "tmp/blog(-worker)? (serve|worker)" 2>/dev/null
-    cd "$OLDPWD"; return 1
-  fi
-  cd "$OLDPWD" || return 1
-  echo "bin/dev: served, ran the worker, one signal stopped both"
-}
-
 teardown_jobs() {
   [ -f "$CI_JOBS_DIR/blog/docker-compose.yml" ] || { echo "nothing to tear down"; return 0; }
   (cd "$CI_JOBS_DIR/blog" && docker compose down -v --remove-orphans)
@@ -325,7 +272,6 @@ step "Generated app: serves"        "serves"
 step "Generated app: live reload"   "reloads"
 step "Generated app: tear down"     "teardown"
 step "With --jobs: scaffold, g job, d job, its own bin/ci" "jobs"
-step "With --jobs: bin/dev runs both" "dev_processes"
 step "With --jobs: tear down"       "teardown_jobs"
 
 printf '\n'
