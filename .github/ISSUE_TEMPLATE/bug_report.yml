@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting. Bogie is pre-release, maintained by one person, and every
+        Thanks for reporting. Bogie is early (v0.1.0 is the first release), maintained by one person, and every
         report is read. The fields below are the ones needed to reproduce a problem
         without going back and forth.
 
@@ -15,7 +15,7 @@ body:
     attributes:
       label: bogie version
       description: Output of `bogie version`.
-      placeholder: v0.0.0-20261003054031-1f59c6f15edd
+      placeholder: v0.1.0
     validations:
       required: true
 
