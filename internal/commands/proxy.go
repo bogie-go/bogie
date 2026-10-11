@@ -38,13 +38,20 @@ func Proxy(command string, args []string, out io.Writer) error {
 		_, _ = fmt.Fprintln(out, hint)
 	}
 
+	// server and worker run until they are stopped, under `go run` or Air, so
+	// a stop signal has to reach the app itself and not just its parent.
+	run := (*exec.Cmd).Run
+	if command == "server" || command == "worker" {
+		run = runStoppable
+	}
+
 	for _, argv := range steps {
 		cmd := exec.Command(argv[0], argv[1:]...)
 		cmd.Dir = root
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = out
 		cmd.Stderr = os.Stderr
-		err := cmd.Run()
+		err := run(cmd)
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {
 			return &ExitError{Code: exit.ExitCode()}
