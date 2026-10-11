@@ -55,6 +55,13 @@ const (
 	// ConfigDirVar points at the config directory, for tests and for running
 	// the binary from somewhere other than the app root.
 	ConfigDirVar = "{{.EnvPrefix}}_CONFIG_DIR"
+
+	// TestDatabaseURLVar is the only variable that moves the test database.
+	// Test never reads {{.EnvPrefix}}_DATABASE_URL: the suite truncates every
+	// table and bin/ci drops the database, so a URL exported for development
+	// would turn `bogie test` into a wipe of development data. Rails keeps
+	// test in its own database.yml entry for the same reason.
+	TestDatabaseURLVar = "{{.EnvPrefix}}_TEST_DATABASE_URL"
 )
 
 var envs = []string{EnvDevelopment, EnvTest, EnvProduction}
@@ -106,7 +113,8 @@ type AppConfig struct {
 // Where it reads from, in order:
 //
 //   - test: the environment only. Tests must not depend on anyone's secrets,
-//     and the test database must never be the development one.
+//     and the test database must never be the development one, so its URL
+//     comes from {{.EnvPrefix}}_TEST_DATABASE_URL, never {{.EnvPrefix}}_DATABASE_URL.
 //   - config/credentials/<{{.EnvPrefix}}_CREDENTIALS>.yml.enc with its own key
 //     beside it, if that file exists. Staging and production live here, each
 //     with a key that opens nothing else.
@@ -140,6 +148,7 @@ func Load() (Config, error) {
 		if err := applyEnv(&cfg.App); err != nil {
 			return Config{}, err
 		}
+		cfg.App.DatabaseURL = envOr(TestDatabaseURLVar, defaultDatabaseURL(EnvTest))
 
 	case exists(scoped), exists(shared):
 		cfg.Source, cfg.KeyFile = shared, sharedKey
