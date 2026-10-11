@@ -20,7 +20,7 @@ Every command is spelled the way Rails spells it.
   new NAME                 generate a new service in ./NAME
 
 Inside an app (found by its bogie.toml, from any subdirectory):
-  generate, g GENERATOR    scaffold | model | migration | controller | service | job   (bogie g -h)
+  generate, g GENERATOR    scaffold | model | migration | controller | service | job | authentication   (bogie g -h)
   destroy, d GENERATOR     remove what generate made, registration included
   doctor                   markers, pinned tools, layout: all intact?
   app:update               move the app to this Bogie's layout: a three-way merge
