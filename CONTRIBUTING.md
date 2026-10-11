@@ -2,7 +2,7 @@
 
 Thanks for looking. Read this first, because a few things here are unusual:
 there is **no hosted CI**, the layout is **Rails-shaped on purpose**, and the
-project has **one maintainer** and is at **v0.1.0**.
+project has **one maintainer** and is **pre-1.0**.
 
 ## Before you write code
 
