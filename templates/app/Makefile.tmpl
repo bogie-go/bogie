@@ -63,8 +63,8 @@ tidy: ## prune and verify the module graph
 # The db-* tasks are named after Rails' and go through the binary's own
 # subcommands rather than the goose CLI, so local development runs exactly
 # the code a deployed container runs. None of them names a database: the
-# binary resolves {{.EnvPrefix}}_DATABASE_URL for the current {{.EnvPrefix}}_ENV
-# the way the server does, so `make db-migrate` and `make server` cannot end
+# binary resolves {{.EnvPrefix}}_DATABASE_URL ({{.EnvPrefix}}_TEST_DATABASE_URL in
+# test) for the current {{.EnvPrefix}}_ENV the way the server does, so `make db-migrate` and `make server` cannot end
 # up pointed at two different databases.
 db-create: ## create the database, like rails db:create; an existing one is fine
 	go run . db create
