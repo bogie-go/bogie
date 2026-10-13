@@ -28,6 +28,30 @@ func TestLoadDefaults(t *testing.T) {
 	}
 }
 
+// The suite truncates every table and bin/ci drops the database, so test must
+// never follow a {{.EnvPrefix}}_DATABASE_URL exported for development; it
+// moves only with its own variable.
+func TestTestIgnoresTheSharedDatabaseURL(t *testing.T) {
+	t.Setenv(EnvVar, "test")
+	t.Setenv("{{.EnvPrefix}}_DATABASE_URL", "postgres://postgres:postgres@localhost:5440/{{.Name}}_development?sslmode=disable")
+	t.Setenv(TestDatabaseURLVar, "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "postgres://postgres:postgres@localhost:5440/{{.Name}}_test?sslmode=disable"; cfg.App.DatabaseURL != want {
+		t.Errorf("test database = %q; want %q, whatever {{.EnvPrefix}}_DATABASE_URL says", cfg.App.DatabaseURL, want)
+	}
+
+	t.Setenv(TestDatabaseURLVar, "postgres://ci:ci@db:5432/{{.Name}}_test")
+	if cfg, err = Load(); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.App.DatabaseURL != "postgres://ci:ci@db:5432/{{.Name}}_test" {
+		t.Errorf("test database = %q; want the one %s names", cfg.App.DatabaseURL, TestDatabaseURLVar)
+	}
+}
+
 // The set is closed on purpose: staging reads perfectly naturally and would
 // otherwise fall through to production behaviour silently.
 func TestLoadRefusesUnknownEnv(t *testing.T) {
@@ -154,7 +178,7 @@ func TestMasterKeyFromTheEnvironment(t *testing.T) {
 
 func TestPrintToRedactsThePassword(t *testing.T) {
 	t.Setenv(EnvVar, "test")
-	t.Setenv("{{.EnvPrefix}}_DATABASE_URL", "postgres://app:hunter2@db:5432/{{.Name}}")
+	t.Setenv(TestDatabaseURLVar, "postgres://app:hunter2@db:5432/{{.Name}}")
 	cfg, err := Load()
 	if err != nil {
 		t.Fatal(err)
