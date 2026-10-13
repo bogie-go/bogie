@@ -11,6 +11,9 @@ import (
 
 func TestLoadDefaults(t *testing.T) {
 	t.Setenv(EnvVar, "test")
+	// Defaults are what an unset environment gets. A developer on their own
+	// Postgres exports the test URL to run the suite, so clear it here.
+	t.Setenv(TestDatabaseURLVar, "")
 
 	cfg, err := Load()
 	if err != nil {
