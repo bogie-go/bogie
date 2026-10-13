@@ -2,7 +2,7 @@
 
 Thanks for looking. Read this first, because a few things here are unusual:
 there is **no hosted CI**, the layout is **Rails-shaped on purpose**, and the
-project has **one maintainer** and is at **v0.1.0**.
+project has **one maintainer** and is at **v0.2.x**.
 
 ## Before you write code
 
@@ -25,10 +25,10 @@ reproduction) can go straight to a PR.
 
 ## Setting up
 
-1. **Go 1.25 or newer.** The tool's own `go.mod` says 1.25. Generated apps
-   currently resolve to `go 1.26.0` after `go mod tidy` (pulled up by the
-   pinned sqlc), and Go's default `GOTOOLCHAIN=auto` fetches that
-   automatically.
+1. **Go 1.25 or newer** to build the tool (its own `go.mod` says 1.25).
+   Generated apps need **Go 1.26+**: the app template's `go.mod` says
+   `go 1.26.0`, and Go's default `GOTOOLCHAIN=auto` fetches that
+   automatically if your local Go is older.
 2. **Docker with Compose v2.** The generated apps' Postgres runs there, on
    port 5440.
 3. **golangci-lint v2:**
