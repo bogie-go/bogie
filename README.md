@@ -48,7 +48,8 @@ app does not notice.
 go install github.com/bogie-go/bogie@latest
 ```
 
-You need **Docker with Compose v2** and **Go 1.26+**. The tool itself builds
+You need **Docker with Compose v2** (or your own Postgres, see
+[below](#your-own-postgres-without-docker)) and **Go 1.26+**. The tool itself builds
 with Go 1.25, but the app it generates needs 1.26, because the pinned sqlc
 requires it. The generated app runs its Postgres in Compose on port 5440, so it
 stays clear of the Rails app's 5432.
@@ -93,6 +94,32 @@ bogie test
 
 `bin/ci` rebuilds the test database itself. Postgres for every Bogie app listens
 on :5440, so run `make down` in one app before `make up` in another.
+
+### Your own Postgres, without Docker
+
+Docker only runs the bundled Postgres; the app needs one it can reach. To use
+one you already run, point the app at it (the role needs `CREATEDB`, or create
+the databases first):
+
+```sh
+export BLOG_DATABASE_URL='postgres://USER:PASSWORD@localhost:5432/blog_development?sslmode=disable'
+bogie db:prepare
+bogie s
+```
+
+To keep the URL out of your shell, set `database_url` with
+`bogie credentials:edit` instead. Tests never read the credentials or
+`BLOG_DATABASE_URL`, so a run can never touch development data; they take
+their own URL:
+
+```sh
+export BLOG_TEST_DATABASE_URL='postgres://USER:PASSWORD@localhost:5432/blog_test?sslmode=disable'
+BLOG_ENV=test bogie db:prepare
+bogie test
+```
+
+`make up`, `make down`, `make psql` and `bin/ci`'s database step
+(`docker compose up`) still use Docker.
 
 `bogie g scaffold` prints what it did, the way Rails does:
 

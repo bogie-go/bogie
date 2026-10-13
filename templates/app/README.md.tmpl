@@ -23,3 +23,23 @@ reloads outside development: production runs the compiled binary.{{if .Jobs}}
 
 The worker runs beside it, in its own terminal and with the same reload:
 `bogie worker`.{{end}}
+
+## Your own Postgres, without Docker
+
+`make up` runs the bundled Postgres; any Postgres the app can reach will do.
+Point development at yours (the role needs `CREATEDB`), or set `database_url`
+with `bogie credentials:edit` instead of exporting it:
+
+    export {{.EnvPrefix}}_DATABASE_URL='postgres://USER:PASSWORD@localhost:5432/{{.Name}}_development?sslmode=disable'
+    bogie db:prepare
+    bogie s
+
+Tests never read the credentials or {{.EnvPrefix}}_DATABASE_URL; they take their
+own URL:
+
+    export {{.EnvPrefix}}_TEST_DATABASE_URL='postgres://USER:PASSWORD@localhost:5432/{{.Name}}_test?sslmode=disable'
+    {{.EnvPrefix}}_ENV=test bogie db:prepare
+    bogie test
+
+`make up`, `make down`, `make psql` and the database step of `bin/ci` still use
+Docker.
