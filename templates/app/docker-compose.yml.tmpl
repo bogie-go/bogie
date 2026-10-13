@@ -5,8 +5,14 @@
 #   make reset     stop it and DESTROY the data
 #
 # Postgres listens on 5440, not 5432, because the Rails app next door almost
-# certainly holds 5432 already. The same number is the default in
-# config/config.go; change both or neither.
+# certainly holds 5432 already. To move it, change the number here and in
+# every place that repeats it, or the app keeps dialing 5440:
+#
+#   config/config.go                    the development and test defaults
+#   config/credentials.yml.enc          database_url (bogie credentials:edit)
+#   app/services/database/database.go   bundledPort, which picks the hint,
+#                                       and the URL its test expects
+#   Makefile                            the "ready" line of make up
 #
 # The database starts EMPTY on purpose: {{.Name}} owns its schema and applies
 # the migrations embedded in its own binary at boot (make db-prepare, or just
