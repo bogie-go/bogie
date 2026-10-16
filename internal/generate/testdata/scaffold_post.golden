@@ -2,7 +2,7 @@
 -- +goose Up
 CREATE TABLE posts (
     id         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-    title      text        NOT NULL DEFAULT '',
+    title      varchar     NOT NULL DEFAULT '',
     body       text        NOT NULL DEFAULT '',
     score      integer     NOT NULL DEFAULT 0,
     published_at timestamptz NOT NULL,

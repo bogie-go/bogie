@@ -31,7 +31,7 @@ type kind struct {
 // the domain is a nil check in every caller. A model that truly needs null
 // edits the migration by hand, which is one line.
 var kinds = map[string]kind{
-	"string":   {sql: "text", sqlDef: "NOT NULL DEFAULT ''", domain: "string", sqlcType: "string", toRow: "%s", fromRow: "%s"},
+	"string":   {sql: "varchar", sqlDef: "NOT NULL DEFAULT ''", domain: "string", sqlcType: "string", toRow: "%s", fromRow: "%s"},
 	"text":     {sql: "text", sqlDef: "NOT NULL DEFAULT ''", domain: "string", sqlcType: "string", toRow: "%s", fromRow: "%s"},
 	"integer":  {sql: "integer", sqlDef: "NOT NULL DEFAULT 0", domain: "int32", sqlcType: "int32", toRow: "%s", fromRow: "%s"},
 	"bigint":   {sql: "bigint", sqlDef: "NOT NULL DEFAULT 0", domain: "int64", sqlcType: "int64", toRow: "%s", fromRow: "%s"},
@@ -44,18 +44,23 @@ var kinds = map[string]kind{
 	"references": {sql: "uuid", sqlDef: "NOT NULL", domain: "string", sqlcType: "pgtype.UUID", toRow: "%s", fromRow: "uuidString(%s)", reference: true},
 }
 
-var attrPattern = regexp.MustCompile(`^([a-z][a-z0-9_]*):([a-z]+)(?::(index|uniq))?$`)
+var attrPattern = regexp.MustCompile(`^([a-z][a-z0-9_]*)(?::([a-z]+))?(?::(index|uniq))?$`)
 
-// ParseAttrs reads `name:type[:index|:uniq]` arguments. A `references` attr
-// names the other model: `post:references` becomes the column post_id.
+// ParseAttrs reads `name[:type][:index|:uniq]` arguments. A bare name with no
+// `:type` defaults to string, as in Rails. A `references` attr names the
+// other model: `post:references` becomes the column post_id.
 func ParseAttrs(args []string) ([]Attr, error) {
 	var out []Attr
 	for _, a := range args {
 		m := attrPattern.FindStringSubmatch(a)
 		if m == nil {
-			return nil, fmt.Errorf("%q is not name:type[:index|:uniq]", a)
+			return nil, fmt.Errorf("%q is not name[:type][:index|:uniq]", a)
 		}
-		attr := Attr{Name: m[1], Type: m[2], Index: m[3] == "index", Unique: m[3] == "uniq"}
+		typ := m[2]
+		if typ == "" {
+			typ = "string"
+		}
+		attr := Attr{Name: m[1], Type: typ, Index: m[3] == "index", Unique: m[3] == "uniq"}
 		if _, ok := kinds[attr.Type]; !ok {
 			return nil, fmt.Errorf("%q: unknown type %q; one of %s", a, attr.Type, strings.Join(typeNames(), ", "))
 		}

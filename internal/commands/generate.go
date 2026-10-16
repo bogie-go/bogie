@@ -19,13 +19,13 @@ const generateUsage = `Usage: bogie generate GENERATOR NAME [attributes] [--pret
        bogie g ...
 
 Generators:
-  migration NAME [field:type ...]   db/migrate/<stamp>_NAME.sql
+  migration NAME [field[:type] ...] db/migrate/<stamp>_NAME.sql
                                     create_<table>, add_<x>_to_<table> and
                                     remove_<x>_from_<table> write their SQL
-  model NAME [field:type ...]       the migration, db/queries/<table>.sql,
+  model NAME [field[:type] ...]     the migration, db/queries/<table>.sql,
                                     app/domain/<name>.go and the store's
                                     app/models/<table>.go; then runs sqlc
-  scaffold NAME [field:type ...]    the model, plus app/views/<table>.go and
+  scaffold NAME [field[:type] ...]  the model, plus app/views/<table>.go and
                                     a <Table>Controller with real handlers
                                     over the store, REGISTERED. As Rails:
                                     the model is singular, the rest plural
@@ -53,9 +53,10 @@ Generators:
 
 Attributes are field:type, with :index or :uniq after the type. Types:
   string text integer bigint boolean datetime uuid jsonb references
-A references field names the other model: post:references is post_id.
+A field with no :type defaults to string, as in Rails. A references field
+names the other model: post:references is post_id.
 
-  bogie g scaffold post title:string body:text
+  bogie g scaffold post title body:text
   bogie g model comment body:text post:references
   bogie g migration add_slug_to_posts slug:string:uniq
   bogie g controller comments index show create

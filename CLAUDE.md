@@ -70,8 +70,9 @@ generated app's `.golangci.yml`, which bin/ci enforces.
   per file, `--pretend` for dry runs, never overwrite without `--force`.
 - **Postgres only** in v1. SQLite was considered and declined on 2026-10-03
   (§12.4): River's SQLite driver is a preview, so `--jobs` would break, and
-  the database is wired in nine places. Attribute type mapping (`string`→`text`,
-  `datetime`→`timestamptz`, `references`→`uuid` + FK, etc.) is in §5.
+  the database is wired in nine places. Attribute type mapping (`string`→`varchar`,
+  `text`→`text`, `datetime`→`timestamptz`, `references`→`uuid` + FK, etc.) is
+  in §5. A bare field with no `:type` defaults to `string`, as in Rails.
 - **API-only, no views.** Decided 2026-09-30.
 - **Jobs are River, opt-in via `--jobs`.** Not asynq: no Redis, transactional
   enqueue, typed args. Reasoning in §12.2. River's schema is applied by the

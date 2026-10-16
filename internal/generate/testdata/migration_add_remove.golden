@@ -1,6 +1,6 @@
 ==> db/migrate/20261002093000_add_slug_to_posts.sql
 -- +goose Up
-ALTER TABLE posts ADD COLUMN slug text NOT NULL DEFAULT '' UNIQUE;
+ALTER TABLE posts ADD COLUMN slug varchar NOT NULL DEFAULT '' UNIQUE;
 ALTER TABLE posts ADD COLUMN draft boolean NOT NULL DEFAULT false;
 
 -- +goose Down

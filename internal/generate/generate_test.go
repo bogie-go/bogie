@@ -122,9 +122,18 @@ func TestParseAttrs(t *testing.T) {
 	if !got[2].Unique || !got[3].Index {
 		t.Errorf("modifiers: %+v %+v", got[2], got[3])
 	}
-	for _, bad := range []string{"title", "title:money", "Title:string", "x:string:nope"} {
+	for _, bad := range []string{"title:money", "Title:string", "x:string:nope", ":string"} {
 		if _, err := ParseAttrs([]string{bad}); err == nil {
 			t.Errorf("%q accepted", bad)
+		}
+	}
+}
+
+func TestParseAttrsDefaultsBareNameToString(t *testing.T) {
+	got := attrs(t, "title", "description")
+	for _, a := range got {
+		if a.Type != "string" {
+			t.Errorf("%q: Type = %q, want string", a.Name, a.Type)
 		}
 	}
 }

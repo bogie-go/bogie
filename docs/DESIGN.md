@@ -344,9 +344,12 @@ and mounted, in the root or in its namespace, and that every `*_controller`
 package is.
 
 Attribute types for `g model` / `g migration` map Rails-style names to Postgres
-types: `string`→`text`, `text`→`text`, `integer`→`integer`, `bigint`→`bigint`,
+types, following Rails's own `string`/`text` distinction rather than
+collapsing it: `string`→`varchar` (unlimited, as Rails leaves it with no
+`:limit`), `text`→`text`, `integer`→`integer`, `bigint`→`bigint`,
 `boolean`→`boolean`, `datetime`→`timestamptz`, `uuid`→`uuid`, `jsonb`→`jsonb`,
-`references`→`uuid` with a foreign key. `g model` writes the migration, a starter
+`references`→`uuid` with a foreign key. A bare field with no `:type`, as in
+`rails g model post title`, defaults to `string`. `g model` writes the migration, a starter
 `db/queries/<table>.sql` (get, list, create, update, delete), the domain type
 and the store's conversion methods, and runs `sqlc generate`. Built
 2026-10-02, with three rules learned on the way: every generated column is
