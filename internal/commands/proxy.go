@@ -114,7 +114,7 @@ func plan(command string, args []string) ([][]string, error) {
 		argv = []string{"make", "lint"}
 	case "ci":
 		argv = []string{"bin/ci"}
-	case "db", "migrate":
+	case "db", "migrate", "routes":
 		// The app's own subcommands, exactly as the Makefile calls them.
 		argv = []string{"go", "run", ".", command}
 	case "credentials":

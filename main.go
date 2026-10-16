@@ -26,6 +26,7 @@ Inside an app (found by its bogie.toml, from any subdirectory):
   app:update               move the app to this Bogie's layout: a three-way merge
   server, s                run it; migrates at boot, reloads on save
   worker                   work the job queue (apps made with --jobs)
+  routes                   every mounted route, method and path (rails routes)
   test, t [PKGS]           go test -race -cover ./...
   lint                     gofmt, vet, golangci-lint
   ci                       every check, locally, then sign off (bin/ci)
@@ -61,7 +62,7 @@ func main() {
 		err = commands.Doctor(os.Stdout)
 	case "app:update":
 		err = commands.Update(os.Args[2:], os.Stdout)
-	case "server", "worker", "test", "lint", "ci", "db", "migrate", "credentials":
+	case "server", "worker", "routes", "test", "lint", "ci", "db", "migrate", "credentials":
 		err = commands.Proxy(command, os.Args[2:], os.Stdout)
 	case "db:create", "db:drop", "db:prepare", "db:setup", "db:reset", "db:seed", "db:seed:rollback",
 		"db:migrate", "db:migrate:status", "db:migrate:redo", "db:rollback", "db:version",
