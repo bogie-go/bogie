@@ -389,6 +389,19 @@ second at a time past any existing one, since goose refuses duplicates and two
 generators in one second would make them. Output is pinned by golden files,
 and `bin/ci` runs every generator into a fresh app and that app's pipeline.
 
+**Hand-written store additions, decided 2026-10-17.** The store file `g
+model` writes (`app/models/<table>.go`) is meant to be regenerated: adding a
+column and rerunning `g model` rewrites it whole. A hand-written method
+added straight into that file is byte-compared on the next run like any
+other generated file (§4, `create`/`identical`/`conflict`/`force`) and
+reported `conflict`, forcing a choice between losing the generator's new
+column handling or the hand-written method. The fix needs no new mechanism:
+Go merges every file in a package, so the convention is simply to put a
+hand-written addition in a sibling file (`app/models/<table>_extra.go`, any
+name not ending the generator's own suffixes), never inside the generated
+one. `g model`'s conflict check then never has reason to touch it. Written
+into `AGENTS.md`'s "Add a model" and "Add a query" recipes.
+
 Templates are `go:embed`ded and rendered with `text/template`. `bogie.toml` records
 the Bogie version that generated the app so a later `bogie app:update` knows what
 it is upgrading from (§5a).

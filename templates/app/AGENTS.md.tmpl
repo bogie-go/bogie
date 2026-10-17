@@ -282,6 +282,15 @@ Every generated column is NOT NULL with a type-appropriate default, so sqlc
 emits plain Go types rather than pointers. A column that truly needs null is
 one edit to the migration.
 
+A hand-written addition to the store — a helper, a query wrapper, anything
+beyond what the generator writes — goes in a sibling file in `app/models/`,
+such as `app/models/comments_extra.go`, not inside the generated
+`comments.go`. Go merges every file in a package, so it sees the same
+`*Store` and `domain.Comment` as the generated methods. Keeping it separate
+means a later `bogie g model comment <col>:<type>` only ever reports
+`conflict` on the file it would actually change; your sibling file is never
+at risk, and there is nothing to pass `--force` over.
+
 ### Add a seed
 
     bogie g seed demo_posts
@@ -323,10 +332,12 @@ There is no `where` builder; a query is SQL with a name. In
 
 then `make sqlc`, which writes `ListCommentsForPost` into
 `app/models/comments.sql.go` with typed parameters, or fails if a column is
-misspelled. Then a store method in `app/models/comments.go` that calls it
-and converts the rows with `commentFromRow`, as the generated methods do.
-Annotations: `:one`, `:many`, `:exec`, `:execrows`. The generated file is
-committed; `bin/ci` fails if it is stale.
+misspelled. Then a store method that calls it and converts the rows with
+`commentFromRow`, as the generated methods do — written in a sibling file
+such as `app/models/comments_extra.go`, not inside the generated
+`comments.go`, so a later `g model comment <col>:<type>` never conflicts
+with it. Annotations: `:one`, `:many`, `:exec`, `:execrows`. The generated
+file is committed; `bin/ci` fails if it is stale.
 
 ### Write a test
 

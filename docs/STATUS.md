@@ -139,6 +139,10 @@ pushing; on a clean tree a green run signs off the commit.
 - Tasks that destroy pass `--yes` through the tool; the binary in a container
   keeps asking.
 - `domain.ErrNotFound` and `ErrInvalid` live in `domain.go`, not with a model.
+- A hand-written store method goes in a sibling file (`app/models/<table>_extra.go`),
+  not inside the generated `<table>.go`: that file is regenerated whole on
+  the next `g model`, and a hand-written addition inside it is reported
+  `conflict` instead of kept.
 
 ## Loose ends
 
