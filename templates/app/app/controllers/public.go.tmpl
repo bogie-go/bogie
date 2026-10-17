@@ -22,7 +22,7 @@ import (
 func (s *Server) staticFile(c *gin.Context) {
 	name := strings.TrimPrefix(path.Clean(c.Request.URL.Path), "/")
 	if name == "" || name == "." {
-		return
+		name = "index.html"
 	}
 	if info, err := fs.Stat(public.Files, name); err != nil || info.IsDir() {
 		return
