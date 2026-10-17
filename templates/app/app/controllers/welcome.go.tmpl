@@ -11,17 +11,20 @@ import (
 )
 
 // welcome is the page you see at / before the app has one of its own, the
-// way a new Rails app greets you. Served only in development, and only while
-// no route claims /: it is mounted as the no-route handler, so the first
-// controller to mount / replaces it without anyone touching this file. In
-// every other environment / is a plain 404.
+// way a new Rails app greets you. Served only in development, and only
+// while no route claims /: it is the second of three no-route handlers
+// mounted in routes.go (`r.NoRoute(s.staticFile, s.welcome, s.notFound)`),
+// after public/ and before the final 404, so the first controller to mount
+// / replaces it without anyone touching this file. c.Abort() once it
+// renders stops notFound from also running underneath it; everything it
+// does not handle — every other environment, every other path — is left to
+// the next handler by simply returning.
 //
 // Self-contained on purpose: no stylesheet, no font, no script, nothing
-// fetched. To remove it, delete this file and the s.mountWelcome() line in
-// routes.go.
+// fetched. To remove just this page, delete this file and drop it from
+// routes.go's `r.NoRoute(s.staticFile, s.welcome, s.notFound)` line.
 func (s *Server) welcome(c *gin.Context) {
-	if c.Request.Method != http.MethodGet || c.Request.URL.Path != "/" {
-		c.Status(http.StatusNotFound)
+	if s.Config.Env != config.EnvDevelopment || c.Request.Method != http.MethodGet || c.Request.URL.Path != "/" {
 		return
 	}
 	c.Header("Content-Type", "text/html; charset=utf-8")
@@ -34,13 +37,7 @@ func (s *Server) welcome(c *gin.Context) {
 		// html/template rejects a data: URL in src unless told it is trusted.
 		"Mascot": template.URL(welcomeMascot),
 	})
-}
-
-// mountWelcome installs the page in development only.
-func (s *Server) mountWelcome() {
-	if s.Config.Env == config.EnvDevelopment {
-		s.Router.NoRoute(s.welcome)
-	}
+	c.Abort()
 }
 
 // The page uses [[ ]] as delimiters so that this file can itself be written by
@@ -122,7 +119,7 @@ var welcomePage = template.Must(template.New("welcome").Delims("[[", "]]").Parse
     </ol>
   </section>
 
-  <footer>This page is served only in development, and only until a route claims <code>/</code>. It lives in <code>app/controllers/welcome.go</code>; to remove it, delete that file and the <code>s.mountWelcome()</code> line in <code>routes.go</code>.</footer>
+  <footer>This page is served only in development, and only until a route claims <code>/</code>. It lives in <code>app/controllers/welcome.go</code>; to remove it, delete that file and update the <code>r.NoRoute(...)</code> line in <code>routes.go</code>.</footer>
 </main>
 </body>
 </html>

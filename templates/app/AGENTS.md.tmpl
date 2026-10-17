@@ -74,6 +74,7 @@ nobody's secrets and can never open the development database.
       controllers/
         application.go           root Server, one NAMED field per controller
         routes.go                the whole routing table
+        public.go                no-route fallback: a file in public/, else public/404.html
         welcome.go               the development page at /; gone once a route claims /
         <name>_controller.go     one Rails controller: a <Name>Controller, its routes, its actions
         <ns>_controller/         one Rails namespace: server.go · routes.go · <name>_controller.go …
@@ -94,6 +95,7 @@ nobody's secrets and can never open the development database.
       migrate/                   goose SQL, timestamped; `bogie g model` writes the first
       seeds/                     seeds.go runs each file above // bogie:seeds, every
                                  time `db seed` runs; `bogie g seed` writes one
+    public/                      404.html · 500.html, go:embedded; Rails's public/, API mode included
     lib/logger/
 
 Tests live beside the code they test, stdlib `testing` only.
@@ -338,6 +340,23 @@ such as `app/models/comments_extra.go`, not inside the generated
 `comments.go`, so a later `g model comment <col>:<type>` never conflicts
 with it. Annotations: `:one`, `:many`, `:exec`, `:execrows`. The generated
 file is committed; `bin/ci` fails if it is stale.
+
+### Static files and error pages
+
+`public/` is Rails's own `public/` folder: a handful of files served
+straight off disk, embedded into the binary rather than copied into the
+image, no route needed. `app/controllers/routes.go` tries them, in order,
+for any request nothing above claimed: a file in `public/` by its exact
+path, then (development only) the welcome page at `/`, then
+`public/404.html`. A panicking handler gets `public/500.html` the same way,
+from `app/middlewares.Recover`.
+
+To add a file — `favicon.ico`, `robots.txt` — drop it in `public/` and
+widen the `//go:embed *.html` pattern in `public/public.go` to match its
+extension; it is then served at its own path, no code change beyond that.
+To change what 404 or 500 looks like, edit `public/404.html` or
+`public/500.html` directly; both are plain, static HTML with no app name or
+other value baked in, by the same rule that keeps `app/views` JSON-only.
 
 ### Write a test
 

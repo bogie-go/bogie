@@ -10,6 +10,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+
+	"{{.Module}}/public"
 )
 
 // RequestIDHeader is echoed back so a client can correlate a report with a log
@@ -52,14 +54,16 @@ func Logger(log *slog.Logger) gin.HandlerFunc {
 	}
 }
 
-// Recover turns a panic into a 500 and a log line rather than a dead process.
+// Recover turns a panic into public/500.html and a log line, rather than a
+// dead process.
 func Recover(log *slog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		defer func() {
 			if r := recover(); r != nil {
 				log.ErrorContext(c.Request.Context(), "panic recovered",
 					"panic", r, "path", c.FullPath(), "request_id", c.GetString("request_id"))
-				c.AbortWithStatus(http.StatusInternalServerError)
+				c.Abort()
+				c.Data(http.StatusInternalServerError, "text/html; charset=utf-8", public.InternalServerError)
 			}
 		}()
 		c.Next()

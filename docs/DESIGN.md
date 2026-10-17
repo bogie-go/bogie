@@ -104,6 +104,7 @@ app/
   controllers/
     application.go            root Server, one NAMED field per controller
     routes.go                 the whole routing table
+    public.go                 no-route fallback: a file in public/, else public/404.html (§5)
     welcome.go                the development page at /, as `rails new` has; gone once a route claims /
     <name>_controller.go      one file per Rails controller: a <Name>Controller type, its routes, its actions
     <ns>_controller/          one package per Rails namespace: server.go · routes.go · <name>_controller.go …
@@ -119,6 +120,7 @@ db/
   queries/                    sqlc input
   seeds/                      plain Go, one function per file, re-run every
                                time db seed runs (§4.1)
+public/                        404.html · 500.html, go:embedded (§5)
 lib/logger/
 docs/
 Makefile · Dockerfile · docker-compose.yml · config/deploy.yml · .golangci.yml
@@ -370,6 +372,37 @@ Rails namespace. kchat's `conversations.go` already obeys it; "one file per
 action" is gone. `doctor` checks that every `*Controller` type is constructed
 and mounted, in the root or in its namespace, and that every `*_controller`
 package is.
+
+**`public/` and the no-route chain, decided 2026-10-17.** A Rails app serves
+`public/404.html` and `public/500.html` for a request nothing in the app
+answered, even in `--api` mode: `ActionDispatch::PublicExceptions` sits below
+the router and the controller stack, so this is not the Views decision
+(§12.1) reopened — no template engine, no app name or other value baked in,
+no `app/views` involved. The Go analogue is `public/`, go:embedded into the
+binary like `db/migrate` (§5), and `app/controllers/routes.go` tries it as
+one leg of a three-handler `NoRoute` chain, in order:
+
+1. `staticFile` — a file in `public/` by its exact request path, served as
+   itself, whatever it is (so a favicon or a robots.txt just works).
+2. `welcome` — the development-only page at `/`, already there (§4; this
+   changed what it falls through to, not what it does at `/`).
+3. `notFound` — `public/404.html`, always.
+
+A panicking handler gets `public/500.html` from `middlewares.Recover`, the
+same file, outside this chain.
+
+The one real gotcha, found by a test that only checked status codes and
+missed it: in Gin, returning from a `NoRoute` handler does **not** stop the
+chain by itself, only `c.Abort()` does — the engine's own driving loop calls
+the next handler regardless of whether the current one answered. Without an
+explicit `Abort()`, `welcome` rendering the page at `/` did not stop
+`notFound` from running right after it and appending `public/404.html`
+underneath the welcome page in the same response, 200 already written, Gin
+logging a swallowed "wanted to override status code 200 with 404" warning
+to say so. `staticFile` and `welcome` each call `c.Abort()` once they have
+actually written a response; the tests assert the body does not *also*
+contain the 404 page's own content, not just that the status code is right,
+so this class of bug fails loudly next time.
 
 Attribute types for `g model` / `g migration` map Rails-style names to Postgres
 types, following Rails's own `string`/`text` distinction rather than

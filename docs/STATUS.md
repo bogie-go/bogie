@@ -70,10 +70,12 @@ authoritative list.
 Each generated app ships: the six rules in `AGENTS.md` with a recipe per
 generator, `bin/ci` (drop and rebuild the test database, migrate down to zero
 and back, sqlc diff, gofmt, vet, golangci-lint, build, tests, worker boot with
-`--jobs`, then `gh signoff`), a development welcome page at `/`, encrypted
-credentials with env-only fallback, a Dockerfile and Kamal 2 config (staging
-plus a production overlay, `.kamal/secrets` from the credentials), and no
-example resource (removed 2026-10-03; the generators are the shape to copy).
+`--jobs`, then `gh signoff`), a development welcome page at `/`, a
+go:embedded `public/404.html`/`500.html` for every other no-route request
+and for a panic (added 2026-10-17, DESIGN.md §5), encrypted credentials with
+env-only fallback, a Dockerfile and Kamal 2 config (staging plus a
+production overlay, `.kamal/secrets` from the credentials), and no example
+resource (removed 2026-10-03; the generators are the shape to copy).
 
 ## Setting up a new machine
 
@@ -143,6 +145,12 @@ pushing; on a clean tree a green run signs off the commit.
   not inside the generated `<table>.go`: that file is regenerated whole on
   the next `g model`, and a hand-written addition inside it is reported
   `conflict` instead of kept.
+- The `NoRoute` chain (`staticFile`, `welcome`, `notFound` in
+  `app/controllers`) relies on `c.Abort()`, not a plain `return`, to stop at
+  the handler that answered: Gin's own driving loop calls the next handler
+  regardless unless a prior one aborts. Dropping an `Abort()` call while
+  "simplifying" one of these three reopens the bug DESIGN.md §5 describes —
+  a later handler's content silently appended underneath an earlier one's.
 
 ## Loose ends
 

@@ -34,7 +34,8 @@ func (s *Server) SetupRoutes() {
 	//
 	// bogie:routes
 
-	// Development only, and only while nothing above claims /. Goes with
-	// app/controllers/welcome.go: delete both together.
-	s.mountWelcome()
+	// Every request nothing above claims, in order: a file in public/,
+	// then (development only) the welcome page at /, then public/404.html.
+	// See app/controllers/public.go and welcome.go.
+	r.NoRoute(s.staticFile, s.welcome, s.notFound)
 }

@@ -57,8 +57,9 @@ func get(s *Server, path string) *httptest.ResponseRecorder {
 // GET / only, and gone the moment a route claims /.
 func TestWelcomeInDevelopmentOnly(t *testing.T) {
 	dev := testServer(config.EnvDevelopment)
-	if rec := get(dev, "/"); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "is running") {
-		t.Errorf("development GET / = %d, want the welcome page", rec.Code)
+	if rec := get(dev, "/"); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "is running") ||
+		strings.Contains(rec.Body.String(), "404 Not Found") {
+		t.Errorf("development GET / = %d %q, want only the welcome page: notFound must not also run", rec.Code, rec.Body.String())
 	}
 	if rec := get(dev, "/nothing-here"); rec.Code != http.StatusNotFound {
 		t.Errorf("development GET /nothing-here = %d, want 404: the welcome page answers / only", rec.Code)
@@ -76,5 +77,41 @@ func TestARouteAtRootReplacesTheWelcomePage(t *testing.T) {
 
 	if rec := get(s, "/"); rec.Body.String() != "mine" {
 		t.Errorf("GET / = %q, want the app's own route", rec.Body.String())
+	}
+}
+
+// public/ is tried before the welcome page and the final 404: a request for
+// a file that is actually there is served as itself, status 200, in every
+// environment.
+func TestStaticFileAnsweredBeforeTheWelcomePage(t *testing.T) {
+	s := testServer(config.EnvDevelopment)
+	rec := get(s, "/500.html")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "500 Internal Server Error") ||
+		strings.Contains(rec.Body.String(), "404 Not Found") {
+		t.Errorf("GET /500.html = %d %q, want 200 and only the file's own content: welcome and notFound must not also run", rec.Code, rec.Body.String())
+	}
+}
+
+// Nothing above answering, in any environment, is public/404.html: the last
+// of the three no-route handlers.
+func TestUnmatchedRouteServesThe404Page(t *testing.T) {
+	for _, env := range []string{config.EnvDevelopment, config.EnvProduction} {
+		s := testServer(env)
+		rec := get(s, "/nothing-here")
+		if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "404 Not Found") {
+			t.Errorf("%s GET /nothing-here = %d %q, want 404 and public/404.html", env, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+// A panicking handler gets public/500.html from middlewares.Recover, not a
+// bare status with no body.
+func TestPanicRecoveredServesThe500Page(t *testing.T) {
+	s := testServer(config.EnvTest)
+	s.Router.GET("/boom", func(c *gin.Context) { panic("boom") })
+
+	rec := get(s, "/boom")
+	if rec.Code != http.StatusInternalServerError || !strings.Contains(rec.Body.String(), "500 Internal Server Error") {
+		t.Errorf("GET /boom = %d %q, want 500 and public/500.html", rec.Code, rec.Body.String())
 	}
 }

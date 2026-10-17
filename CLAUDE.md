@@ -74,6 +74,13 @@ generated app's `.golangci.yml`, which bin/ci enforces.
   `text`→`text`, `datetime`→`timestamptz`, `references`→`uuid` + FK, etc.) is
   in §5. A bare field with no `:type` defaults to `string`, as in Rails.
 - **API-only, no views.** Decided 2026-09-30.
+- **`public/` and a three-handler `NoRoute` chain, not views.** Decided
+  2026-10-17 (DESIGN.md §5): `staticFile` → `welcome` (development only) →
+  `notFound`, serving `public/404.html`/`500.html` go:embedded, the same way
+  Rails serves its own `public/` even in `--api` mode — no template engine,
+  nothing above the router. In Gin, a handler that does not call `c.Abort()`
+  does not stop the chain by itself; `staticFile` and `welcome` both do,
+  once they have actually written a response.
 - **Jobs are River, opt-in via `--jobs`.** Not asynq: no Redis, transactional
   enqueue, typed args. Reasoning in §12.2. River's schema is applied by the
   app's `migrate` through rivermigrate, not copied into db/migrate. Seeds and
