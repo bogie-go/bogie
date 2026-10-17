@@ -44,84 +44,84 @@ func (s *Server) welcome(c *gin.Context) {
 // a text/template without the two fighting over the default double braces.
 var welcomePage = template.Must(template.New("welcome").Delims("[[", "]]").Parse(`<!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>[[.Name]] is running</title>
-<style>
-  :root {
-    color-scheme: light dark;
-    --fg: #1c1b19; --muted: #6a675f; --line: #e4e1d8; --bg: #f8f6f1; --panel: #fffdf9;
-    --accent: #c0392b; --accent-soft: #fbe9e6; --glow: #bfe8f2;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root { --fg: #ecebe7; --muted: #9c9a93; --line: #2e2d2a; --bg: #151514; --panel: #1d1d1b;
-            --accent: #ea6e5f; --accent-soft: #3a2320; --glow: #1f3a42; }
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--fg);
-         font: 16px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
-  main { max-width: 58rem; margin: 0 auto; padding: 6vh 1.5rem 4rem;
-         display: grid; grid-template-columns: 1fr; gap: 2rem; align-items: center; }
-  @media (min-width: 46rem) { main { grid-template-columns: minmax(0, 1fr) 19rem; gap: 3.5rem; padding-top: 10vh; } .art { order: 2; } }
-  .art { display: grid; place-items: center; }
-  .art figure { margin: 0; position: relative; width: min(100%, 17rem); }
-  .art figure::before { content: ""; position: absolute; inset: 10% 5% 15%; border-radius: 50%;
-                        background: radial-gradient(closest-side, var(--glow), transparent); z-index: 0; }
-  .art img { position: relative; z-index: 1; display: block; width: 100%; height: auto;
-             filter: drop-shadow(0 12px 18px rgba(0, 0, 0, .18)); }
-  .eyebrow { margin: 0; font-size: .78rem; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; color: var(--accent); }
-  h1 { font-size: clamp(1.9rem, 4vw, 2.6rem); line-height: 1.1; margin: .35rem 0 .6rem; letter-spacing: -.01em; }
-  h1 code { font: inherit; }
-  p.lead { font-size: 1.1rem; color: var(--muted); margin: 0 0 1.75rem; }
-  dl { display: grid; grid-template-columns: max-content 1fr; gap: .5rem 1.5rem; margin: 0 0 1.75rem;
-       padding: 1rem 1.25rem; background: var(--panel); border: 1px solid var(--line); border-radius: .75rem; }
-  dt { color: var(--muted); } dd { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .95em; }
-  a { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--accent-soft); }
-  a:hover { border-bottom-color: var(--accent); }
-  h2 { font-size: .95rem; margin: 0 0 .5rem; color: var(--muted); font-weight: 600; }
-  ol { list-style: none; counter-reset: step; margin: 0; padding: 0; }
-  ol li { counter-increment: step; position: relative; padding: .3rem 0 .3rem 2.2rem; }
-  ol li::before { content: counter(step); position: absolute; left: 0; top: .45rem; width: 1.5rem; height: 1.5rem;
-                  border-radius: 50%; background: var(--accent-soft); color: var(--accent);
-                  font-size: .8rem; font-weight: 700; display: grid; place-items: center; }
-  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em;
-         background: var(--panel); border: 1px solid var(--line); border-radius: .3rem; padding: .05rem .35rem; }
-  footer { grid-column: 1 / -1; order: 3; margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid var(--line);
-           color: var(--muted); font-size: .9rem; }
-</style>
-</head>
-<body>
-<main>
-  <div class="art">
-    <figure>
-      <img src="[[.Mascot]]" alt="Bogie's mascot: a gopher and a ruby riding a mine cart on rails">
-    </figure>
-  </div>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>[[.Name]] is running</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --fg: #1c1b19; --muted: #6a675f; --line: #e4e1d8; --bg: #f8f6f1; --panel: #fffdf9;
+        --accent: #c0392b; --accent-soft: #fbe9e6; --glow: #bfe8f2;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root { --fg: #ecebe7; --muted: #9c9a93; --line: #2e2d2a; --bg: #151514; --panel: #1d1d1b;
+                --accent: #ea6e5f; --accent-soft: #3a2320; --glow: #1f3a42; }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--fg);
+             font: 16px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+      main { max-width: 58rem; margin: 0 auto; padding: 6vh 1.5rem 4rem;
+             display: grid; grid-template-columns: 1fr; gap: 2rem; align-items: center; }
+      @media (min-width: 46rem) { main { grid-template-columns: minmax(0, 1fr) 19rem; gap: 3.5rem; padding-top: 10vh; } .art { order: 2; } }
+      .art { display: grid; place-items: center; }
+      .art figure { margin: 0; position: relative; width: min(100%, 17rem); }
+      .art figure::before { content: ""; position: absolute; inset: 10% 5% 15%; border-radius: 50%;
+                            background: radial-gradient(closest-side, var(--glow), transparent); z-index: 0; }
+      .art img { position: relative; z-index: 1; display: block; width: 100%; height: auto;
+                 filter: drop-shadow(0 12px 18px rgba(0, 0, 0, .18)); }
+      .eyebrow { margin: 0; font-size: .78rem; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; color: var(--accent); }
+      h1 { font-size: clamp(1.9rem, 4vw, 2.6rem); line-height: 1.1; margin: .35rem 0 .6rem; letter-spacing: -.01em; }
+      h1 code { font: inherit; }
+      p.lead { font-size: 1.1rem; color: var(--muted); margin: 0 0 1.75rem; }
+      dl { display: grid; grid-template-columns: max-content 1fr; gap: .5rem 1.5rem; margin: 0 0 1.75rem;
+           padding: 1rem 1.25rem; background: var(--panel); border: 1px solid var(--line); border-radius: .75rem; }
+      dt { color: var(--muted); } dd { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .95em; }
+      a { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--accent-soft); }
+      a:hover { border-bottom-color: var(--accent); }
+      h2 { font-size: .95rem; margin: 0 0 .5rem; color: var(--muted); font-weight: 600; }
+      ol { list-style: none; counter-reset: step; margin: 0; padding: 0; }
+      ol li { counter-increment: step; position: relative; padding: .3rem 0 .3rem 2.2rem; }
+      ol li::before { content: counter(step); position: absolute; left: 0; top: .45rem; width: 1.5rem; height: 1.5rem;
+                      border-radius: 50%; background: var(--accent-soft); color: var(--accent);
+                      font-size: .8rem; font-weight: 700; display: grid; place-items: center; }
+      code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em;
+             background: var(--panel); border: 1px solid var(--line); border-radius: .3rem; padding: .05rem .35rem; }
+      footer { grid-column: 1 / -1; order: 3; margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid var(--line);
+               color: var(--muted); font-size: .9rem; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="art">
+        <figure>
+          <img src="[[.Mascot]]" alt="Bogie's mascot: a gopher and a ruby riding a mine cart on rails">
+        </figure>
+      </div>
 
-  <section>
-    <p class="eyebrow">Bogie</p>
-    <h1><code>[[.Name]]</code> is running</h1>
-    <p class="lead">The Go service next to your Rails app.</p>
+      <section>
+        <p class="eyebrow">Bogie</p>
+        <h1><code>[[.Name]]</code> is running</h1>
+        <p class="lead">The Go service next to your Rails app.</p>
 
-    <dl>
-      <dt>Environment</dt><dd>[[.Env]]</dd>
-      <dt>Listening</dt><dd>[[.Addr]]</dd>
-      <dt>Go</dt><dd>[[.Go]]</dd>
-      <dt>Health</dt><dd><a href="/healthz">GET /healthz</a></dd>
-    </dl>
+        <dl>
+          <dt>Environment</dt><dd>[[.Env]]</dd>
+          <dt>Listening</dt><dd>[[.Addr]]</dd>
+          <dt>Go</dt><dd>[[.Go]]</dd>
+          <dt>Health</dt><dd><a href="/healthz">GET /healthz</a></dd>
+        </dl>
 
-    <h2>Next</h2>
-    <ol>
-      <li>Add a resource: <code>bogie g scaffold post title:string body:text</code> writes the model, the views and a controller, and registers it above the <code>bogie:</code> markers.</li>
-      <li>Run <code>bin/ci</code> before you push. Green signs off the commit.</li>
-      <li>Read the six rules in <code>AGENTS.md</code>. Rule two is the one with no Rails equivalent.</li>
-    </ol>
-  </section>
+        <h2>Next</h2>
+        <ol>
+          <li>Add a resource: <code>bogie g scaffold post title:string body:text</code> writes the model, the views and a controller, and registers it above the <code>bogie:</code> markers.</li>
+          <li>Run <code>bin/ci</code> before you push. Green signs off the commit.</li>
+          <li>Read the six rules in <code>AGENTS.md</code>. Rule two is the one with no Rails equivalent.</li>
+        </ol>
+      </section>
 
-  <footer>This page is served only in development, and only until a route claims <code>/</code>. It lives in <code>app/controllers/welcome.go</code>; to remove it, delete that file and update the <code>r.NoRoute(...)</code> line in <code>routes.go</code>.</footer>
-</main>
-</body>
+      <footer>This page is served only in development, and only until a route claims <code>/</code>. It lives in <code>app/controllers/welcome.go</code>; to remove it, delete that file and update the <code>r.NoRoute(...)</code> line in <code>routes.go</code>.</footer>
+    </main>
+  </body>
 </html>
 `))
 
