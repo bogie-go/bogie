@@ -189,7 +189,8 @@ ecosystem tool and wires it once:
 | --- | --- |
 | HTTP | Gin |
 | Queries | sqlc + pgx/v5. SQL in `.sql` files, checked against the migrations at generate time |
-| Migrations, seeds | goose, SQL files embedded in the binary |
+| Migrations | goose, SQL files embedded in the binary |
+| Seeds | plain Go in `db/seeds`, one function per file; `db seed` re-runs every one, so each is written to be safe to run twice |
 | Background jobs | River, opt-in with `--jobs`: Postgres-backed, no Redis, enqueue in the same transaction |
 | Credentials | [`bogie-go/credentials`](https://github.com/bogie-go/credentials), the Rails `credentials.yml.enc` pattern |
 | Deploy | Kamal 2 |

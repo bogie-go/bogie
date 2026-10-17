@@ -31,7 +31,7 @@ Inside an app (found by its bogie.toml, from any subdirectory):
   lint                     gofmt, vet, golangci-lint
   ci                       every check, locally, then sign off (bin/ci)
 
-  db:create  db:drop  db:prepare  db:reset  db:seed  db:seed:rollback
+  db:create  db:drop  db:prepare  db:reset  db:seed
   db:migrate  db:migrate:status  db:migrate:redo  db:rollback  db:version
   credentials:edit  credentials:show  credentials:get   [-e ENVIRONMENT]
 
@@ -64,7 +64,7 @@ func main() {
 		err = commands.Update(os.Args[2:], os.Stdout)
 	case "server", "worker", "routes", "test", "lint", "ci", "db", "migrate", "credentials":
 		err = commands.Proxy(command, os.Args[2:], os.Stdout)
-	case "db:create", "db:drop", "db:prepare", "db:setup", "db:reset", "db:seed", "db:seed:rollback",
+	case "db:create", "db:drop", "db:prepare", "db:setup", "db:reset", "db:seed",
 		"db:migrate", "db:migrate:status", "db:migrate:redo", "db:rollback", "db:version",
 		"credentials:edit", "credentials:show", "credentials:get":
 		err = commands.Proxy(command, os.Args[2:], os.Stdout)

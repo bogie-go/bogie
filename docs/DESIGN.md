@@ -117,7 +117,8 @@ config/                       encrypted credentials → validated struct, no glo
 db/
   migrate/                    goose SQL, timestamped, go:embed
   queries/                    sqlc input
-  seeds/                      goose SQL in its own version table, also go:embed
+  seeds/                      plain Go, one function per file, re-run every
+                               time db seed runs (§4.1)
 lib/logger/
 docs/
 Makefile · Dockerfile · docker-compose.yml · config/deploy.yml · .golangci.yml
@@ -163,8 +164,35 @@ runs** (kchat Makefile, comment above `db-create`).
 
 Seeds go through the binary too. kchat's `make db-seed` shells out to the goose
 CLI with a URL pulled from a second tool, so it is the one path that can drift
-from what the server resolves. The scaffold embeds `db/seeds` beside
-`db/migrate` and `db seed` is a subcommand like the rest.
+from what the server resolves. `db seed` is a subcommand like the rest.
+
+### 4.1 Seeds are plain Go, not goose
+
+Decided 2026-10-16, superseding the first design (versioned goose SQL in
+`db/seeds`, its own `seed_db_version` table, `db seed-down`). That shape
+borrowed the migration mental model — a seed runs once, ever — which is the
+opposite of Rails: `db/seeds.rb` is idempotent script re-run on every
+`db:seed`, relying on `find_or_create_by!`, not a version table, to make
+re-running safe.
+
+There is no mature, widely-adopted Go seeding tool to glue in instead (the
+one candidate found, `2kims/peng`, is early and unproven); the ecosystem's own
+answer is almost always "reuse the migration tool for seeds" (golang-migrate
+wrappers, Atlas's seed-data FAQ), which is what the first design did. But
+reusing goose specifically for seeds cost a second provider, a second table,
+and — because goose's Go-migration support needs each one compiled in and
+registered with the provider via `WithGoMigrations`, not just dropped in the
+embedded directory — no path to a seed that calls real application code
+without inventing another wiring marker.
+
+So: `db/seeds/*.go`, one function per file (`bogie g seed NAME`), each
+registered above `// bogie:seeds` in `db/seeds/seeds.go` the same way a
+controller or job registers itself above its marker. `db seed` calls
+`seeds.Run`, which runs every seed in order and stops at the first error.
+Nothing is tracked in a table; idempotency is the seed's own job, exactly as
+it is in Rails. This also deletes the second goose provider, the
+`seed_db_version` table, and `db seed-down` (Rails has no `db:seed:down`
+either) — a net simplification, not a wash.
 
 Commands, v1:
 
@@ -625,8 +653,9 @@ Extraction, in order:
 - **The logger names the service.** kchat's `.With("service", "kchat")` is
   what tells its lines from the Rails app's in a shared shipper. Adopted.
 - **The rest of the diff is what the extraction intended:** named fields
-  and markers instead of positional wiring, seeds through the binary, a
-  goose provider with its own version table per source, River's schema at
+  and markers instead of positional wiring, seeds through the binary (a
+  second goose provider with its own version table at the time of this
+  review; superseded by plain Go seeds, §4.1), River's schema at
   boot, a bounded boot migration, `--help` on the binary. kchat's
   `APP_ENV` is `<NAME>_CREDENTIALS` here (§6, decided). Not adopted:
   kchat's `mise.toml` (the Go version is `go.mod`'s), its `script/`

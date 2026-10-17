@@ -1,6 +1,6 @@
 MAKEFLAGS += --no-print-directory
 
-.PHONY: help up down reset logs psql credentials build server test sqlc vet fmt lint ci tidy db-create db-drop db-prepare db-reset db-migrate db-migrate-down db-rollback db-migrate-to db-rollback-to db-migrate-status db-version db-migrate-redo db-seed db-seed-down g_migration_% g_seed_%
+.PHONY: help up down reset logs psql credentials build server test sqlc vet fmt lint ci tidy db-create db-drop db-prepare db-reset db-migrate db-migrate-down db-rollback db-migrate-to db-rollback-to db-migrate-status db-version db-migrate-redo db-seed g_migration_%
 
 help: ## every task
 	@grep -E '^[a-z_%-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -105,14 +105,8 @@ db-migrate-redo: ## roll the last migration back and re-apply it
 	@$(MAKE) db-migrate-down
 	@$(MAKE) db-migrate
 
-db-seed: ## apply pending seeds from db/seeds, through the binary
+db-seed: ## apply every seed in db/seeds, through the binary (safe to run again)
 	go run . db seed
-
-db-seed-down: ## roll back the most recent seed
-	go run . db seed-down --yes
 
 g_migration_%: ## author a migration: make g_migration_add_slug_to_posts
 	go tool goose -dir=db/migrate create $* sql
-
-g_seed_%: ## author a seed: make g_seed_add_demo_comments
-	go tool goose -dir=db/seeds create $* sql

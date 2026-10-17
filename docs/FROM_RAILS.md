@@ -57,7 +57,7 @@ autoloads.
 | `app/controllers/concerns/` | — | Compose with plain functions and small interfaces. |
 | `db/migrate/*.rb` | `db/migrate/*.sql` | goose SQL with `-- +goose Up` and `Down`, embedded in the binary. |
 | `db/schema.rb` | — | The migrations are the schema; sqlc compiles the queries against them. |
-| `db/seeds.rb` | `db/seeds/*.sql` | Versioned like migrations, in their own table. |
+| `db/seeds.rb` | `db/seeds/*.go` | One function per file, registered above `// bogie:seeds`; `db seed` re-runs every one, so each must be safe to run twice, as `db/seeds.rb` already has to be. |
 | `config/database.yml` | `DATABASE_URL` in credentials or the environment | One URL per environment; test never reads a credentials file, and takes only `TEST_DATABASE_URL`, so a development URL in your shell cannot reach the suite's truncates. |
 | `config/credentials.yml.enc`, `master.key` | the same files | Same pattern, same names, same `-e production`. |
 | `config/application.rb`, initializers | `app/application.go` | Where everything is constructed and wired, in order, with the markers. |

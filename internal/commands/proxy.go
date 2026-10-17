@@ -84,7 +84,6 @@ var tasks = map[string][][]string{
 	"db:rollback":       {{"go", "run", ".", "migrate", "down", "--yes"}},
 	"db:version":        {{"go", "run", ".", "migrate", "version"}},
 	"db:seed":           {{"go", "run", ".", "db", "seed"}},
-	"db:seed:rollback":  {{"go", "run", ".", "db", "seed-down", "--yes"}},
 	"credentials:edit":  {{"go", "tool", "credentials", "edit"}},
 	"credentials:show":  {{"go", "tool", "credentials", "show"}},
 	"credentials:get":   {{"go", "tool", "credentials", "get"}},

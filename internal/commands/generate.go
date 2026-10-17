@@ -42,6 +42,10 @@ Generators:
   job NAME                          app/jobs/<name>.go, a River job, REGISTERED
                                     above bogie:jobs; the first one on an app
                                     made without --jobs adds it first
+  seed NAME                         db/seeds/<name>.go, REGISTERED above
+                                    bogie:seeds in db/seeds/seeds.go. Unlike a
+                                    migration, db seed runs every seed every
+                                    time: write it safe to run twice
   authentication SHAPE              a middleware on a route group, its config
                                     key with a development value written to
                                     the credentials, and a WithX group helper
@@ -63,6 +67,7 @@ names the other model: post:references is post_id.
   bogie g controller admin/reports index show
   bogie g service publish_post
   bogie g job send_welcome
+  bogie g seed demo_posts
   bogie g authentication secret
 `
 
@@ -168,6 +173,11 @@ func generateIn(root string, args []string, out io.Writer) error {
 		files, wires, err = generate.Job(name)
 		if err != nil {
 			return fmt.Errorf("generate job: %w", err)
+		}
+	case "seed":
+		files, wires, err = generate.Seed(module, name)
+		if err != nil {
+			return fmt.Errorf("generate seed: %w", err)
 		}
 	case "authentication":
 		settings, err := readSettings(root)

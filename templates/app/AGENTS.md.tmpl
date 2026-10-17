@@ -14,7 +14,7 @@ and nothing else.
     make help           every task
     make up             postgres on :5440 (docker compose), healthy before it returns
     make db-prepare     create + migrate + seed, like rails db:prepare
-    make db-seed        apply db/seeds through the binary; g_seed_<name> authors one
+    make db-seed        apply db/seeds through the binary; safe to run again
     make credentials    edit the encrypted settings; ENV=production for that file
     make db-migrate     apply pending migrations; db-rollback, db-migrate-status, db-reset as in Rails
     make g_migration_<name>   author a migration (go tool goose)
@@ -81,7 +81,7 @@ nobody's secrets and can never open the development database.
       jobs/                      River workers, one file per job, registered above // bogie:jobs{{end}}
       services/<name>/           ctx first, knows nothing about HTTP
       services/database/         db create and drop, through the maintenance database
-      services/migrate/          goose over the embedded migrations and seeds
+      services/migrate/          goose over the embedded migrations
       models/                    sqlc output plus the store
       views/                     wire contracts; domain structs never double as wire structs
       domain/                    THE DOMAIN; imports nothing third-party
@@ -90,9 +90,10 @@ nobody's secrets and can never open the development database.
     .kamal/secrets               what Kamal substitutes: the master key and the registry password
     Dockerfile                   one image, every role; keys never enter it (.dockerignore)
     db/
-      db.go                      go:embed of migrate/*.sql and seeds/*.sql
+      db.go                      go:embed of migrate/*.sql
       migrate/                   goose SQL, timestamped; `bogie g model` writes the first
-      seeds/                     goose SQL in its own version table; development data
+      seeds/                     seeds.go runs each file above // bogie:seeds, every
+                                 time `db seed` runs; `bogie g seed` writes one
     lib/logger/
 
 Tests live beside the code they test, stdlib `testing` only.
@@ -280,6 +281,19 @@ is the column `post_id` with a foreign key and an index.
 Every generated column is NOT NULL with a type-appropriate default, so sqlc
 emits plain Go types rather than pointers. A column that truly needs null is
 one edit to the migration.
+
+### Add a seed
+
+    bogie g seed demo_posts
+
+writes `db/seeds/demo_posts.go` with a `SeedDemoPosts(ctx, s *models.Store)
+error` to fill in, and registers it above `// bogie:seeds` in
+`db/seeds/seeds.go`. Unlike a migration, a seed carries no version table:
+`db seed` (and `db prepare`) runs every seed every time, in the order
+registered, stopping at the first error. That makes idempotency the seed's
+own job — insert with `ON CONFLICT DO NOTHING`, or check before creating —
+the same discipline Rails developers already carry in `db/seeds.rb`. `bogie d
+seed demo_posts` removes it, file and registration together.
 
 ### Change a table
 

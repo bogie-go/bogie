@@ -10,7 +10,7 @@ reasoning; this file is the state.
 | --- | --- |
 | M0 decide | done, except: edit the launch essay (see Loose ends). `bogie-go.com` registered 2026-10-03 |
 | M1 skeleton: `new`, database, credentials, seeds, `bin/ci` | **done** |
-| M2 generators: `g`/`d` for migration, model, controller, service, job; markers; `doctor`; golden and marker-removal tests; `--jobs` with River | **done** |
+| M2 generators: `g`/`d` for migration, model, controller, service, job; markers; `doctor`; golden and marker-removal tests; `--jobs` with River | **done**; `g`/`d seed` added 2026-10-16, replacing versioned goose seeds with plain Go (DESIGN.md §4.1) |
 | M3 agent layer: fuller `AGENTS.md`, `docs/FROM_RAILS.md`, a test that catches an unregistered controller | **done** 2026-10-03: `g scaffold`, `FROM_RAILS.md`, `doctor` as the registration check, and `AGENTS.md` with recipes for a dependency, a query, tests and troubleshooting |
 | M4 dogfood: regenerate kchat's skeleton and diff | **done** 2026-10-03; found the Dockerfile and Kamal config missing, added them |
 | M5 publish: version from the git tag, first release, launch | **v0.1.0 tagged 2026-10-03** with `bin/release`. No Homebrew tap, decided the same day: `go install` is the one install. The launch essay remains |
@@ -30,7 +30,7 @@ Install: `go install github.com/bogie-go/bogie@latest` for the newest tag,
                                                  on save in development (Air, .air.toml);
                                                  production runs the compiled binary
     bogie db:prepare db:migrate db:rollback db:migrate:status db:migrate:redo
-          db:reset db:seed db:seed:rollback db:create db:drop db:version
+          db:reset db:seed db:create db:drop db:version
     bogie credentials:edit [-e production] | credentials:show | credentials:get
     bogie g model comment body:text post:references   migration, queries, domain type,
                                                       store methods, store test; runs sqlc
@@ -53,6 +53,9 @@ Install: `go install github.com/bogie-go/bogie@latest` for the newest tag,
                                                       keys wired and a development secret written
                                                       to the credentials; api_key adds a table
                                                       and `bogie api_keys:create NAME`
+    bogie g seed demo_posts                           db/seeds/demo_posts.go, registered above
+                                                      // bogie:seeds; db seed re-runs every seed,
+                                                      so each one is written to run twice safely
     bogie d <generator> NAME                          reverses any of the above
     bogie doctor                                      markers once each, tools pinned, layout
                                                       files, every controller and namespace

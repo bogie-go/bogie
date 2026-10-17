@@ -47,6 +47,7 @@ func Doctor(out io.Writer) error {
 		{"config/config.go", "env"},
 		{"config/config.go", "validate"},
 		{"main.go", "commands"},
+		{"db/seeds/seeds.go", "seeds"},
 	}
 	if exists("app/jobs/jobs.go") == nil {
 		markerFiles = append(markerFiles, struct{ file, marker string }{"app/jobs/jobs.go", "jobs"})

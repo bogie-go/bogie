@@ -27,6 +27,7 @@ package by hand stays.
   bogie d controller admin/reports
   bogie d service publish_post
   bogie d job send_welcome
+  bogie d seed demo_posts
   bogie d authentication token
   bogie d model comment
   bogie d migration add_slug_to_posts
@@ -124,6 +125,9 @@ func destroyIn(root string, args []string, out io.Writer) error {
 	case "job":
 		files, _, err = generate.Job(name)
 		wires = generate.JobWirePrefix(name)
+	case "seed":
+		files, _, err = generate.Seed(module, name)
+		wires = generate.SeedWirePrefix(name)
 	case "authentication":
 		var settings Settings
 		settings, err = readSettings(root)

@@ -365,6 +365,24 @@ func TestJob(t *testing.T) {
 	}
 }
 
+func TestSeed(t *testing.T) {
+	files, wires, err := Seed("example.com/blog", "demo_posts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden(t, "seed_demo_posts", files)
+	if len(wires) != 1 || wires[0].File != "db/seeds/seeds.go" || wires[0].Marker != "seeds" ||
+		wires[0].Line != "func() error { return SeedDemoPosts(ctx, s) }," {
+		t.Errorf("wires = %+v", wires)
+	}
+}
+
+func TestSeedBadName(t *testing.T) {
+	if _, _, err := Seed("example.com/blog", "DemoPosts"); err == nil {
+		t.Fatal("want an error for a non-snake_case name")
+	}
+}
+
 // The generated files parse whatever name a model has, so a parameter that
 // shadows a variable already in scope is a type error no golden file and no
 // format.Source call would notice. Every method the generators write holds one

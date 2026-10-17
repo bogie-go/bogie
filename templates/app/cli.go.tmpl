@@ -6,9 +6,11 @@ import (
 	"os"
 	"strconv"
 
+	"{{.Module}}/app/models"
 	"{{.Module}}/app/services/database"
 	"{{.Module}}/app/services/migrate"
 	"{{.Module}}/config"
+	"{{.Module}}/db/seeds"
 	"{{.Module}}/lib/logger"
 )
 
@@ -107,8 +109,8 @@ Commands:
   create              create the database this environment points at
   drop --yes          DROP that database, and everything in it
   prepare             create if needed, migrate, seed (rails db:prepare)
-  seed                apply pending seeds from db/seeds
-  seed-down --yes     roll back the most recent seed
+  seed                apply every seed in db/seeds (rails db:seed); each one
+                      runs again every time, so it must be safe to run twice
 
 Rails' db:create and db:drop. Both connect to the server's "postgres" database
 rather than the target, so they work before it exists and after it is gone,
@@ -159,16 +161,10 @@ func runDB(ctx context.Context, args []string) (err error) {
 		if err := migrate.Run(ctx, url, log); err != nil {
 			return err
 		}
-		return migrate.Seed(ctx, url, log)
+		return runSeed(ctx, url)
 
 	case "seed":
-		return migrate.Seed(ctx, url, log)
-
-	case "seed-down":
-		if !confirmed {
-			return fmt.Errorf("db: seed-down deletes the most recent seed's rows; pass --yes to confirm")
-		}
-		return migrate.SeedDown(ctx, url, log)
+		return runSeed(ctx, url)
 
 	case "drop":
 		// Not a --yes that production can also pass. A deployed database is
@@ -185,4 +181,15 @@ func runDB(ctx context.Context, args []string) (err error) {
 		fmt.Fprint(os.Stderr, dbUsage)
 		return fmt.Errorf("db: unknown command %q", args[0])
 	}
+}
+
+// runSeed opens the store, applies every seed in db/seeds, and closes it.
+// Separate from runDB's switch because db prepare calls it too.
+func runSeed(ctx context.Context, url string) error {
+	store, err := models.Open(ctx, url)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	return seeds.Run(ctx, store)
 }

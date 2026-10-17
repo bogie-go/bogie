@@ -79,6 +79,15 @@ generated app's `.golangci.yml`, which bin/ci enforces.
   app's `migrate` through rivermigrate, not copied into db/migrate. Seeds and
   migrations both go through the app binary (`db seed`, `db migrate`), never
   the goose CLI directly.
+- **Seeds are plain Go, not goose.** Decided 2026-10-16, superseding versioned
+  goose SQL (§4.1): `db/seeds/*.go`, one function per file, `bogie g seed NAME`,
+  registered above `// bogie:seeds` in `db/seeds/seeds.go` the same way a
+  controller or job registers itself. `db seed` runs every seed every time —
+  there is no version table — so each one is written to be idempotent, as
+  Rails' `db/seeds.rb` already has to be. No mature Go seeding tool exists to
+  glue in instead; reusing goose specifically for seeds cost a second
+  provider, a second table, and no path to a seed that calls real application
+  code without inventing another wiring marker.
 - **Templates are conditional with `{{if .Jobs}}`.** A template that renders
   to only whitespace produces no file. Mind the newlines around `{{end}}`:
   the rendered Go must stay gofmt-clean, and bin/ci checks both the plain and
