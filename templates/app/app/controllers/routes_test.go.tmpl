@@ -93,7 +93,7 @@ func TestStaticFileAnsweredBeforeTheWelcomePage(t *testing.T) {
 }
 
 // The images the error pages reference are embedded too, not just the HTML:
-// go:embed on public/ has to list "images" alongside "*.html" or these 404.
+// public/'s go:embed has to list "images" alongside "*.html" or these 404.
 func TestStaticFileServesImages(t *testing.T) {
 	s := testServer(config.EnvProduction)
 	for _, path := range []string{"/images/bogie-404.webp", "/images/bogie-500.webp"} {
