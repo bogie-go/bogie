@@ -82,6 +82,17 @@ func destroyIn(root string, args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	// As in generate: only the generators that write an id or a references
+	// column need the app's recorded scheme.
+	var settings Settings
+	var scheme generate.IDScheme
+	if generator == "migration" || generator == "model" || generator == "scaffold" || generator == "authentication" {
+		settings, err = readSettings(root)
+		if err != nil {
+			return fmt.Errorf("destroy %s: %w", generator, err)
+		}
+		scheme = settings.IDScheme
+	}
 	report := func(a scaffold.Action) { say("%12s  %s\n", a.Op, a.Path) }
 
 	// The same generator, run on paper, says which files are its own.
@@ -129,21 +140,17 @@ func destroyIn(root string, args []string, out io.Writer) error {
 		files, _, err = generate.Seed(module, name)
 		wires = generate.SeedWirePrefix(name)
 	case "authentication":
-		var settings Settings
-		settings, err = readSettings(root)
-		if err == nil {
-			files, err = generate.AuthenticationFiles(module, settings.Name, name)
-			wires = generate.AuthenticationWirePrefixes(settings.Name, name)
-		}
+		files, err = generate.AuthenticationFiles(module, settings.Name, name, scheme)
+		wires = generate.AuthenticationWirePrefixes(settings.Name, name)
 		if name == "api_key" {
 			files = append(files, generate.File{Path: "app/models/api_keys.sql.go"})
 			runSqlc = true
 		}
 	case "model", "scaffold":
 		if generator == "model" {
-			files, err = generate.Model(module, name, nil, time.Time{})
+			files, err = generate.Model(module, name, nil, scheme, time.Time{})
 		} else {
-			files, err = generate.ScaffoldFiles(module, name)
+			files, err = generate.ScaffoldFiles(module, name, scheme)
 			wires = generate.WirePrefixes("", generate.Plural(name))
 		}
 		// sqlc writes a file per query file and never removes one whose
@@ -155,7 +162,7 @@ func destroyIn(root string, args []string, out io.Writer) error {
 		runSqlc = true
 	case "migration":
 		var f generate.File
-		f, err = generate.Migration(name, nil, time.Time{})
+		f, err = generate.Migration(name, nil, scheme, time.Time{})
 		files = []generate.File{f}
 		runSqlc = true
 	default:

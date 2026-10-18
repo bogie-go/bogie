@@ -1,4 +1,4 @@
-package models
+{{if eq .IDScheme "uuid"}}package models
 
 import (
 	"fmt"
@@ -28,3 +28,4 @@ func uuidString(id pgtype.UUID) string {
 	s, _ := v.(string)
 	return s
 }
+{{end}}

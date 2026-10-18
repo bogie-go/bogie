@@ -11,7 +11,7 @@ import (
 // the domain type, and the hand-written half of the store that converts sqlc's
 // row type to it. Running sqlc afterwards is the caller's job; the files here
 // are written to match what it will generate.
-func Model(module, name string, attrs []Attr, now time.Time) ([]File, error) {
+func Model(module, name string, attrs []Attr, scheme IDScheme, now time.Time) ([]File, error) {
 	if !namePattern.MatchString(name) {
 		return nil, fmt.Errorf("%q is not a model name: lowercase letters, digits and underscores, singular", name)
 	}
@@ -26,16 +26,16 @@ func Model(module, name string, attrs []Attr, now time.Time) ([]File, error) {
 		}
 	}
 
-	migration, err := Migration("create_"+table, attrs, now)
+	migration, err := Migration("create_"+table, attrs, scheme, now)
 	if err != nil {
 		return nil, err
 	}
 	return []File{
 		migration,
 		{Path: "db/queries/" + table + ".sql", Content: queries(name, table, attrs)},
-		{Path: "app/domain/" + name + ".go", Content: domainType(name, attrs)},
-		{Path: "app/models/" + table + ".go", Content: store(module, name, table, attrs)},
-		{Path: "app/models/" + table + "_test.go", Content: storeTest(module, name, table, attrs)},
+		{Path: "app/domain/" + name + ".go", Content: domainType(name, attrs, scheme)},
+		{Path: "app/models/" + table + ".go", Content: store(module, name, table, attrs, scheme)},
+		{Path: "app/models/" + table + "_test.go", Content: storeTest(module, name, table, attrs, scheme)},
 	}, nil
 }
 
@@ -43,16 +43,38 @@ func Model(module, name string, attrs []Attr, now time.Time) ([]File, error) {
 // store test is: the not-found cases, which hold for any set of attributes,
 // and a place to put the round trip once the model has values worth
 // inserting.
-func storeTest(module, name, table string, attrs []Attr) string {
+func storeTest(module, name, table string, attrs []Attr, scheme IDScheme) string {
 	typ := Camel(name)
-	// Every uuid-typed attribute gets a well-formed value, so the store reaches
-	// the query and answers not-found rather than refusing a malformed id.
-	literal := "ID: id"
+	// Every reference attribute gets a well-formed value, so the store
+	// reaches the query and answers not-found rather than refusing a
+	// malformed id.
+	refFields := ""
 	for _, a := range attrs {
-		if kinds[a.Type].sqlcType == "pgtype.UUID" {
-			literal += fmt.Sprintf(", %s: %q", a.goName(), "00000000-0000-4000-8000-000000000000")
+		if kindFor(a, scheme).sqlcType == "pgtype.UUID" {
+			refFields += fmt.Sprintf(", %s: %q", a.goName(), "00000000-0000-4000-8000-000000000000")
 		}
 	}
+
+	// Update takes a domain value, not a URL string, so what "a malformed
+	// id" means for it depends on the scheme: under uuid the domain's id
+	// is a string too, so the same loop that drives Get/Delete can embed
+	// it directly; under bigint the domain's id is already an int64, so
+	// there is no malformed value to embed, only a well-formed one that
+	// names nothing, checked once after the loop instead.
+	var updateInLoop, updateAfterLoop string
+	if scheme == IDUUID {
+		updateInLoop = fmt.Sprintf(`
+		if _, err := store.Update%[1]s(ctx, domain.%[1]s{ID: id%[2]s}); !errors.Is(err, domain.ErrNotFound) {
+			t.Errorf("Update%[1]s(%%q): err = %%v, want ErrNotFound", id, err)
+		}`, typ, refFields)
+	} else {
+		updateAfterLoop = fmt.Sprintf(`
+	if _, err := store.Update%[1]s(ctx, domain.%[1]s{ID: %[2]s%[3]s}); !errors.Is(err, domain.ErrNotFound) {
+		t.Errorf("Update%[1]s(%%d): err = %%v, want ErrNotFound", %[2]s, err)
+	}
+`, typ, scheme.sampleID(), refFields)
+	}
+
 	return fmt.Sprintf(`package models
 
 import (
@@ -69,22 +91,19 @@ func TestUnknown%[4]sAreNotFound(t *testing.T) {
 	store := testStore(t)
 	ctx := context.Background()
 
-	for _, id := range []string{"nope", "", "00000000-0000-4000-8000-000000000000"} {
+	for _, id := range []string{"nope", "", %[7]q} {
 		if _, err := store.Get%[1]s(ctx, id); !errors.Is(err, domain.ErrNotFound) {
 			t.Errorf("Get%[1]s(%%q): err = %%v, want ErrNotFound", id, err)
 		}
 		if err := store.Delete%[1]s(ctx, id); !errors.Is(err, domain.ErrNotFound) {
 			t.Errorf("Delete%[1]s(%%q): err = %%v, want ErrNotFound", id, err)
-		}
-		if _, err := store.Update%[1]s(ctx, domain.%[1]s{%[5]s}); !errors.Is(err, domain.ErrNotFound) {
-			t.Errorf("Update%[1]s(%%q): err = %%v, want ErrNotFound", id, err)
-		}
+		}%[5]s
 	}
-}
+%[6]s}
 
 // TODO: a round trip. Create a %[2]s with real values, Get it, List it,
 // Update it, Delete it; see posts_test.go for the shape.
-`, typ, name, module+"/app/domain", Camel(table), literal)
+`, typ, name, module+"/app/domain", Camel(table), updateInLoop, updateAfterLoop, scheme.sampleID())
 }
 
 func queries(name, table string, attrs []Attr) string {
@@ -112,11 +131,11 @@ func queries(name, table string, attrs []Attr) string {
 	return b.String()
 }
 
-func domainType(name string, attrs []Attr) string {
+func domainType(name string, attrs []Attr, scheme IDScheme) string {
 	typ := Camel(name)
 	imports := map[string]bool{"time": true}
 	for _, a := range attrs {
-		for _, imp := range kinds[a.Type].imports {
+		for _, imp := range kindFor(a, scheme).imports {
 			imports[imp] = true
 		}
 	}
@@ -126,8 +145,8 @@ func domainType(name string, attrs []Attr) string {
 		fmt.Fprintf(&b, "\t%q\n", imp)
 	}
 	b.WriteString(")\n\n")
-	fmt.Fprintf(&b, "// %s is a %s. Imports nothing third-party: ids are strings here and\n", typ, name)
-	b.WriteString("// become uuid at the store boundary.\n")
+	fmt.Fprintf(&b, "// %s is a %s. Imports nothing third-party: ids are %ss here and\n", typ, name, scheme.idDomain())
+	fmt.Fprintf(&b, "// become %s at the store boundary.\n", scheme)
 	fmt.Fprintf(&b, "type %s struct {\n", typ)
 	width := len("CreatedAt")
 	for _, a := range attrs {
@@ -135,9 +154,9 @@ func domainType(name string, attrs []Attr) string {
 			width = n
 		}
 	}
-	fmt.Fprintf(&b, "\t%-*s string\n", width, "ID")
+	fmt.Fprintf(&b, "\t%-*s %s\n", width, "ID", scheme.idDomain())
 	for _, a := range attrs {
-		fmt.Fprintf(&b, "\t%-*s %s\n", width, a.goName(), a.domainType())
+		fmt.Fprintf(&b, "\t%-*s %s\n", width, a.goName(), a.domainType(scheme))
 	}
 	fmt.Fprintf(&b, "\t%-*s time.Time\n", width, "CreatedAt")
 	fmt.Fprintf(&b, "\t%-*s time.Time\n", width, "UpdatedAt")
@@ -149,7 +168,7 @@ func domainType(name string, attrs []Attr) string {
 	return b.String()
 }
 
-func store(module, name, table string, attrs []Attr) string {
+func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 	typ := Camel(name)
 	recv := paramName(name, "s")
 	var b strings.Builder
@@ -172,11 +191,11 @@ func store(module, name, table string, attrs []Attr) string {
 		parts := make([]string, len(attrs))
 		for i, a := range attrs {
 			// uuid columns were parsed into a local by referenceChecks.
-			if kinds[a.Type].sqlcType == "pgtype.UUID" {
+			if kindFor(a, scheme).sqlcType == "pgtype.UUID" {
 				parts[i] = fmt.Sprintf("%s: %s", a.goName(), lowerCamel(a.Name))
 				continue
 			}
-			parts[i] = fmt.Sprintf("%s: %s", a.goName(), a.toRow(src+"."+a.goName()))
+			parts[i] = fmt.Sprintf("%s: %s", a.goName(), a.toRow(scheme, src+"."+a.goName()))
 		}
 		return strings.Join(parts, ", ")
 	}
@@ -187,14 +206,14 @@ func store(module, name, table string, attrs []Attr) string {
 	b.WriteString("// gets it and none can forget it.\n")
 	fmt.Fprintf(&b, "func (s *Store) Create%s(ctx context.Context, %s domain.%s) (domain.%s, error) {\n", typ, recv, typ, typ)
 	fmt.Fprintf(&b, "\tif err := %s.Validate(); err != nil {\n\t\treturn domain.%s{}, err\n\t}\n", recv, typ)
-	b.WriteString(referenceChecks(recv, typ, attrs))
+	b.WriteString(referenceChecks(recv, typ, attrs, scheme))
 	switch len(attrs) {
 	case 0:
 		fmt.Fprintf(&b, "\trow, err := s.q.Create%s(ctx)\n", typ)
 	case 1:
 		// sqlc makes a Params struct only for two or more parameters; one
 		// is passed as itself.
-		fmt.Fprintf(&b, "\trow, err := s.q.Create%s(ctx, %s)\n", typ, singleParam(recv, attrs[0]))
+		fmt.Fprintf(&b, "\trow, err := s.q.Create%s(ctx, %s)\n", typ, singleParam(recv, attrs[0], scheme))
 	default:
 		fmt.Fprintf(&b, "\trow, err := s.q.Create%s(ctx, Create%sParams{%s})\n", typ, typ, createParams(recv))
 	}
@@ -202,10 +221,10 @@ func store(module, name, table string, attrs []Attr) string {
 	fmt.Fprintf(&b, "\treturn %sFromRow(row), nil\n}\n\n", name)
 
 	// Get
-	fmt.Fprintf(&b, "// Get%s finds one %s. An id that is not a uuid is simply not found.\n", typ, name)
+	fmt.Fprintf(&b, "// Get%s finds one %s. An id that is not a %s is simply not found.\n", typ, name, scheme.notFoundWord())
 	fmt.Fprintf(&b, "func (s *Store) Get%s(ctx context.Context, id string) (domain.%s, error) {\n", typ, typ)
-	fmt.Fprintf(&b, "\tuid, err := parseUUID(id)\n\tif err != nil {\n\t\treturn domain.%s{}, domain.ErrNotFound\n\t}\n", typ)
-	fmt.Fprintf(&b, "\trow, err := s.q.Get%s(ctx, uid)\n\tswitch {\n\tcase errors.Is(err, pgx.ErrNoRows):\n\t\treturn domain.%s{}, domain.ErrNotFound\n", typ, typ)
+	fmt.Fprintf(&b, "\tpk, err := %s(id)\n\tif err != nil {\n\t\treturn domain.%s{}, domain.ErrNotFound\n\t}\n", scheme.parseFunc(), typ)
+	fmt.Fprintf(&b, "\trow, err := s.q.Get%s(ctx, pk)\n\tswitch {\n\tcase errors.Is(err, pgx.ErrNoRows):\n\t\treturn domain.%s{}, domain.ErrNotFound\n", typ, typ)
 	fmt.Fprintf(&b, "\tcase err != nil:\n\t\treturn domain.%s{}, fmt.Errorf(\"models: get %s %%s: %%w\", id, err)\n\t}\n", typ, name)
 	fmt.Fprintf(&b, "\treturn %sFromRow(row), nil\n}\n\n", name)
 
@@ -219,22 +238,29 @@ func store(module, name, table string, attrs []Attr) string {
 	fmt.Fprintf(&b, "// Update%s validates a %s, writes its columns, and returns the stored row.\n", typ, name)
 	fmt.Fprintf(&b, "func (s *Store) Update%s(ctx context.Context, %s domain.%s) (domain.%s, error) {\n", typ, recv, typ, typ)
 	fmt.Fprintf(&b, "\tif err := %s.Validate(); err != nil {\n\t\treturn domain.%s{}, err\n\t}\n", recv, typ)
-	fmt.Fprintf(&b, "\tuid, err := parseUUID(%s.ID)\n\tif err != nil {\n\t\treturn domain.%s{}, domain.ErrNotFound\n\t}\n", recv, typ)
-	b.WriteString(referenceChecks(recv, typ, attrs))
-	if len(attrs) == 0 {
-		fmt.Fprintf(&b, "\trow, err := s.q.Update%s(ctx, uid)\n", typ)
+	if scheme == IDUUID {
+		// The domain's id is a string here too, so it gets the same
+		// malformed-id-is-not-found treatment a URL-sourced id gets.
+		fmt.Fprintf(&b, "\tpk, err := parseUUID(%s.ID)\n\tif err != nil {\n\t\treturn domain.%s{}, domain.ErrNotFound\n\t}\n", recv, typ)
 	} else {
-		fmt.Fprintf(&b, "\trow, err := s.q.Update%s(ctx, Update%sParams{ID: uid, %s})\n", typ, typ, createParams(recv))
+		// Nothing to parse: the domain's id is already this scheme's type.
+		fmt.Fprintf(&b, "\tpk := %s.ID\n", recv)
+	}
+	b.WriteString(referenceChecks(recv, typ, attrs, scheme))
+	if len(attrs) == 0 {
+		fmt.Fprintf(&b, "\trow, err := s.q.Update%s(ctx, pk)\n", typ)
+	} else {
+		fmt.Fprintf(&b, "\trow, err := s.q.Update%s(ctx, Update%sParams{ID: pk, %s})\n", typ, typ, createParams(recv))
 	}
 	fmt.Fprintf(&b, "\tswitch {\n\tcase errors.Is(err, pgx.ErrNoRows):\n\t\treturn domain.%s{}, domain.ErrNotFound\n", typ)
-	fmt.Fprintf(&b, "\tcase err != nil:\n\t\treturn domain.%s{}, fmt.Errorf(\"models: update %s %%s: %%w\", %s.ID, err)\n\t}\n", typ, name, recv)
+	fmt.Fprintf(&b, "\tcase err != nil:\n\t\treturn domain.%s{}, fmt.Errorf(\"models: update %s %%v: %%w\", %s.ID, err)\n\t}\n", typ, name, recv)
 	fmt.Fprintf(&b, "\treturn %sFromRow(row), nil\n}\n\n", name)
 
 	// Delete
 	fmt.Fprintf(&b, "// Delete%s removes a %s, and says so if there was none.\n", typ, name)
 	fmt.Fprintf(&b, "func (s *Store) Delete%s(ctx context.Context, id string) error {\n", typ)
-	b.WriteString("\tuid, err := parseUUID(id)\n\tif err != nil {\n\t\treturn domain.ErrNotFound\n\t}\n")
-	fmt.Fprintf(&b, "\tn, err := s.q.Delete%s(ctx, uid)\n\tif err != nil {\n\t\treturn fmt.Errorf(\"models: delete %s %%s: %%w\", id, err)\n\t}\n", typ, name)
+	fmt.Fprintf(&b, "\tpk, err := %s(id)\n\tif err != nil {\n\t\treturn domain.ErrNotFound\n\t}\n", scheme.parseFunc())
+	fmt.Fprintf(&b, "\tn, err := s.q.Delete%s(ctx, pk)\n\tif err != nil {\n\t\treturn fmt.Errorf(\"models: delete %s %%s: %%w\", id, err)\n\t}\n", typ, name)
 	b.WriteString("\tif n == 0 {\n\t\treturn domain.ErrNotFound\n\t}\n\treturn nil\n}\n\n")
 
 	// fromRow
@@ -245,9 +271,9 @@ func store(module, name, table string, attrs []Attr) string {
 			width = n
 		}
 	}
-	fmt.Fprintf(&b, "\t\t%-*s uuidString(r.ID),\n", width, "ID:")
+	fmt.Fprintf(&b, "\t\t%-*s %s,\n", width, "ID:", scheme.idFromRow("r.ID"))
 	for _, a := range attrs {
-		fmt.Fprintf(&b, "\t\t%-*s %s,\n", width, a.goName()+":", a.fromRow("r."+a.goName()))
+		fmt.Fprintf(&b, "\t\t%-*s %s,\n", width, a.goName()+":", a.fromRow(scheme, "r."+a.goName()))
 	}
 	fmt.Fprintf(&b, "\t\t%-*s r.CreatedAt.Time,\n", width, "CreatedAt:")
 	fmt.Fprintf(&b, "\t\t%-*s r.UpdatedAt.Time,\n", width, "UpdatedAt:")
@@ -256,19 +282,21 @@ func store(module, name, table string, attrs []Attr) string {
 }
 
 // singleParam is the one argument sqlc's Create takes for a one-column model.
-func singleParam(recv string, a Attr) string {
-	if kinds[a.Type].sqlcType == "pgtype.UUID" {
+func singleParam(recv string, a Attr, scheme IDScheme) string {
+	if kindFor(a, scheme).sqlcType == "pgtype.UUID" {
 		return lowerCamel(a.Name)
 	}
-	return a.toRow(recv + "." + a.goName())
+	return a.toRow(scheme, recv+"."+a.goName())
 }
 
 // referenceChecks parses every uuid-typed attribute before the query, so a
-// malformed id is a validation error, not a database error.
-func referenceChecks(recv, typ string, attrs []Attr) string {
+// malformed id is a validation error, not a database error. Under the
+// bigint scheme a references attribute is a plain int64 like any other
+// integer column, so this writes nothing.
+func referenceChecks(recv, typ string, attrs []Attr, scheme IDScheme) string {
 	var b strings.Builder
 	for _, a := range attrs {
-		if kinds[a.Type].sqlcType != "pgtype.UUID" {
+		if kindFor(a, scheme).sqlcType != "pgtype.UUID" {
 			continue
 		}
 		v := lowerCamel(a.Name)

@@ -28,7 +28,7 @@ func Stamp(t time.Time) string { return t.UTC().Format("20060102150405") }
 // what the migration does: create_<table>, add_<x>_to_<table> and
 // remove_<x>_from_<table> get their SQL written; anything else gets an empty
 // Up and Down to fill in.
-func Migration(name string, attrs []Attr, now time.Time) (File, error) {
+func Migration(name string, attrs []Attr, scheme IDScheme, now time.Time) (File, error) {
 	if !namePattern.MatchString(name) {
 		return File{}, fmt.Errorf("%q is not a migration name: lowercase letters, digits and underscores", name)
 	}
@@ -38,13 +38,13 @@ func Migration(name string, attrs []Attr, now time.Time) (File, error) {
 	switch {
 	case createPattern.MatchString(name):
 		table := createPattern.FindStringSubmatch(name)[1]
-		up, down = createTable(table, attrs), "DROP TABLE "+table+";"
+		up, down = createTable(table, attrs, scheme), "DROP TABLE "+table+";"
 	case addPattern.MatchString(name) && len(attrs) > 0:
 		table := addPattern.FindStringSubmatch(name)[1]
-		up, down = addColumns(table, attrs), dropColumns(table, attrs)
+		up, down = addColumns(table, attrs, scheme), dropColumns(table, attrs)
 	case removePattern.MatchString(name) && len(attrs) > 0:
 		table := removePattern.FindStringSubmatch(name)[1]
-		up, down = dropColumns(table, attrs), addColumns(table, attrs)
+		up, down = dropColumns(table, attrs), addColumns(table, attrs, scheme)
 	default:
 		up = "-- TODO: the change. Every statement here must be undone below."
 		down = "-- TODO: undo the change above, exactly."
@@ -54,12 +54,13 @@ func Migration(name string, attrs []Attr, now time.Time) (File, error) {
 	return File{Path: path, Content: content}, nil
 }
 
-func createTable(table string, attrs []Attr) string {
+func createTable(table string, attrs []Attr, scheme IDScheme) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "CREATE TABLE %s (\n", table)
-	fmt.Fprintf(&b, "    %-10s %-11s %s,\n", "id", "uuid", "PRIMARY KEY DEFAULT gen_random_uuid()")
+	idType, idDef := scheme.idColumn()
+	fmt.Fprintf(&b, "    %-10s %-11s %s,\n", "id", idType, idDef)
 	for _, a := range attrs {
-		fmt.Fprintf(&b, "%s,\n", a.column())
+		fmt.Fprintf(&b, "%s,\n", a.column(scheme))
 	}
 	fmt.Fprintf(&b, "    %-10s %-11s %s,\n", "created_at", "timestamptz", "NOT NULL DEFAULT now()")
 	fmt.Fprintf(&b, "    %-10s %-11s %s\n", "updated_at", "timestamptz", "NOT NULL DEFAULT now()")
@@ -72,10 +73,10 @@ func createTable(table string, attrs []Attr) string {
 	return b.String()
 }
 
-func addColumns(table string, attrs []Attr) string {
+func addColumns(table string, attrs []Attr, scheme IDScheme) string {
 	var lines []string
 	for _, a := range attrs {
-		lines = append(lines, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s;", table, strings.Join(strings.Fields(a.column()), " ")))
+		lines = append(lines, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s;", table, strings.Join(strings.Fields(a.column(scheme)), " ")))
 		if s := a.indexStatement(table); s != "" {
 			lines = append(lines, s)
 		}

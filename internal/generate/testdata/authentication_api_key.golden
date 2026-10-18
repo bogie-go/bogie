@@ -1,7 +1,7 @@
 ==> db/migrate/20261002093000_create_api_keys.sql
 -- +goose Up
 CREATE TABLE api_keys (
-    id         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+    id         bigserial   PRIMARY KEY,
     name       varchar     NOT NULL DEFAULT '',
     prefix     varchar     NOT NULL DEFAULT '' UNIQUE,
     digest     varchar     NOT NULL DEFAULT '',
@@ -36,10 +36,10 @@ import (
 	"time"
 )
 
-// ApiKey is a api_key. Imports nothing third-party: ids are strings here and
-// become uuid at the store boundary.
+// ApiKey is a api_key. Imports nothing third-party: ids are int64s here and
+// become bigint at the store boundary.
 type ApiKey struct {
-	ID        string
+	ID        int64
 	Name      string
 	Prefix    string
 	Digest    string
@@ -86,13 +86,13 @@ func (s *Store) CreateApiKey(ctx context.Context, a domain.ApiKey) (domain.ApiKe
 	return api_keyFromRow(row), nil
 }
 
-// GetApiKey finds one api_key. An id that is not a uuid is simply not found.
+// GetApiKey finds one api_key. An id that is not a valid id is simply not found.
 func (s *Store) GetApiKey(ctx context.Context, id string) (domain.ApiKey, error) {
-	uid, err := parseUUID(id)
+	pk, err := parseID(id)
 	if err != nil {
 		return domain.ApiKey{}, domain.ErrNotFound
 	}
-	row, err := s.q.GetApiKey(ctx, uid)
+	row, err := s.q.GetApiKey(ctx, pk)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return domain.ApiKey{}, domain.ErrNotFound
@@ -120,27 +120,24 @@ func (s *Store) UpdateApiKey(ctx context.Context, a domain.ApiKey) (domain.ApiKe
 	if err := a.Validate(); err != nil {
 		return domain.ApiKey{}, err
 	}
-	uid, err := parseUUID(a.ID)
-	if err != nil {
-		return domain.ApiKey{}, domain.ErrNotFound
-	}
-	row, err := s.q.UpdateApiKey(ctx, UpdateApiKeyParams{ID: uid, Name: a.Name, Prefix: a.Prefix, Digest: a.Digest})
+	pk := a.ID
+	row, err := s.q.UpdateApiKey(ctx, UpdateApiKeyParams{ID: pk, Name: a.Name, Prefix: a.Prefix, Digest: a.Digest})
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return domain.ApiKey{}, domain.ErrNotFound
 	case err != nil:
-		return domain.ApiKey{}, fmt.Errorf("models: update api_key %s: %w", a.ID, err)
+		return domain.ApiKey{}, fmt.Errorf("models: update api_key %v: %w", a.ID, err)
 	}
 	return api_keyFromRow(row), nil
 }
 
 // DeleteApiKey removes a api_key, and says so if there was none.
 func (s *Store) DeleteApiKey(ctx context.Context, id string) error {
-	uid, err := parseUUID(id)
+	pk, err := parseID(id)
 	if err != nil {
 		return domain.ErrNotFound
 	}
-	n, err := s.q.DeleteApiKey(ctx, uid)
+	n, err := s.q.DeleteApiKey(ctx, pk)
 	if err != nil {
 		return fmt.Errorf("models: delete api_key %s: %w", id, err)
 	}
@@ -152,7 +149,7 @@ func (s *Store) DeleteApiKey(ctx context.Context, id string) error {
 
 func api_keyFromRow(r ApiKey) domain.ApiKey {
 	return domain.ApiKey{
-		ID:        uuidString(r.ID),
+		ID:        r.ID,
 		Name:      r.Name,
 		Prefix:    r.Prefix,
 		Digest:    r.Digest,
@@ -190,16 +187,17 @@ func TestUnknownApiKeysAreNotFound(t *testing.T) {
 	store := testStore(t)
 	ctx := context.Background()
 
-	for _, id := range []string{"nope", "", "00000000-0000-4000-8000-000000000000"} {
+	for _, id := range []string{"nope", "", "999999999"} {
 		if _, err := store.GetApiKey(ctx, id); !errors.Is(err, domain.ErrNotFound) {
 			t.Errorf("GetApiKey(%q): err = %v, want ErrNotFound", id, err)
 		}
 		if err := store.DeleteApiKey(ctx, id); !errors.Is(err, domain.ErrNotFound) {
 			t.Errorf("DeleteApiKey(%q): err = %v, want ErrNotFound", id, err)
 		}
-		if _, err := store.UpdateApiKey(ctx, domain.ApiKey{ID: id}); !errors.Is(err, domain.ErrNotFound) {
-			t.Errorf("UpdateApiKey(%q): err = %v, want ErrNotFound", id, err)
-		}
+	}
+
+	if _, err := store.UpdateApiKey(ctx, domain.ApiKey{ID: 999999999}); !errors.Is(err, domain.ErrNotFound) {
+		t.Errorf("UpdateApiKey(%d): err = %v, want ErrNotFound", 999999999, err)
 	}
 }
 
@@ -303,7 +301,7 @@ import (
 type fakeStore struct{ keys map[string]domain.ApiKey }
 
 func (f *fakeStore) CreateApiKey(_ context.Context, k domain.ApiKey) (domain.ApiKey, error) {
-	k.ID = "id-" + k.Prefix
+	k.ID = int64(len(f.keys) + 1)
 	f.keys[k.Prefix] = k
 	return k, nil
 }
@@ -496,7 +494,7 @@ func runAPIKeys(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "api key %q made (%s); it is shown once:\n", made.Name, made.ID)
+	fmt.Fprintf(os.Stderr, "api key %q made (%v); it is shown once:\n", made.Name, made.ID)
 	fmt.Println(key)
 	return nil
 }

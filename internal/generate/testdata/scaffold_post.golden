@@ -1,12 +1,12 @@
 ==> db/migrate/20261002093000_create_posts.sql
 -- +goose Up
 CREATE TABLE posts (
-    id         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+    id         bigserial   PRIMARY KEY,
     title      varchar     NOT NULL DEFAULT '',
     body       text        NOT NULL DEFAULT '',
     score      integer     NOT NULL DEFAULT 0,
     published_at timestamptz NOT NULL,
-    author_id  uuid        NOT NULL REFERENCES authors (id),
+    author_id  bigint      NOT NULL REFERENCES authors (id),
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -36,15 +36,15 @@ import (
 	"time"
 )
 
-// Post is a post. Imports nothing third-party: ids are strings here and
-// become uuid at the store boundary.
+// Post is a post. Imports nothing third-party: ids are int64s here and
+// become bigint at the store boundary.
 type Post struct {
-	ID          string
+	ID          int64
 	Title       string
 	Body        string
 	Score       int32
 	PublishedAt time.Time
-	AuthorID    string
+	AuthorID    int64
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
@@ -82,24 +82,20 @@ func (s *Store) CreatePost(ctx context.Context, p domain.Post) (domain.Post, err
 	if err := p.Validate(); err != nil {
 		return domain.Post{}, err
 	}
-	authorID, err := parseUUID(p.AuthorID)
-	if err != nil {
-		return domain.Post{}, fmt.Errorf("%w: author_id is not a uuid", domain.ErrInvalid)
-	}
-	row, err := s.q.CreatePost(ctx, CreatePostParams{Title: p.Title, Body: p.Body, Score: p.Score, PublishedAt: pgtype.Timestamptz{Time: p.PublishedAt, Valid: true}, AuthorID: authorID})
+	row, err := s.q.CreatePost(ctx, CreatePostParams{Title: p.Title, Body: p.Body, Score: p.Score, PublishedAt: pgtype.Timestamptz{Time: p.PublishedAt, Valid: true}, AuthorID: p.AuthorID})
 	if err != nil {
 		return domain.Post{}, fmt.Errorf("models: create post: %w", err)
 	}
 	return postFromRow(row), nil
 }
 
-// GetPost finds one post. An id that is not a uuid is simply not found.
+// GetPost finds one post. An id that is not a valid id is simply not found.
 func (s *Store) GetPost(ctx context.Context, id string) (domain.Post, error) {
-	uid, err := parseUUID(id)
+	pk, err := parseID(id)
 	if err != nil {
 		return domain.Post{}, domain.ErrNotFound
 	}
-	row, err := s.q.GetPost(ctx, uid)
+	row, err := s.q.GetPost(ctx, pk)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return domain.Post{}, domain.ErrNotFound
@@ -127,31 +123,24 @@ func (s *Store) UpdatePost(ctx context.Context, p domain.Post) (domain.Post, err
 	if err := p.Validate(); err != nil {
 		return domain.Post{}, err
 	}
-	uid, err := parseUUID(p.ID)
-	if err != nil {
-		return domain.Post{}, domain.ErrNotFound
-	}
-	authorID, err := parseUUID(p.AuthorID)
-	if err != nil {
-		return domain.Post{}, fmt.Errorf("%w: author_id is not a uuid", domain.ErrInvalid)
-	}
-	row, err := s.q.UpdatePost(ctx, UpdatePostParams{ID: uid, Title: p.Title, Body: p.Body, Score: p.Score, PublishedAt: pgtype.Timestamptz{Time: p.PublishedAt, Valid: true}, AuthorID: authorID})
+	pk := p.ID
+	row, err := s.q.UpdatePost(ctx, UpdatePostParams{ID: pk, Title: p.Title, Body: p.Body, Score: p.Score, PublishedAt: pgtype.Timestamptz{Time: p.PublishedAt, Valid: true}, AuthorID: p.AuthorID})
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return domain.Post{}, domain.ErrNotFound
 	case err != nil:
-		return domain.Post{}, fmt.Errorf("models: update post %s: %w", p.ID, err)
+		return domain.Post{}, fmt.Errorf("models: update post %v: %w", p.ID, err)
 	}
 	return postFromRow(row), nil
 }
 
 // DeletePost removes a post, and says so if there was none.
 func (s *Store) DeletePost(ctx context.Context, id string) error {
-	uid, err := parseUUID(id)
+	pk, err := parseID(id)
 	if err != nil {
 		return domain.ErrNotFound
 	}
-	n, err := s.q.DeletePost(ctx, uid)
+	n, err := s.q.DeletePost(ctx, pk)
 	if err != nil {
 		return fmt.Errorf("models: delete post %s: %w", id, err)
 	}
@@ -163,12 +152,12 @@ func (s *Store) DeletePost(ctx context.Context, id string) error {
 
 func postFromRow(r Post) domain.Post {
 	return domain.Post{
-		ID:          uuidString(r.ID),
+		ID:          r.ID,
 		Title:       r.Title,
 		Body:        r.Body,
 		Score:       r.Score,
 		PublishedAt: r.PublishedAt.Time,
-		AuthorID:    uuidString(r.AuthorID),
+		AuthorID:    r.AuthorID,
 		CreatedAt:   r.CreatedAt.Time,
 		UpdatedAt:   r.UpdatedAt.Time,
 	}
@@ -190,16 +179,17 @@ func TestUnknownPostsAreNotFound(t *testing.T) {
 	store := testStore(t)
 	ctx := context.Background()
 
-	for _, id := range []string{"nope", "", "00000000-0000-4000-8000-000000000000"} {
+	for _, id := range []string{"nope", "", "999999999"} {
 		if _, err := store.GetPost(ctx, id); !errors.Is(err, domain.ErrNotFound) {
 			t.Errorf("GetPost(%q): err = %v, want ErrNotFound", id, err)
 		}
 		if err := store.DeletePost(ctx, id); !errors.Is(err, domain.ErrNotFound) {
 			t.Errorf("DeletePost(%q): err = %v, want ErrNotFound", id, err)
 		}
-		if _, err := store.UpdatePost(ctx, domain.Post{ID: id, AuthorID: "00000000-0000-4000-8000-000000000000"}); !errors.Is(err, domain.ErrNotFound) {
-			t.Errorf("UpdatePost(%q): err = %v, want ErrNotFound", id, err)
-		}
+	}
+
+	if _, err := store.UpdatePost(ctx, domain.Post{ID: 999999999}); !errors.Is(err, domain.ErrNotFound) {
+		t.Errorf("UpdatePost(%d): err = %v, want ErrNotFound", 999999999, err)
 	}
 }
 
@@ -218,17 +208,17 @@ type PostRequest struct {
 	Body        string    `json:"body"`
 	Score       int32     `json:"score"`
 	PublishedAt time.Time `json:"published_at"`
-	AuthorID    string    `json:"author_id"`
+	AuthorID    int64     `json:"author_id"`
 }
 
 // PostResponse is one post on the wire.
 type PostResponse struct {
-	ID          string    `json:"id"`
+	ID          int64     `json:"id"`
 	Title       string    `json:"title"`
 	Body        string    `json:"body"`
 	Score       int32     `json:"score"`
 	PublishedAt time.Time `json:"published_at"`
-	AuthorID    string    `json:"author_id"`
+	AuthorID    int64     `json:"author_id"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -345,7 +335,7 @@ func (ctl *PostsController) Update(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, views.Error(err))
 		return
 	}
-	p, err = ctl.Store.UpdatePost(c.Request.Context(), domain.Post{ID: c.Param("id"), Title: req.Title, Body: req.Body, Score: req.Score, PublishedAt: req.PublishedAt, AuthorID: req.AuthorID})
+	p, err = ctl.Store.UpdatePost(c.Request.Context(), domain.Post{ID: p.ID, Title: req.Title, Body: req.Body, Score: req.Score, PublishedAt: req.PublishedAt, AuthorID: req.AuthorID})
 	if err != nil {
 		ctl.fail(c, err)
 		return
@@ -446,7 +436,7 @@ func (f *fakePostsStore) ListPosts(context.Context, int32) ([]domain.Post, error
 }
 
 func (f *fakePostsStore) UpdatePost(_ context.Context, p domain.Post) (domain.Post, error) {
-	f.gotID, f.got = p.ID, p
+	f.got = p
 	return f.one, f.err
 }
 
@@ -471,19 +461,19 @@ func postsRequest(t *testing.T, store *fakePostsStore, method, path, body string
 }
 
 func TestPostsIndexLists(t *testing.T) {
-	store := &fakePostsStore{many: []domain.Post{{ID: "a"}, {ID: "b"}}}
+	store := &fakePostsStore{many: []domain.Post{{ID: 1}, {ID: 2}}}
 	rec := postsRequest(t, store, http.MethodGet, "/posts", "")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
 	}
 	var body struct {
-		Posts []struct{ ID string } `json:"posts"`
+		Posts []struct{ ID int64 } `json:"posts"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if len(body.Posts) != 2 || body.Posts[1].ID != "b" {
+	if len(body.Posts) != 2 || body.Posts[1].ID != 2 {
 		t.Errorf("body = %+v", body)
 	}
 }
@@ -496,8 +486,8 @@ func TestPostsShowUnknownIs404(t *testing.T) {
 }
 
 func TestPostsCreatePassesTheBodyThroughAndAnswers201(t *testing.T) {
-	store := &fakePostsStore{one: domain.Post{ID: "a"}}
-	rec := postsRequest(t, store, http.MethodPost, "/posts", `{"title":"Hello","body":"Hello","score":7,"published_at":"2026-10-02T09:30:00Z","author_id":"00000000-0000-4000-8000-000000000000"}`)
+	store := &fakePostsStore{one: domain.Post{ID: 1}}
+	rec := postsRequest(t, store, http.MethodPost, "/posts", `{"title":"Hello","body":"Hello","score":7,"published_at":"2026-10-02T09:30:00Z","author_id":1}`)
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
@@ -505,7 +495,7 @@ func TestPostsCreatePassesTheBodyThroughAndAnswers201(t *testing.T) {
 	if store.got.Title != "Hello" {
 		t.Errorf("store got Title = %v", store.got.Title)
 	}
-	if !strings.Contains(rec.Body.String(), `"id":"a"`) {
+	if !strings.Contains(rec.Body.String(), `"id":1`) {
 		t.Errorf("body = %s", rec.Body)
 	}
 }
@@ -514,7 +504,7 @@ func TestPostsCreatePassesTheBodyThroughAndAnswers201(t *testing.T) {
 // job is to say 422.
 func TestPostsCreateInvalidIs422(t *testing.T) {
 	store := &fakePostsStore{err: errors.Join(domain.ErrInvalid, errors.New("not valid"))}
-	rec := postsRequest(t, store, http.MethodPost, "/posts", `{"title":"Hello","body":"Hello","score":7,"published_at":"2026-10-02T09:30:00Z","author_id":"00000000-0000-4000-8000-000000000000"}`)
+	rec := postsRequest(t, store, http.MethodPost, "/posts", `{"title":"Hello","body":"Hello","score":7,"published_at":"2026-10-02T09:30:00Z","author_id":1}`)
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Errorf("status = %d, want 422: %s", rec.Code, rec.Body)
 	}
@@ -530,7 +520,7 @@ func TestPostsCreateMalformedJSONIs400(t *testing.T) {
 // PATCH is partial, as in Rails: a field the body leaves out keeps its
 // stored value rather than being blanked.
 func TestPostsUpdateChangesOnlyTheFieldsSent(t *testing.T) {
-	store := &fakePostsStore{one: domain.Post{ID: "a", Title: "Hello", Body: "Hello", Score: 7, AuthorID: "00000000-0000-4000-8000-000000000000"}}
+	store := &fakePostsStore{one: domain.Post{ID: 1, Title: "Hello", Body: "Hello", Score: 7, AuthorID: 1}}
 	rec := postsRequest(t, store, http.MethodPatch, "/posts/a", `{"title":"Edited"}`)
 
 	if rec.Code != http.StatusOK {
@@ -545,7 +535,7 @@ func TestPostsUpdateChangesOnlyTheFieldsSent(t *testing.T) {
 	if store.got.Score != 7 {
 		t.Errorf("store got Score = %v, want it kept", store.got.Score)
 	}
-	if store.got.AuthorID != "00000000-0000-4000-8000-000000000000" {
+	if store.got.AuthorID != 1 {
 		t.Errorf("store got AuthorID = %v, want it kept", store.got.AuthorID)
 	}
 }

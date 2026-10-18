@@ -30,6 +30,9 @@ type kind struct {
 // is NOT NULL: a nullable column makes sqlc emit a pointer, and a pointer in
 // the domain is a nil check in every caller. A model that truly needs null
 // edits the migration by hand, which is one line.
+//
+// "references" has no entry here: what a foreign key is made of depends on
+// the app's IDScheme, not the attribute, so it is resolved by kindFor.
 var kinds = map[string]kind{
 	"string":   {sql: "varchar", sqlDef: "NOT NULL DEFAULT ''", domain: "string", sqlcType: "string", toRow: "%s", fromRow: "%s"},
 	"text":     {sql: "text", sqlDef: "NOT NULL DEFAULT ''", domain: "string", sqlcType: "string", toRow: "%s", fromRow: "%s"},
@@ -40,8 +43,119 @@ var kinds = map[string]kind{
 	"uuid":     {sql: "uuid", sqlDef: "NOT NULL", domain: "string", sqlcType: "pgtype.UUID", toRow: "%s", fromRow: "uuidString(%s)"},
 	// json.RawMessage and []byte assign to each other without a conversion,
 	// so the store needs no encoding/json import.
-	"jsonb":      {sql: "jsonb", sqlDef: "NOT NULL DEFAULT '{}'", domain: "json.RawMessage", sqlcType: "[]byte", toRow: "%s", fromRow: "%s", imports: []string{"encoding/json"}},
-	"references": {sql: "uuid", sqlDef: "NOT NULL", domain: "string", sqlcType: "pgtype.UUID", toRow: "%s", fromRow: "uuidString(%s)", reference: true},
+	"jsonb": {sql: "jsonb", sqlDef: "NOT NULL DEFAULT '{}'", domain: "json.RawMessage", sqlcType: "[]byte", toRow: "%s", fromRow: "%s", imports: []string{"encoding/json"}},
+	// references is a placeholder so ParseAttrs and the help text see a
+	// known type name; kindFor never reads this entry.
+	"references": {reference: true},
+}
+
+// IDScheme is how an app's primary keys and foreign keys are made: bigint
+// (Rails's own default, an auto-incrementing bigserial) or uuid. Chosen once
+// per app at `bogie new` time, recorded in bogie.toml, and threaded through
+// every generator that writes an id or a references column, so an app never
+// mixes the two.
+type IDScheme string
+
+const (
+	IDBigint IDScheme = "bigint"
+	IDUUID   IDScheme = "uuid"
+)
+
+// IsValid reports whether s is a scheme bogie knows, so a bad --id flag or a
+// hand-edited bogie.toml fails with a clear message instead of generating
+// the wrong thing silently.
+func (s IDScheme) IsValid() bool { return s == IDBigint || s == IDUUID }
+
+// idColumn is the "id" column's own line in CREATE TABLE: its type, and
+// however this scheme generates a new one.
+func (s IDScheme) idColumn() (sqlType, def string) {
+	if s == IDUUID {
+		return "uuid", "PRIMARY KEY DEFAULT gen_random_uuid()"
+	}
+	return "bigserial", "PRIMARY KEY"
+}
+
+// referencesKind is what a `post:references` attribute becomes under this
+// scheme: a foreign key is always the same shape as the id it points to.
+func (s IDScheme) referencesKind() kind {
+	if s == IDUUID {
+		return kind{sql: "uuid", sqlDef: "NOT NULL", domain: "string", sqlcType: "pgtype.UUID", toRow: "%s", fromRow: "uuidString(%s)", reference: true}
+	}
+	return kind{sql: "bigint", sqlDef: "NOT NULL", domain: "int64", sqlcType: "int64", toRow: "%s", fromRow: "%s", reference: true}
+}
+
+// idDomain and idSQLCType are the model's own ID field's type: in
+// app/domain, and what sqlc emits for the column sqlc scans it from.
+func (s IDScheme) idDomain() string {
+	if s == IDUUID {
+		return "string"
+	}
+	return "int64"
+}
+func (s IDScheme) idSQLCType() string {
+	if s == IDUUID {
+		return "pgtype.UUID"
+	}
+	return "int64"
+}
+
+// parseFunc is the store helper, from app/models/uuid.go or id.go, that
+// turns a URL path string into this scheme's id type.
+func (s IDScheme) parseFunc() string {
+	if s == IDUUID {
+		return "parseUUID"
+	}
+	return "parseID"
+}
+
+// idFromRow converts a scanned row's ID (expr) to the domain's id type.
+func (s IDScheme) idFromRow(expr string) string {
+	if s == IDUUID {
+		return "uuidString(" + expr + ")"
+	}
+	return expr
+}
+
+// notFoundWord names what a malformed id is not, for the Get/Update/Delete
+// doc comments: "An id that is not a uuid/valid id is simply not found."
+func (s IDScheme) notFoundWord() string {
+	if s == IDUUID {
+		return "uuid"
+	}
+	return "valid id"
+}
+
+// sampleID is a well-formed id that names nothing, for a generated test's
+// not-found cases.
+func (s IDScheme) sampleID() string {
+	if s == IDUUID {
+		return "00000000-0000-4000-8000-000000000000"
+	}
+	return "999999999"
+}
+
+// testIDs are two distinct, well-formed id values, written as Go source,
+// for a generated controller test that needs two different domain ids to
+// tell apart (e.g. a two-item Index list). The text doubles as the JSON a
+// value of this type renders as: a Go string literal is already quoted the
+// way JSON quotes a string, and a bare int64 literal already is its own
+// JSON number, so the same two strings work as a struct literal, a
+// comparison, and a response-body substring to look for.
+func (s IDScheme) testIDs() (a, b string) {
+	if s == IDUUID {
+		return `"a"`, `"b"`
+	}
+	return "1", "2"
+}
+
+// kindFor resolves an attribute to its kind under scheme: every type but
+// references is scheme-independent and comes straight from kinds; a
+// references attribute is whatever shape this scheme's foreign keys are.
+func kindFor(a Attr, scheme IDScheme) kind {
+	if a.Type == "references" {
+		return scheme.referencesKind()
+	}
+	return kinds[a.Type]
 }
 
 var attrPattern = regexp.MustCompile(`^([a-z][a-z0-9_]*)(?::([a-z]+))?(?::(index|uniq))?$`)
@@ -92,8 +206,8 @@ func sortStrings(s []string) {
 
 // column is the attr's line in CREATE TABLE, padded to align with the fixed
 // columns around it.
-func (a Attr) column() string {
-	k := kinds[a.Type]
+func (a Attr) column(scheme IDScheme) string {
+	k := kindFor(a, scheme)
 	def := k.sqlDef
 	if a.Type == "references" {
 		def += fmt.Sprintf(" REFERENCES %s (id)", Plural(strings.TrimSuffix(a.Name, "_id")))
@@ -112,11 +226,13 @@ func (a Attr) indexStatement(table string) string {
 	return fmt.Sprintf("CREATE INDEX %s_%s_idx ON %s (%s);", table, a.Name, table, a.Name)
 }
 
-func (a Attr) goName() string     { return Camel(a.Name) }
-func (a Attr) domainType() string { return kinds[a.Type].domain }
-func (a Attr) toRow(expr string) string {
-	return fmt.Sprintf(kinds[a.Type].toRow, expr)
+func (a Attr) goName() string { return Camel(a.Name) }
+func (a Attr) domainType(scheme IDScheme) string {
+	return kindFor(a, scheme).domain
 }
-func (a Attr) fromRow(expr string) string {
-	return fmt.Sprintf(kinds[a.Type].fromRow, expr)
+func (a Attr) toRow(scheme IDScheme, expr string) string {
+	return fmt.Sprintf(kindFor(a, scheme).toRow, expr)
+}
+func (a Attr) fromRow(scheme IDScheme, expr string) string {
+	return fmt.Sprintf(kindFor(a, scheme).fromRow, expr)
 }

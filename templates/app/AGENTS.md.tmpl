@@ -284,6 +284,12 @@ Every generated column is NOT NULL with a type-appropriate default, so sqlc
 emits plain Go types rather than pointers. A column that truly needs null is
 one edit to the migration.
 
+This app's id scheme is `{{.IDScheme}}`, recorded in `bogie.toml` at `bogie
+new` time: every `id` column and every `:references` foreign key is made of
+it, so `domain.Comment.ID` is {{if eq .IDScheme "uuid"}}a `string`{{else}}an
+`int64`{{end}}. It is chosen once, app-wide — `bogie new NAME --id=uuid`
+picks uuid instead of the bigint default — and cannot be mixed per model.
+
 A hand-written addition to the store — a helper, a query wrapper, anything
 beyond what the generator writes — goes in a sibling file in `app/models/`,
 such as `app/models/comments_extra.go`, not inside the generated

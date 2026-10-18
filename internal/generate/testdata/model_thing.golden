@@ -1,7 +1,7 @@
 ==> db/migrate/20261002093000_create_things.sql
 -- +goose Up
 CREATE TABLE things (
-    id         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+    id         bigserial   PRIMARY KEY,
     name       varchar     NOT NULL DEFAULT '',
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
@@ -31,10 +31,10 @@ import (
 	"time"
 )
 
-// Thing is a thing. Imports nothing third-party: ids are strings here and
-// become uuid at the store boundary.
+// Thing is a thing. Imports nothing third-party: ids are int64s here and
+// become bigint at the store boundary.
 type Thing struct {
-	ID        string
+	ID        int64
 	Name      string
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -79,13 +79,13 @@ func (s *Store) CreateThing(ctx context.Context, t domain.Thing) (domain.Thing, 
 	return thingFromRow(row), nil
 }
 
-// GetThing finds one thing. An id that is not a uuid is simply not found.
+// GetThing finds one thing. An id that is not a valid id is simply not found.
 func (s *Store) GetThing(ctx context.Context, id string) (domain.Thing, error) {
-	uid, err := parseUUID(id)
+	pk, err := parseID(id)
 	if err != nil {
 		return domain.Thing{}, domain.ErrNotFound
 	}
-	row, err := s.q.GetThing(ctx, uid)
+	row, err := s.q.GetThing(ctx, pk)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return domain.Thing{}, domain.ErrNotFound
@@ -113,27 +113,24 @@ func (s *Store) UpdateThing(ctx context.Context, t domain.Thing) (domain.Thing, 
 	if err := t.Validate(); err != nil {
 		return domain.Thing{}, err
 	}
-	uid, err := parseUUID(t.ID)
-	if err != nil {
-		return domain.Thing{}, domain.ErrNotFound
-	}
-	row, err := s.q.UpdateThing(ctx, UpdateThingParams{ID: uid, Name: t.Name})
+	pk := t.ID
+	row, err := s.q.UpdateThing(ctx, UpdateThingParams{ID: pk, Name: t.Name})
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return domain.Thing{}, domain.ErrNotFound
 	case err != nil:
-		return domain.Thing{}, fmt.Errorf("models: update thing %s: %w", t.ID, err)
+		return domain.Thing{}, fmt.Errorf("models: update thing %v: %w", t.ID, err)
 	}
 	return thingFromRow(row), nil
 }
 
 // DeleteThing removes a thing, and says so if there was none.
 func (s *Store) DeleteThing(ctx context.Context, id string) error {
-	uid, err := parseUUID(id)
+	pk, err := parseID(id)
 	if err != nil {
 		return domain.ErrNotFound
 	}
-	n, err := s.q.DeleteThing(ctx, uid)
+	n, err := s.q.DeleteThing(ctx, pk)
 	if err != nil {
 		return fmt.Errorf("models: delete thing %s: %w", id, err)
 	}
@@ -145,7 +142,7 @@ func (s *Store) DeleteThing(ctx context.Context, id string) error {
 
 func thingFromRow(r Thing) domain.Thing {
 	return domain.Thing{
-		ID:        uuidString(r.ID),
+		ID:        r.ID,
 		Name:      r.Name,
 		CreatedAt: r.CreatedAt.Time,
 		UpdatedAt: r.UpdatedAt.Time,
@@ -168,16 +165,17 @@ func TestUnknownThingsAreNotFound(t *testing.T) {
 	store := testStore(t)
 	ctx := context.Background()
 
-	for _, id := range []string{"nope", "", "00000000-0000-4000-8000-000000000000"} {
+	for _, id := range []string{"nope", "", "999999999"} {
 		if _, err := store.GetThing(ctx, id); !errors.Is(err, domain.ErrNotFound) {
 			t.Errorf("GetThing(%q): err = %v, want ErrNotFound", id, err)
 		}
 		if err := store.DeleteThing(ctx, id); !errors.Is(err, domain.ErrNotFound) {
 			t.Errorf("DeleteThing(%q): err = %v, want ErrNotFound", id, err)
 		}
-		if _, err := store.UpdateThing(ctx, domain.Thing{ID: id}); !errors.Is(err, domain.ErrNotFound) {
-			t.Errorf("UpdateThing(%q): err = %v, want ErrNotFound", id, err)
-		}
+	}
+
+	if _, err := store.UpdateThing(ctx, domain.Thing{ID: 999999999}); !errors.Is(err, domain.ErrNotFound) {
+		t.Errorf("UpdateThing(%d): err = %v, want ErrNotFound", 999999999, err)
 	}
 }
 

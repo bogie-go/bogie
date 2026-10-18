@@ -75,7 +75,10 @@ Rails's `Post` is one class that is a table, a type and a query builder.
 Here that is three files, each with one job:
 
 - **`app/domain/post.go`** is the type and its `Validate`. It imports nothing
-  third-party (rule 3). Ids are strings here; the store turns them into uuids.
+  third-party (rule 3). Ids are whatever the app's scheme is at the store
+  boundary: `int64` under the default bigint (`bogie new`'s own id, auto-
+  incrementing, the way Rails's own default is), or a string under uuid
+  (`bogie new NAME --id=uuid`).
 - **`db/queries/posts.sql`** is the SQL, by name: `GetPost`, `ListPosts`,
   `CreatePost`. sqlc compiles it into `app/models/posts.sql.go`, and a
   query that names a column that does not exist fails at `make sqlc`, not

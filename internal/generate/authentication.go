@@ -46,8 +46,8 @@ func AuthenticationSettings(name, shape string) []Setting {
 // group helper on the root Server, and for api_key the model, the service
 // and the CLI command; and the lines that register it, in config.go for a
 // setting, in the root wiring for a service, in main.go for a command.
-func Authentication(module, name, shape string, now time.Time) ([]File, []Wire, error) {
-	a := auth{module: module, name: name}
+func Authentication(module, name, shape string, scheme IDScheme, now time.Time) ([]File, []Wire, error) {
+	a := auth{module: module, name: name, scheme: scheme}
 	var files []File
 	var wires []Wire
 	var err error
@@ -101,7 +101,10 @@ func AuthenticationWirePrefixes(name, shape string) []Wire {
 	return ws
 }
 
-type auth struct{ module, name string }
+type auth struct {
+	module, name string
+	scheme       IDScheme
+}
 
 func (a auth) header() string { return "X-" + Camel(a.name) + "-Secret" }
 
@@ -490,12 +493,23 @@ func (s *Server) WithUser(r *gin.RouterGroup) *gin.RouterGroup {
 	return files, a.settingWires(setting), nil
 }
 
+// fakeIDAssign is a Go expression the api_keys service's fake store uses to
+// make up an id for a key it "creates", in the domain's id type: a string
+// derived from the prefix under the uuid scheme (any string compiles,
+// whether or not it looks like a uuid), or a counter under bigint.
+func fakeIDAssign(scheme IDScheme) string {
+	if scheme == IDUUID {
+		return `"id-" + k.Prefix`
+	}
+	return "int64(len(f.keys) + 1)"
+}
+
 func (a auth) apiKey(now time.Time) ([]File, []Wire, error) {
 	attrs, err := ParseAttrs([]string{"name:string", "prefix:string:uniq", "digest:string"})
 	if err != nil {
 		return nil, nil, err
 	}
-	files, err := Model(a.module, "api_key", attrs, now)
+	files, err := Model(a.module, "api_key", attrs, a.scheme, now)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -621,7 +635,7 @@ import (
 type fakeStore struct{ keys map[string]domain.ApiKey }
 
 func (f *fakeStore) CreateApiKey(_ context.Context, k domain.ApiKey) (domain.ApiKey, error) {
-	k.ID = "id-" + k.Prefix
+	k.ID = %[2]s
 	f.keys[k.Prefix] = k
 	return k, nil
 }
@@ -660,7 +674,7 @@ func TestCreateThenVerify(t *testing.T) {
 		}
 	}
 }
-`, a.module+"/app/domain")},
+`, a.module+"/app/domain", fakeIDAssign(a.scheme))},
 		File{Path: "app/middlewares/require_api_key.go", Content: fmt.Sprintf(`package middlewares
 
 import (
@@ -814,7 +828,7 @@ func runAPIKeys(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "api key %%q made (%%s); it is shown once:\n", made.Name, made.ID)
+	fmt.Fprintf(os.Stderr, "api key %%q made (%%v); it is shown once:\n", made.Name, made.ID)
 	fmt.Println(key)
 	return nil
 }
@@ -842,8 +856,11 @@ func AuthenticationGroup(shape string) string {
 	}
 }
 
-// AuthenticationFiles are the paths a shape writes, for destroy.
-func AuthenticationFiles(module, name, shape string) ([]File, error) {
-	files, _, err := Authentication(module, name, shape, time.Time{})
+// AuthenticationFiles are the paths a shape writes, for destroy. scheme
+// does not change which paths are written, only their content, so destroy
+// can pass the app's recorded scheme without needing to get it exactly
+// right.
+func AuthenticationFiles(module, name, shape string, scheme IDScheme) ([]File, error) {
+	files, _, err := Authentication(module, name, shape, scheme, time.Time{})
 	return files, err
 }

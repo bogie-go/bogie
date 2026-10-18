@@ -1,7 +1,7 @@
 ==> db/migrate/20261002093000_create_pings.sql
 -- +goose Up
 CREATE TABLE pings (
-    id         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+    id         bigserial   PRIMARY KEY,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -30,10 +30,10 @@ import (
 	"time"
 )
 
-// Ping is a ping. Imports nothing third-party: ids are strings here and
-// become uuid at the store boundary.
+// Ping is a ping. Imports nothing third-party: ids are int64s here and
+// become bigint at the store boundary.
 type Ping struct {
-	ID        string
+	ID        int64
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -77,13 +77,13 @@ func (s *Store) CreatePing(ctx context.Context, p domain.Ping) (domain.Ping, err
 	return pingFromRow(row), nil
 }
 
-// GetPing finds one ping. An id that is not a uuid is simply not found.
+// GetPing finds one ping. An id that is not a valid id is simply not found.
 func (s *Store) GetPing(ctx context.Context, id string) (domain.Ping, error) {
-	uid, err := parseUUID(id)
+	pk, err := parseID(id)
 	if err != nil {
 		return domain.Ping{}, domain.ErrNotFound
 	}
-	row, err := s.q.GetPing(ctx, uid)
+	row, err := s.q.GetPing(ctx, pk)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return domain.Ping{}, domain.ErrNotFound
@@ -111,27 +111,24 @@ func (s *Store) UpdatePing(ctx context.Context, p domain.Ping) (domain.Ping, err
 	if err := p.Validate(); err != nil {
 		return domain.Ping{}, err
 	}
-	uid, err := parseUUID(p.ID)
-	if err != nil {
-		return domain.Ping{}, domain.ErrNotFound
-	}
-	row, err := s.q.UpdatePing(ctx, uid)
+	pk := p.ID
+	row, err := s.q.UpdatePing(ctx, pk)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return domain.Ping{}, domain.ErrNotFound
 	case err != nil:
-		return domain.Ping{}, fmt.Errorf("models: update ping %s: %w", p.ID, err)
+		return domain.Ping{}, fmt.Errorf("models: update ping %v: %w", p.ID, err)
 	}
 	return pingFromRow(row), nil
 }
 
 // DeletePing removes a ping, and says so if there was none.
 func (s *Store) DeletePing(ctx context.Context, id string) error {
-	uid, err := parseUUID(id)
+	pk, err := parseID(id)
 	if err != nil {
 		return domain.ErrNotFound
 	}
-	n, err := s.q.DeletePing(ctx, uid)
+	n, err := s.q.DeletePing(ctx, pk)
 	if err != nil {
 		return fmt.Errorf("models: delete ping %s: %w", id, err)
 	}
@@ -143,7 +140,7 @@ func (s *Store) DeletePing(ctx context.Context, id string) error {
 
 func pingFromRow(r Ping) domain.Ping {
 	return domain.Ping{
-		ID:        uuidString(r.ID),
+		ID:        r.ID,
 		CreatedAt: r.CreatedAt.Time,
 		UpdatedAt: r.UpdatedAt.Time,
 	}
@@ -165,16 +162,17 @@ func TestUnknownPingsAreNotFound(t *testing.T) {
 	store := testStore(t)
 	ctx := context.Background()
 
-	for _, id := range []string{"nope", "", "00000000-0000-4000-8000-000000000000"} {
+	for _, id := range []string{"nope", "", "999999999"} {
 		if _, err := store.GetPing(ctx, id); !errors.Is(err, domain.ErrNotFound) {
 			t.Errorf("GetPing(%q): err = %v, want ErrNotFound", id, err)
 		}
 		if err := store.DeletePing(ctx, id); !errors.Is(err, domain.ErrNotFound) {
 			t.Errorf("DeletePing(%q): err = %v, want ErrNotFound", id, err)
 		}
-		if _, err := store.UpdatePing(ctx, domain.Ping{ID: id}); !errors.Is(err, domain.ErrNotFound) {
-			t.Errorf("UpdatePing(%q): err = %v, want ErrNotFound", id, err)
-		}
+	}
+
+	if _, err := store.UpdatePing(ctx, domain.Ping{ID: 999999999}); !errors.Is(err, domain.ErrNotFound) {
+		t.Errorf("UpdatePing(%d): err = %v, want ErrNotFound", 999999999, err)
 	}
 }
 
@@ -193,7 +191,7 @@ type PingRequest struct {
 
 // PingResponse is one ping on the wire.
 type PingResponse struct {
-	ID        string    `json:"id"`
+	ID        int64     `json:"id"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -292,7 +290,12 @@ func (ctl *PingsController) Create(c *gin.Context) {
 
 // Update handles PATCH /pings/:id.
 func (ctl *PingsController) Update(c *gin.Context) {
-	p, err := ctl.Store.UpdatePing(c.Request.Context(), domain.Ping{ID: c.Param("id")})
+	p, err := ctl.Store.GetPing(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		ctl.fail(c, err)
+		return
+	}
+	p, err = ctl.Store.UpdatePing(c.Request.Context(), p)
 	if err != nil {
 		ctl.fail(c, err)
 		return
@@ -388,7 +391,7 @@ func (f *fakePingsStore) ListPings(context.Context, int32) ([]domain.Ping, error
 }
 
 func (f *fakePingsStore) UpdatePing(_ context.Context, p domain.Ping) (domain.Ping, error) {
-	f.gotID, f.got = p.ID, p
+	f.got = p
 	return f.one, f.err
 }
 
@@ -413,19 +416,19 @@ func pingsRequest(t *testing.T, store *fakePingsStore, method, path, body string
 }
 
 func TestPingsIndexLists(t *testing.T) {
-	store := &fakePingsStore{many: []domain.Ping{{ID: "a"}, {ID: "b"}}}
+	store := &fakePingsStore{many: []domain.Ping{{ID: 1}, {ID: 2}}}
 	rec := pingsRequest(t, store, http.MethodGet, "/pings", "")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
 	}
 	var body struct {
-		Pings []struct{ ID string } `json:"pings"`
+		Pings []struct{ ID int64 } `json:"pings"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if len(body.Pings) != 2 || body.Pings[1].ID != "b" {
+	if len(body.Pings) != 2 || body.Pings[1].ID != 2 {
 		t.Errorf("body = %+v", body)
 	}
 }
@@ -438,13 +441,13 @@ func TestPingsShowUnknownIs404(t *testing.T) {
 }
 
 func TestPingsCreatePassesTheBodyThroughAndAnswers201(t *testing.T) {
-	store := &fakePingsStore{one: domain.Ping{ID: "a"}}
+	store := &fakePingsStore{one: domain.Ping{ID: 1}}
 	rec := pingsRequest(t, store, http.MethodPost, "/pings", `{}`)
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
 	}
-	if !strings.Contains(rec.Body.String(), `"id":"a"`) {
+	if !strings.Contains(rec.Body.String(), `"id":1`) {
 		t.Errorf("body = %s", rec.Body)
 	}
 }

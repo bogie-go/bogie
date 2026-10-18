@@ -439,6 +439,39 @@ Templates are `go:embed`ded and rendered with `text/template`. `bogie.toml` reco
 the Bogie version that generated the app so a later `bogie app:update` knows what
 it is upgrading from (§5a).
 
+**Id scheme: bigint by default, uuid as an option, decided 2026-10-18.**
+Every `id` column was `uuid PRIMARY KEY DEFAULT gen_random_uuid()`, unconditionally,
+since the first generator. Asked "why not integer, like Rails?", there was no
+written answer — just a hardcoded literal in `migration.go`. The real
+tradeoff: uuid avoids leaking sequence information over a public API
+(`GET /orders/41` next to `/orders/42` says how many orders exist) and needs
+no coordination to generate, which matters for an API-only service; integer
+is what Rails itself defaults to, and is far friendlier in a book's or a
+reader's own examples (`/products/3` beats a 36-character id everywhere a
+human reads it). Both are legitimate, so both are offered: `bogie new NAME
+--id=bigint` (the default, an auto-incrementing `bigserial`, Rails's own
+choice) or `--id=uuid`. The choice is app-wide, recorded in `bogie.toml`
+(`id = "bigint"`) next to the version and module path, and read back by
+every later `g model`/`g scaffold`/`g authentication` and by `app:update`'s
+re-render — never per-model, since a `references` column has to match
+whatever its target table's own id is made of.
+
+An app from before this setting has no `id` line in `bogie.toml`; that reads
+as uuid, not the new default, since uuid is what it was always generated
+with. `IDScheme` (`internal/generate/attrs.go`) centralizes everything that
+differs: the id column's own SQL, what a `references` attribute becomes
+(`kindFor`, replacing the old hardcoded `kinds["references"]`), the domain
+type (`int64` vs `string`), the store's parse helper (`app/models/id.go`'s
+`parseID` vs `uuid.go`'s `parseUUID`, each written only under its own
+scheme via a `{{if eq .IDScheme "..."}}` guard), and the golden tests' id
+literals (`IDScheme.testIDs`). One real bug surfaced building this: a
+scaffolded `Update` action built `domain.Post{ID: c.Param("id"), ...}`
+directly from the URL string, which only ever compiled because `ID` had
+always been exactly `string`. Under bigint it is not, so `Update` now loads
+the record first (`GetX`, which already resolves the id correctly) and
+reuses its `.ID` — a cleanup that was arguably correct under uuid too, not
+just a workaround.
+
 ---
 
 ## 5a. `bogie app:update`: moving an app to a newer layout

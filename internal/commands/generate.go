@@ -126,6 +126,19 @@ func generateIn(root string, args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	// Only migration, model, scaffold and authentication write an id or a
+	// references column, so only they need the app's recorded scheme; the
+	// rest (controller, service, job, seed) ask nothing of bogie.toml
+	// beyond the module, as before this setting existed.
+	var settings Settings
+	var scheme generate.IDScheme
+	if generator == "migration" || generator == "model" || generator == "scaffold" || generator == "authentication" {
+		settings, err = readSettings(root)
+		if err != nil {
+			return fmt.Errorf("generate %s: %w", generator, err)
+		}
+		scheme = settings.IDScheme
+	}
 	var files []generate.File
 	var wires []generate.Wire
 	runSqlc := false
@@ -180,11 +193,7 @@ func generateIn(root string, args []string, out io.Writer) error {
 			return fmt.Errorf("generate seed: %w", err)
 		}
 	case "authentication":
-		settings, err := readSettings(root)
-		if err != nil {
-			return fmt.Errorf("generate authentication: %w", err)
-		}
-		files, wires, err = generate.Authentication(module, settings.Name, name, nextStamp(root, time.Now()))
+		files, wires, err = generate.Authentication(module, settings.Name, name, scheme, nextStamp(root, time.Now()))
 		if err != nil {
 			return fmt.Errorf("generate authentication: %w", err)
 		}
@@ -205,18 +214,18 @@ func generateIn(root string, args []string, out io.Writer) error {
 
 	switch generator {
 	case "migration":
-		f, err := generate.Migration(name, attrs, now)
+		f, err := generate.Migration(name, attrs, scheme, now)
 		if err != nil {
 			return fmt.Errorf("generate migration: %w", err)
 		}
 		files = []generate.File{f}
 	case "model":
-		files, err = generate.Model(module, name, attrs, now)
+		files, err = generate.Model(module, name, attrs, scheme, now)
 		if err != nil {
 			return fmt.Errorf("generate model: %w", err)
 		}
 	case "scaffold":
-		files, wires, err = generate.Scaffold(module, name, attrs, now)
+		files, wires, err = generate.Scaffold(module, name, attrs, scheme, now)
 		if err != nil {
 			return fmt.Errorf("generate scaffold: %w", err)
 		}

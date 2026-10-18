@@ -148,7 +148,7 @@ Rails spelling, Rails layout, Go underneath:
 
 | Rails | Bogie |
 | --- | --- |
-| `rails new blog` | `bogie new blog` (`--jobs` adds River) |
+| `rails new blog` | `bogie new blog` (`--jobs` adds River, `--id=uuid` swaps the default bigint id scheme for uuid) |
 | `rails g model post title:string` | `bogie g model post title:string`: migration, queries, domain type, store, then sqlc |
 | `rails g scaffold post …` | `bogie g scaffold post …`: model + JSON views + a wired controller |
 | `rails g controller posts index show` | `bogie g controller posts index show`, registered as it is written |

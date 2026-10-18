@@ -42,16 +42,21 @@ type Settings struct {
 	Name    string
 	Module  string
 	Jobs    bool
+	// IDScheme is how this app's primary and foreign keys are made. An app
+	// from before this setting existed has no "id" line in bogie.toml; it
+	// was always uuid, the only scheme there was, so a missing line reads
+	// as uuid rather than the newer bigint default.
+	IDScheme generate.IDScheme
 }
 
-// readSettings parses bogie.toml. The file is four lines the tool wrote
+// readSettings parses bogie.toml. The file is five lines the tool wrote
 // itself, so this reads exactly that shape and nothing more.
 func readSettings(root string) (Settings, error) {
 	b, err := os.ReadFile(filepath.Join(root, Marker))
 	if err != nil {
 		return Settings{}, err
 	}
-	var s Settings
+	s := Settings{IDScheme: generate.IDUUID}
 	for _, line := range strings.Split(string(b), "\n") {
 		key, value, ok := strings.Cut(line, "=")
 		if !ok || strings.HasPrefix(strings.TrimSpace(line), "#") {
@@ -67,10 +72,15 @@ func readSettings(root string) (Settings, error) {
 			s.Module = value
 		case "jobs":
 			s.Jobs = value == "true"
+		case "id":
+			s.IDScheme = generate.IDScheme(value)
 		}
 	}
 	if s.Version == "" || s.Name == "" || s.Module == "" {
 		return s, fmt.Errorf("%s: missing bogie, name or module; the file is written by `bogie new` and read as is", Marker)
+	}
+	if !s.IDScheme.IsValid() {
+		return s, fmt.Errorf("%s: id = %q is not bigint or uuid", Marker, s.IDScheme)
 	}
 	return s, nil
 }
@@ -127,6 +137,7 @@ func Update(args []string, out io.Writer) error {
 		EnvPrefix:     strings.ToUpper(settings.Name),
 		LayoutVersion: current,
 		Jobs:          settings.Jobs,
+		IDScheme:      string(settings.IDScheme),
 		Mascot:        templates.MascotDataURI(),
 	}
 	if _, err := scaffold.Render(templates.App, "app", theirsDir, vars, scaffold.Options{}); err != nil {
@@ -454,6 +465,7 @@ func enableJobs(root string, out io.Writer) error {
 			EnvPrefix:     strings.ToUpper(settings.Name),
 			LayoutVersion: current,
 			Jobs:          jobs,
+			IDScheme:      string(settings.IDScheme),
 			Mascot:        templates.MascotDataURI(),
 		}
 		if _, err := scaffold.Render(templates.App, "app", dir, vars, scaffold.Options{}); err != nil {

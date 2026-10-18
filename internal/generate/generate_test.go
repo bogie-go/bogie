@@ -51,7 +51,7 @@ func attrs(t *testing.T, args ...string) []Attr {
 }
 
 func TestMigrationCreateTable(t *testing.T) {
-	f, err := Migration("create_comments", attrs(t, "body:text", "post:references", "score:integer", "published_at:datetime"), at)
+	f, err := Migration("create_comments", attrs(t, "body:text", "post:references", "score:integer", "published_at:datetime"), IDBigint, at)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,11 +59,11 @@ func TestMigrationCreateTable(t *testing.T) {
 }
 
 func TestMigrationAddAndRemoveColumns(t *testing.T) {
-	add, err := Migration("add_slug_to_posts", attrs(t, "slug:string:uniq", "draft:boolean"), at)
+	add, err := Migration("add_slug_to_posts", attrs(t, "slug:string:uniq", "draft:boolean"), IDBigint, at)
 	if err != nil {
 		t.Fatal(err)
 	}
-	remove, err := Migration("remove_draft_from_posts", attrs(t, "draft:boolean"), at)
+	remove, err := Migration("remove_draft_from_posts", attrs(t, "draft:boolean"), IDBigint, at)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestMigrationAddAndRemoveColumns(t *testing.T) {
 }
 
 func TestMigrationUnknownShapeIsEmpty(t *testing.T) {
-	f, err := Migration("fix_the_thing", nil, at)
+	f, err := Migration("fix_the_thing", nil, IDBigint, at)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestMigrationUnknownShapeIsEmpty(t *testing.T) {
 }
 
 func TestModel(t *testing.T) {
-	files, err := Model("example.com/blog", "comment", attrs(t, "body:text", "post:references", "score:integer", "published_at:datetime", "meta:jsonb"), at)
+	files, err := Model("example.com/blog", "comment", attrs(t, "body:text", "post:references", "score:integer", "published_at:datetime", "meta:jsonb"), IDBigint, at)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestModel(t *testing.T) {
 }
 
 func TestModelWithNoAttributes(t *testing.T) {
-	files, err := Model("example.com/blog", "ping", nil, at)
+	files, err := Model("example.com/blog", "ping", nil, IDBigint, at)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,17 +98,17 @@ func TestModelWithNoAttributes(t *testing.T) {
 
 func TestModelRefusesWhatEveryModelAlreadyHas(t *testing.T) {
 	for _, bad := range []string{"id:uuid", "created_at:datetime"} {
-		if _, err := Model("m", "thing", attrs(t, bad), at); err == nil {
+		if _, err := Model("m", "thing", attrs(t, bad), IDBigint, at); err == nil {
 			t.Errorf("%s accepted", bad)
 		}
 	}
 	for _, plural := range []string{"posts", "categories", "boxes"} {
-		if _, err := Model("m", plural, nil, at); err == nil {
+		if _, err := Model("m", plural, nil, IDBigint, at); err == nil {
 			t.Errorf("plural model name %q was accepted", plural)
 		}
 	}
 	for _, singular := range []string{"status", "address", "analysis", "bus"} {
-		if _, err := Model("m", singular, nil, at); err != nil {
+		if _, err := Model("m", singular, nil, IDBigint, at); err != nil {
 			t.Errorf("singular model name %q refused: %v", singular, err)
 		}
 	}
@@ -274,7 +274,7 @@ func TestControllerWithNoActions(t *testing.T) {
 }
 
 func TestScaffold(t *testing.T) {
-	files, wires, err := Scaffold("example.com/blog", "post", attrs(t, "title:string", "body:text", "score:integer", "published_at:datetime", "author:references"), at)
+	files, wires, err := Scaffold("example.com/blog", "post", attrs(t, "title:string", "body:text", "score:integer", "published_at:datetime", "author:references"), IDBigint, at)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,7 +283,7 @@ func TestScaffold(t *testing.T) {
 		t.Errorf("wires = %+v", wires)
 	}
 	// destroy removes by the same paths, whatever the attributes were
-	paths, err := ScaffoldFiles("example.com/blog", "post")
+	paths, err := ScaffoldFiles("example.com/blog", "post", IDBigint)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,13 +292,13 @@ func TestScaffold(t *testing.T) {
 			t.Errorf("file %d: %s vs %s", i, files[i].Path, paths[i].Path)
 		}
 	}
-	if _, _, err := Scaffold("m", "posts", nil, at); err == nil {
+	if _, _, err := Scaffold("m", "posts", nil, IDBigint, at); err == nil {
 		t.Error("plural model name accepted")
 	}
 }
 
 func TestScaffoldWithNoAttributes(t *testing.T) {
-	files, _, err := Scaffold("example.com/blog", "ping", nil, at)
+	files, _, err := Scaffold("example.com/blog", "ping", nil, IDBigint, at)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +307,7 @@ func TestScaffoldWithNoAttributes(t *testing.T) {
 
 func TestAuthentication(t *testing.T) {
 	for _, shape := range AuthenticationShapes {
-		files, wires, err := Authentication("example.com/blog", "blog", shape, at)
+		files, wires, err := Authentication("example.com/blog", "blog", shape, IDBigint, at)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -322,7 +322,7 @@ func TestAuthentication(t *testing.T) {
 			}
 		}
 	}
-	if _, _, err := Authentication("m", "blog", "oauth", at); err == nil {
+	if _, _, err := Authentication("m", "blog", "oauth", IDBigint, at); err == nil {
 		t.Error("unknown shape accepted")
 	}
 	w := AuthenticationSettings("blog", "token")[0]
@@ -342,7 +342,7 @@ func TestService(t *testing.T) {
 // sqlc passes a single parameter as itself and only builds a Params struct
 // for two or more, so a one-column model's Create must not name one.
 func TestModelWithOneAttribute(t *testing.T) {
-	files, err := Model("example.com/blog", "thing", attrs(t, "name:string"), at)
+	files, err := Model("example.com/blog", "thing", attrs(t, "name:string"), IDBigint, at)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -403,9 +403,9 @@ func TestGeneratedParamDoesNotShadow(t *testing.T) {
 			var files []File
 			var err error
 			if c.generator == "model" {
-				files, err = Model("example.com/blog", c.name, nil, at)
+				files, err = Model("example.com/blog", c.name, nil, IDBigint, at)
 			} else {
-				files, _, err = Scaffold("example.com/blog", c.name, nil, at)
+				files, _, err = Scaffold("example.com/blog", c.name, nil, IDBigint, at)
 			}
 			if err != nil {
 				t.Fatal(err)

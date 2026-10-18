@@ -1,9 +1,9 @@
 ==> db/migrate/20261002093000_create_comments.sql
 -- +goose Up
 CREATE TABLE comments (
-    id         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+    id         bigserial   PRIMARY KEY,
     body       text        NOT NULL DEFAULT '',
-    post_id    uuid        NOT NULL REFERENCES posts (id),
+    post_id    bigint      NOT NULL REFERENCES posts (id),
     score      integer     NOT NULL DEFAULT 0,
     published_at timestamptz NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(),

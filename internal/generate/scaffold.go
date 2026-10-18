@@ -15,13 +15,13 @@ import (
 // validates on save, as a Rails controller talks to the model (docs/DESIGN.md
 // §5). The model is named in the singular and the rest in the plural, as
 // Rails names them.
-func Scaffold(module, name string, attrs []Attr, now time.Time) ([]File, []Wire, error) {
-	files, err := Model(module, name, attrs, now)
+func Scaffold(module, name string, attrs []Attr, scheme IDScheme, now time.Time) ([]File, []Wire, error) {
+	files, err := Model(module, name, attrs, scheme, now)
 	if err != nil {
 		return nil, nil, err
 	}
 	table := Plural(name)
-	s := scaffold{module: module, name: name, table: table, attrs: attrs}
+	s := scaffold{module: module, name: name, table: table, attrs: attrs, scheme: scheme}
 	// Struct fields and tags are aligned by gofmt rather than by hand, since
 	// the attributes decide the widths.
 	for _, f := range []struct{ path, src string }{
@@ -43,14 +43,15 @@ func Scaffold(module, name string, attrs []Attr, now time.Time) ([]File, []Wire,
 
 // ScaffoldFiles are the paths Scaffold writes for name, for destroy, which
 // cannot know the attributes it was given. Model's files are included.
-func ScaffoldFiles(module, name string) ([]File, error) {
-	files, _, err := Scaffold(module, name, nil, time.Time{})
+func ScaffoldFiles(module, name string, scheme IDScheme) ([]File, error) {
+	files, _, err := Scaffold(module, name, nil, scheme, time.Time{})
 	return files, err
 }
 
 type scaffold struct {
 	module, name, table string
 	attrs               []Attr
+	scheme              IDScheme
 }
 
 func (s scaffold) typ() string  { return Camel(s.name) }  // Post
@@ -65,7 +66,7 @@ func (s scaffold) storeIface() string {
 func (s scaffold) views() string {
 	imports := map[string]bool{"time": true}
 	for _, a := range s.attrs {
-		for _, imp := range kinds[a.Type].imports {
+		for _, imp := range kindFor(a, s.scheme).imports {
 			imports[imp] = true
 		}
 	}
@@ -83,7 +84,7 @@ func (s scaffold) views() string {
 		}
 	}
 	field := func(a Attr) string {
-		return fmt.Sprintf("\t%-*s %s `json:%q`\n", width, a.goName(), a.domainType(), a.Name)
+		return fmt.Sprintf("\t%-*s %s `json:%q`\n", width, a.goName(), a.domainType(s.scheme), a.Name)
 	}
 
 	fmt.Fprintf(&b, "// %sRequest is the body of POST /%s and PATCH /%s/:id.\n", s.typ(), s.table, s.table)
@@ -95,7 +96,7 @@ func (s scaffold) views() string {
 
 	fmt.Fprintf(&b, "// %sResponse is one %s on the wire.\n", s.typ(), s.name)
 	fmt.Fprintf(&b, "type %sResponse struct {\n", s.typ())
-	fmt.Fprintf(&b, "\t%-*s string `json:\"id\"`\n", width, "ID")
+	fmt.Fprintf(&b, "\t%-*s %s `json:\"id\"`\n", width, "ID", s.scheme.idDomain())
 	for _, a := range s.attrs {
 		b.WriteString(field(a))
 	}
@@ -203,12 +204,19 @@ func (ctl *%[8]s) Show(c *gin.Context) {
 
 	fmt.Fprintf(&b, "// Update handles PATCH /%s/:id.", s.table)
 	if len(s.attrs) == 0 {
+		// Nothing to bind, but the id still has to be resolved to the
+		// domain's id type (not every scheme's id is a string), so this
+		// loads the record the same way the attributed case does and saves
+		// it back unchanged but for updated_at.
 		fmt.Fprintf(&b, "\nfunc (ctl *%s) Update(c *gin.Context) {\n", ctl)
-		fmt.Fprintf(&b, "\t%s, err := ctl.Store.Update%s(c.Request.Context(), %s)\n", recv, typ, s.fromRequest("c.Param(\"id\")"))
+		fmt.Fprintf(&b, "\t%s, err := ctl.Store.Get%s(c.Request.Context(), c.Param(\"id\"))\n", recv, typ)
+		b.WriteString("\tif err != nil {\n\t\tctl.fail(c, err)\n\t\treturn\n\t}\n")
+		fmt.Fprintf(&b, "\t%s, err = ctl.Store.Update%s(c.Request.Context(), %s)\n", recv, typ, recv)
 	} else {
 		// As in Rails's find-then-update: load the record, decode the body
 		// over its current values so a key left out keeps its value, then
-		// save, so validation sees the whole record.
+		// save, so validation sees the whole record. The id comes from the
+		// loaded record, not the URL, so it is already the domain's id type.
 		fmt.Fprintf(&b, " Only the fields in the body change, as\n")
 		fmt.Fprintf(&b, "// in Rails: the %s is loaded, the body is decoded over its current values,\n", s.name)
 		b.WriteString("// so a key left out keeps its value, and the result is saved and validated\n// whole.\n")
@@ -217,7 +225,7 @@ func (ctl *%[8]s) Show(c *gin.Context) {
 		b.WriteString("\tif err != nil {\n\t\tctl.fail(c, err)\n\t\treturn\n\t}\n")
 		fmt.Fprintf(&b, "\treq := %s\n", s.toRequest(recv))
 		b.WriteString("\tif err := c.ShouldBindJSON(&req); err != nil {\n\t\tc.JSON(http.StatusBadRequest, views.Error(err))\n\t\treturn\n\t}\n")
-		fmt.Fprintf(&b, "\t%s, err = ctl.Store.Update%s(c.Request.Context(), %s)\n", recv, typ, s.fromRequest("c.Param(\"id\")"))
+		fmt.Fprintf(&b, "\t%s, err = ctl.Store.Update%s(c.Request.Context(), %s)\n", recv, typ, s.fromRequest(recv+".ID"))
 	}
 	fmt.Fprintf(&b, "\tif err != nil {\n\t\tctl.fail(c, err)\n\t\treturn\n\t}\n\tc.JSON(http.StatusOK, %sView(%s))\n}\n\n", lowerCamel(s.name), recv)
 
@@ -305,7 +313,7 @@ func (s scaffold) toRequest(recv string) string {
 // edited is a second JSON value and Go literal per attribute type, unlike
 // sample's, for the PATCH test to change one field with. Types sample has
 // no literal for have none here either.
-func edited(a Attr) (jsonValue, goLiteral string) {
+func edited(a Attr, scheme IDScheme) (jsonValue, goLiteral string) {
 	switch a.Type {
 	case "string", "text":
 		return `"Edited"`, `"Edited"`
@@ -315,14 +323,19 @@ func edited(a Attr) (jsonValue, goLiteral string) {
 		return "false", "false"
 	case "datetime", "jsonb":
 		return "", ""
-	default: // uuid, references
+	case "uuid":
 		return `"00000000-0000-4000-8000-000000000001"`, `"00000000-0000-4000-8000-000000000001"`
+	default: // references: whatever this scheme's foreign keys are made of
+		if scheme == IDUUID {
+			return `"00000000-0000-4000-8000-000000000001"`, `"00000000-0000-4000-8000-000000000001"`
+		}
+		return "2", "2"
 	}
 }
 
 // sample is a JSON value and the Go literal it decodes to, per attribute
 // type, for the controller test's request body.
-func sample(a Attr) (jsonValue, goLiteral string) {
+func sample(a Attr, scheme IDScheme) (jsonValue, goLiteral string) {
 	switch a.Type {
 	case "string", "text":
 		return `"Hello"`, `"Hello"`
@@ -334,8 +347,13 @@ func sample(a Attr) (jsonValue, goLiteral string) {
 		return `"2026-10-02T09:30:00Z"`, ""
 	case "jsonb":
 		return `{"k":1}`, ""
-	default: // uuid, references
+	case "uuid":
 		return `"00000000-0000-4000-8000-000000000000"`, `"00000000-0000-4000-8000-000000000000"`
+	default: // references: whatever this scheme's foreign keys are made of
+		if scheme == IDUUID {
+			return `"00000000-0000-4000-8000-000000000000"`, `"00000000-0000-4000-8000-000000000000"`
+		}
+		return "1", "1"
 	}
 }
 
@@ -346,6 +364,7 @@ func (s scaffold) controllerTest() string {
 	typ, many, ctl := s.typ(), s.many(), s.ctl()
 	fake := "fake" + many + "Store"
 	helper := lowerCamel(s.table) + "Request"
+	idA, idB := s.scheme.testIDs()
 	var b strings.Builder
 	fmt.Fprintf(&b, `package controllers
 
@@ -389,7 +408,7 @@ func (f *%[2]s) Get%[3]s(_ context.Context, id string) (domain.%[3]s, error) {
 func (f *%[2]s) List%[5]s(context.Context, int32) ([]domain.%[3]s, error) { return f.many, f.err }
 
 func (f *%[2]s) Update%[3]s(_ context.Context, %[4]s domain.%[3]s) (domain.%[3]s, error) {
-	f.gotID, f.got = %[4]s.ID, %[4]s
+	f.got = %[4]s
 	return f.one, f.err
 }
 
@@ -414,19 +433,19 @@ func %[6]s(t *testing.T, store *%[2]s, method, path, body string) *httptest.Resp
 }
 
 func Test%[5]sIndexLists(t *testing.T) {
-	store := &%[2]s{many: []domain.%[3]s{{ID: "a"}, {ID: "b"}}}
+	store := &%[2]s{many: []domain.%[3]s{{ID: %[10]s}, {ID: %[11]s}}}
 	rec := %[6]s(t, store, http.MethodGet, "/%[8]s", "")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %%d: %%s", rec.Code, rec.Body)
 	}
 	var body struct {
-		%[5]s []struct{ ID string } `+"`json:%[9]q`"+`
+		%[5]s []struct{ ID %[12]s } `+"`json:%[9]q`"+`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if len(body.%[5]s) != 2 || body.%[5]s[1].ID != "b" {
+	if len(body.%[5]s) != 2 || body.%[5]s[1].ID != %[11]s {
 		t.Errorf("body = %%+v", body)
 	}
 }
@@ -438,13 +457,13 @@ func Test%[5]sShowUnknownIs404(t *testing.T) {
 	}
 }
 
-`, s.module+"/app/domain", fake, typ, paramName(s.name, "f"), many, helper, ctl, s.table, s.table)
+`, s.module+"/app/domain", fake, typ, paramName(s.name, "f"), many, helper, ctl, s.table, s.table, idA, idB, s.scheme.idDomain())
 
 	// Create: the body goes through to the store, and the answer is 201.
 	var jsonParts []string
 	var assertion string
 	for _, a := range s.attrs {
-		jv, lit := sample(a)
+		jv, lit := sample(a, s.scheme)
 		jsonParts = append(jsonParts, fmt.Sprintf("%q:%s", a.Name, jv))
 		if assertion == "" && lit != "" {
 			assertion = fmt.Sprintf("\tif store.got.%s != %s {\n\t\tt.Errorf(\"store got %s = %%v\", store.got.%s)\n\t}\n", a.goName(), lit, a.goName(), a.goName())
@@ -452,11 +471,11 @@ func Test%[5]sShowUnknownIs404(t *testing.T) {
 	}
 	body := "{" + strings.Join(jsonParts, ",") + "}"
 	fmt.Fprintf(&b, "func Test%sCreatePassesTheBodyThroughAndAnswers201(t *testing.T) {\n", many)
-	fmt.Fprintf(&b, "\tstore := &%s{one: domain.%s{ID: \"a\"}}\n", fake, typ)
+	fmt.Fprintf(&b, "\tstore := &%s{one: domain.%s{ID: %s}}\n", fake, typ, idA)
 	fmt.Fprintf(&b, "\trec := %s(t, store, http.MethodPost, \"/%s\", `%s`)\n\n", helper, s.table, body)
 	b.WriteString("\tif rec.Code != http.StatusCreated {\n\t\tt.Fatalf(\"status = %d: %s\", rec.Code, rec.Body)\n\t}\n")
 	b.WriteString(assertion)
-	b.WriteString("\tif !strings.Contains(rec.Body.String(), `\"id\":\"a\"`) {\n\t\tt.Errorf(\"body = %s\", rec.Body)\n\t}\n}\n\n")
+	fmt.Fprintf(&b, "\tif !strings.Contains(rec.Body.String(), `\"id\":%s`) {\n\t\tt.Errorf(\"body = %%s\", rec.Body)\n\t}\n}\n\n", idA)
 
 	fmt.Fprintf(&b, `// Validation is the domain's and runs in the store. The controller's only
 // job is to say 422.
@@ -512,7 +531,7 @@ func Test%[1]sUnexpectedErrorIs500WithoutDetail(t *testing.T) {
 func (s scaffold) patchTest(fake, helper string) string {
 	var lits []Attr
 	for _, a := range s.attrs {
-		if _, lit := sample(a); lit != "" {
+		if _, lit := sample(a, s.scheme); lit != "" {
 			lits = append(lits, a)
 		}
 	}
@@ -520,13 +539,14 @@ func (s scaffold) patchTest(fake, helper string) string {
 		return ""
 	}
 	typ, many := s.typ(), s.many()
-	stored := []string{`ID: "a"`}
+	idA, _ := s.scheme.testIDs()
+	stored := []string{"ID: " + idA}
 	for _, a := range lits {
-		_, lit := sample(a)
+		_, lit := sample(a, s.scheme)
 		stored = append(stored, fmt.Sprintf("%s: %s", a.goName(), lit))
 	}
 	sent := lits[0]
-	jv, lit := edited(sent)
+	jv, lit := edited(sent, s.scheme)
 	var b strings.Builder
 	fmt.Fprintf(&b, "// PATCH is partial, as in Rails: a field the body leaves out keeps its\n// stored value rather than being blanked.\n")
 	fmt.Fprintf(&b, "func Test%sUpdateChangesOnlyTheFieldsSent(t *testing.T) {\n", many)
@@ -535,7 +555,7 @@ func (s scaffold) patchTest(fake, helper string) string {
 	b.WriteString("\tif rec.Code != http.StatusOK {\n\t\tt.Fatalf(\"status = %d: %s\", rec.Code, rec.Body)\n\t}\n")
 	fmt.Fprintf(&b, "\tif store.got.%s != %s {\n\t\tt.Errorf(\"store got %s = %%v, want %%v\", store.got.%s, %s)\n\t}\n", sent.goName(), lit, sent.goName(), sent.goName(), lit)
 	for _, a := range lits[1:] {
-		_, keep := sample(a)
+		_, keep := sample(a, s.scheme)
 		fmt.Fprintf(&b, "\tif store.got.%s != %s {\n\t\tt.Errorf(\"store got %s = %%v, want it kept\", store.got.%s)\n\t}\n", a.goName(), keep, a.goName(), a.goName())
 	}
 	b.WriteString("}\n\n")
