@@ -118,6 +118,8 @@ func queries(name, table string, attrs []Attr) string {
 	one := Camel(name)
 	many := Camel(table)
 	var b strings.Builder
+	fmt.Fprintf(&b, "-- Written by `bogie g model`: overwritten whole on the next run. A\n")
+	fmt.Fprintf(&b, "-- hand-written query goes in %s_extra.sql, not here.\n\n", table)
 	fmt.Fprintf(&b, "-- name: Get%s :one\nSELECT * FROM %s WHERE id = $1;\n\n", one, table)
 	fmt.Fprintf(&b, "-- name: List%s :many\nSELECT * FROM %s ORDER BY created_at DESC, id DESC LIMIT $1;\n\n", many, table)
 	if len(attrs) == 0 {
@@ -181,7 +183,8 @@ func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 
 	fmt.Fprintf(&b, "// %s, as the domain sees them. Each method converts domain.%s to and from\n", Camel(table), typ)
 	b.WriteString("// the row type sqlc generated, and maps pgx's \"no rows\" to domain.ErrNotFound\n")
-	b.WriteString("// so callers never import pgx to ask a question.\n\n")
+	b.WriteString("// so callers never import pgx to ask a question.\n")
+	fmt.Fprintf(&b, "//\n// Written by `bogie g model`: overwritten whole on the next run. A\n// hand-written addition goes in %s_extra.go, not here.\n\n", table)
 
 	// params for Create and Update
 	createParams := func(src string) string {

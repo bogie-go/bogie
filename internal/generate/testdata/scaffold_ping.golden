@@ -9,6 +9,9 @@ CREATE TABLE pings (
 -- +goose Down
 DROP TABLE pings;
 ==> db/queries/pings.sql
+-- Written by `bogie g model`: overwritten whole on the next run. A
+-- hand-written query goes in pings_extra.sql, not here.
+
 -- name: GetPing :one
 SELECT * FROM pings WHERE id = $1;
 
@@ -62,6 +65,9 @@ import (
 // Pings, as the domain sees them. Each method converts domain.Ping to and from
 // the row type sqlc generated, and maps pgx's "no rows" to domain.ErrNotFound
 // so callers never import pgx to ask a question.
+//
+// Written by `bogie g model`: overwritten whole on the next run. A
+// hand-written addition goes in pings_extra.go, not here.
 
 // CreatePing validates a ping, inserts it, and returns it with its id and
 // timestamps. Validation runs on save, as Rails's does, so every caller

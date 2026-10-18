@@ -10,6 +10,9 @@ CREATE TABLE things (
 -- +goose Down
 DROP TABLE things;
 ==> db/queries/things.sql
+-- Written by `bogie g model`: overwritten whole on the next run. A
+-- hand-written query goes in things_extra.sql, not here.
+
 -- name: GetThing :one
 SELECT * FROM things WHERE id = $1;
 
@@ -64,6 +67,9 @@ import (
 // Things, as the domain sees them. Each method converts domain.Thing to and from
 // the row type sqlc generated, and maps pgx's "no rows" to domain.ErrNotFound
 // so callers never import pgx to ask a question.
+//
+// Written by `bogie g model`: overwritten whole on the next run. A
+// hand-written addition goes in things_extra.go, not here.
 
 // CreateThing validates a thing, inserts it, and returns it with its id and
 // timestamps. Validation runs on save, as Rails's does, so every caller
