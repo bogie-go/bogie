@@ -332,8 +332,12 @@ and `bin/ci` runs the database steps against whatever the migrations hold.
 
 ### Add a query
 
-There is no `where` builder; a query is SQL with a name. In
-`db/queries/comments.sql`:
+There is no `where` builder; a query is SQL with a name. sqlc compiles every
+`*.sql` file in `db/queries/`, not just the one a model's own generator
+wrote, so a hand-written query goes in a sibling file, such as
+`db/queries/comments_extra.sql`, not inside the generated
+`db/queries/comments.sql` — the same reason a hand-written store method
+goes in `comments_extra.go` rather than `comments.go` ("Add a model", above):
 
     -- name: ListCommentsForPost :many
     SELECT * FROM comments WHERE post_id = $1 ORDER BY created_at DESC;
@@ -341,11 +345,12 @@ There is no `where` builder; a query is SQL with a name. In
 then `make sqlc`, which writes `ListCommentsForPost` into
 `app/models/comments.sql.go` with typed parameters, or fails if a column is
 misspelled. Then a store method that calls it and converts the rows with
-`commentFromRow`, as the generated methods do — written in a sibling file
-such as `app/models/comments_extra.go`, not inside the generated
+`commentFromRow`, as the generated methods do — written in
+`app/models/comments_extra.go` too, not inside the generated
 `comments.go`, so a later `g model comment <col>:<type>` never conflicts
-with it. Annotations: `:one`, `:many`, `:exec`, `:execrows`. The generated
-file is committed; `bin/ci` fails if it is stale.
+with either sibling file. Annotations: `:one`, `:many`, `:exec`,
+`:execrows`. The generated file is committed; `bin/ci` fails if it is
+stale.
 
 ### Static files and error pages
 
