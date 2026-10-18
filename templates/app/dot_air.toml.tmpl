@@ -16,9 +16,11 @@ tmp_dir = "tmp"
   cmd = "go build -o ./tmp/{{.Name}} ."
   entrypoint = ["./tmp/{{.Name}}", "serve"]
 
-  # .sql as well as .go: migrations and seeds are embedded in the binary, so
-  # a new migration needs a rebuild before the server can apply it at boot.
-  include_ext = ["go", "sql"]
+  # .sql as well as .go: migrations are embedded in the binary, so a new
+  # migration needs a rebuild before the server can apply it at boot. .html
+  # for the same reason: public/ is embedded too, so an edited
+  # public/index.html or 404.html is only served after a rebuild.
+  include_ext = ["go", "sql", "html"]
 
   # db/queries is sqlc's INPUT, not its output. Watching it rebuilds against
   # half-generated models the moment `bogie g model` writes a query file;
