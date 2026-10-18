@@ -1,7 +1,7 @@
 # Status
 
 Where Bogie stands, for whoever picks it up next, on whatever machine. Updated
-2026-10-03, at v0.1.0. `docs/DESIGN.md` is the design and the
+2026-10-18, at v0.2.10. `docs/DESIGN.md` is the design and the
 reasoning; this file is the state.
 
 ## Milestones
@@ -20,7 +20,7 @@ reasoning; this file is the state.
 
 Install: `go install github.com/bogie-go/bogie@latest` for the newest tag,
 `@main` for main, `go install .` from a clone. First release: v0.1.0,
-2026-10-03.
+2026-10-03; latest: v0.2.10, 2026-10-18.
 
     bogie new NAME [--module=PATH] [--jobs]      an empty service, as rails new makes: it
                                                  builds, migrates, reads its credentials,
