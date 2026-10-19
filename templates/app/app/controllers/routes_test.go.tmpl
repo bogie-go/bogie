@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"{{.Module}}/config"
+	"{{.Module}}/public"
 )
 
 // testServer builds a root server and mounts its routes. Every controller
@@ -54,20 +56,38 @@ func get(s *Server, path string) *httptest.ResponseRecorder {
 }
 
 // The welcome page greets a developer at / and nobody else: development only,
-// GET / only, and gone the moment a route claims /.
+// GET / only, and gone the moment a route or public/index.html claims /.
 func TestWelcomeInDevelopmentOnly(t *testing.T) {
 	dev := testServer(config.EnvDevelopment)
+	if rec := get(dev, "/nothing-here"); rec.Code != http.StatusNotFound {
+		t.Errorf("development GET /nothing-here = %d, want 404: the welcome page answers / only", rec.Code)
+	}
+
+	if _, err := fs.Stat(public.Files, "index.html"); err == nil {
+		t.Skip("public/index.html answers / in every environment; TestPublicIndexAnswersRoot covers it")
+	}
 	if rec := get(dev, "/"); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "is running") ||
 		strings.Contains(rec.Body.String(), "404 Not Found") {
 		t.Errorf("development GET / = %d %q, want only the welcome page: notFound must not also run", rec.Code, rec.Body.String())
-	}
-	if rec := get(dev, "/nothing-here"); rec.Code != http.StatusNotFound {
-		t.Errorf("development GET /nothing-here = %d, want 404: the welcome page answers / only", rec.Code)
 	}
 
 	prod := testServer(config.EnvProduction)
 	if rec := get(prod, "/"); rec.Code != http.StatusNotFound {
 		t.Errorf("production GET / = %d, want 404", rec.Code)
+	}
+}
+
+// public/index.html, once the app has one, answers / in every environment,
+// ahead of the welcome page and the 404.
+func TestPublicIndexAnswersRoot(t *testing.T) {
+	want, err := fs.ReadFile(public.Files, "index.html")
+	if err != nil {
+		t.Skip("no public/index.html: the welcome page answers / in development")
+	}
+	for _, env := range []string{config.EnvDevelopment, config.EnvProduction} {
+		if rec := get(testServer(env), "/"); rec.Code != http.StatusOK || rec.Body.String() != string(want) {
+			t.Errorf("%s GET / = %d %q, want 200 and public/index.html", env, rec.Code, rec.Body.String())
+		}
 	}
 }
 

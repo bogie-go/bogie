@@ -8,6 +8,7 @@ purpose and `AGENTS.md` says how to work in it.
     bogie db:prepare          # create, migrate, seed
     bogie s                   # server: migrates, serves, reloads on save; or: make server
     curl localhost:8080/healthz
+    {{.EnvPrefix}}_ENV=test bogie db:prepare   # once: the test database
     bogie test                # or: make test
     bin/ci                    # every check, locally; green signs off the commit
 
