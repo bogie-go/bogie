@@ -278,7 +278,9 @@ empty `Validate`, and `app/models/comments.go`, the store methods that convert
 sqlc's row type to `domain.Comment`, run `Validate` before create and update,
 and map no-rows to `domain.ErrNotFound`; then it runs sqlc. Types: string, text, integer, bigint, boolean, datetime,
 uuid, jsonb, references; `:index` or `:uniq` after a type. `post:references`
-is the column `post_id` with a foreign key and an index.
+is the column `post_id` with a foreign key and an index. A `:uniq` column
+also makes `Create`/`Update` map a duplicate value to `domain.ErrInvalid`
+("email is already taken"), not a raw database error.
 
 Every generated column is NOT NULL with a type-appropriate default, so sqlc
 emits plain Go types rather than pointers. A column that truly needs null is

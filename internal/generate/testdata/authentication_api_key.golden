@@ -67,6 +67,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"example.com/blog/app/domain"
 )
@@ -87,6 +88,10 @@ func (s *Store) CreateApiKey(ctx context.Context, a domain.ApiKey) (domain.ApiKe
 	}
 	row, err := s.q.CreateApiKey(ctx, CreateApiKeyParams{Name: a.Name, Prefix: a.Prefix, Digest: a.Digest})
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return domain.ApiKey{}, fmt.Errorf("%w: prefix is already taken", domain.ErrInvalid)
+		}
 		return domain.ApiKey{}, fmt.Errorf("models: create api_key: %w", err)
 	}
 	return api_keyFromRow(row), nil
@@ -128,9 +133,12 @@ func (s *Store) UpdateApiKey(ctx context.Context, a domain.ApiKey) (domain.ApiKe
 	}
 	pk := a.ID
 	row, err := s.q.UpdateApiKey(ctx, UpdateApiKeyParams{ID: pk, Name: a.Name, Prefix: a.Prefix, Digest: a.Digest})
+	var pgErr *pgconn.PgError
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return domain.ApiKey{}, domain.ErrNotFound
+	case errors.As(err, &pgErr) && pgErr.Code == "23505":
+		return domain.ApiKey{}, fmt.Errorf("%w: prefix is already taken", domain.ErrInvalid)
 	case err != nil:
 		return domain.ApiKey{}, fmt.Errorf("models: update api_key %v: %w", a.ID, err)
 	}

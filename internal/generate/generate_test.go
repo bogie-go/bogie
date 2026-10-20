@@ -354,6 +354,16 @@ func TestModelWithOneAttribute(t *testing.T) {
 	}
 }
 
+// A :uniq attr needs Create and Update to tell a duplicate value apart from
+// any other database error, which no other golden model attribute exercises.
+func TestModelWithUniqueAttribute(t *testing.T) {
+	files, err := Model("example.com/blog", "user", attrs(t, "email:string:uniq", "password_digest:string"), IDBigint, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden(t, "model_user", files)
+}
+
 func TestJob(t *testing.T) {
 	files, wires, err := Job("send_welcome")
 	if err != nil {

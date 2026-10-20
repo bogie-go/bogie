@@ -173,11 +173,15 @@ func domainType(name string, attrs []Attr, scheme IDScheme) string {
 func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 	typ := Camel(name)
 	recv := paramName(name, "s")
+	uniq := uniqueAttrs(attrs)
 	var b strings.Builder
 	b.WriteString("package models\n\n")
 	b.WriteString("import (\n\t\"context\"\n\t\"errors\"\n\t\"fmt\"\n\n\t\"github.com/jackc/pgx/v5\"\n")
 	if needsPgtype(attrs) {
 		b.WriteString("\t\"github.com/jackc/pgx/v5/pgtype\"\n")
+	}
+	if len(uniq) > 0 {
+		b.WriteString("\t\"github.com/jackc/pgx/v5/pgconn\"\n")
 	}
 	fmt.Fprintf(&b, "\n\t%q\n)\n\n", module+"/app/domain")
 
@@ -220,7 +224,11 @@ func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 	default:
 		fmt.Fprintf(&b, "\trow, err := s.q.Create%s(ctx, Create%sParams{%s})\n", typ, typ, createParams(recv))
 	}
-	fmt.Fprintf(&b, "\tif err != nil {\n\t\treturn domain.%s{}, fmt.Errorf(\"models: create %s: %%w\", err)\n\t}\n", typ, name)
+	if len(uniq) > 0 {
+		fmt.Fprintf(&b, "\tif err != nil {\n\t\tvar pgErr *pgconn.PgError\n\t\tif errors.As(err, &pgErr) && pgErr.Code == \"23505\" {\n\t\t\treturn domain.%s{}, fmt.Errorf(\"%%w: %s\", domain.ErrInvalid)\n\t\t}\n\t\treturn domain.%s{}, fmt.Errorf(\"models: create %s: %%w\", err)\n\t}\n", typ, uniqueViolationMessage(uniq), typ, name)
+	} else {
+		fmt.Fprintf(&b, "\tif err != nil {\n\t\treturn domain.%s{}, fmt.Errorf(\"models: create %s: %%w\", err)\n\t}\n", typ, name)
+	}
 	fmt.Fprintf(&b, "\treturn %sFromRow(row), nil\n}\n\n", name)
 
 	// Get
@@ -255,7 +263,13 @@ func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 	} else {
 		fmt.Fprintf(&b, "\trow, err := s.q.Update%s(ctx, Update%sParams{ID: pk, %s})\n", typ, typ, createParams(recv))
 	}
+	if len(uniq) > 0 {
+		b.WriteString("\tvar pgErr *pgconn.PgError\n")
+	}
 	fmt.Fprintf(&b, "\tswitch {\n\tcase errors.Is(err, pgx.ErrNoRows):\n\t\treturn domain.%s{}, domain.ErrNotFound\n", typ)
+	if len(uniq) > 0 {
+		fmt.Fprintf(&b, "\tcase errors.As(err, &pgErr) && pgErr.Code == \"23505\":\n\t\treturn domain.%s{}, fmt.Errorf(\"%%w: %s\", domain.ErrInvalid)\n", typ, uniqueViolationMessage(uniq))
+	}
 	fmt.Fprintf(&b, "\tcase err != nil:\n\t\treturn domain.%s{}, fmt.Errorf(\"models: update %s %%v: %%w\", %s.ID, err)\n\t}\n", typ, name, recv)
 	fmt.Fprintf(&b, "\treturn %sFromRow(row), nil\n}\n\n", name)
 
@@ -320,6 +334,31 @@ func looksPlural(name string) bool {
 	}
 	s := Singular(name)
 	return s != name && Plural(s) == name
+}
+
+// uniqueAttrs is attrs that must be unique, in order: a model with none of
+// these never needs to tell a duplicate-value error apart from any other
+// database error.
+func uniqueAttrs(attrs []Attr) []Attr {
+	var out []Attr
+	for _, a := range attrs {
+		if a.Unique {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// uniqueViolationMessage names the columns a unique-constraint violation on
+// uniq is about, for the ErrInvalid a caller gets instead of a raw
+// Postgres error: "email is already taken", or "email or username is
+// already taken" for more than one.
+func uniqueViolationMessage(uniq []Attr) string {
+	names := make([]string, len(uniq))
+	for i, a := range uniq {
+		names[i] = a.Name
+	}
+	return strings.Join(names, " or ") + " is already taken"
 }
 
 func needsPgtype(attrs []Attr) bool {
