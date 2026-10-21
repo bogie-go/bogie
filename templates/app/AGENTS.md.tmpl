@@ -354,6 +354,28 @@ with either sibling file. Annotations: `:one`, `:many`, `:exec`,
 `:execrows`. The generated file is committed; `bin/ci` fails if it is
 stale.
 
+### Run a transaction
+
+A write that touches more than one table, and must not half-succeed, goes
+through `(*Store).withTx` — the one place `app/models/store.go` wraps a real
+database transaction, Go's version of Rails' `ActiveRecord::Base.transaction
+do ... end`:
+
+    func (s *Store) CreateOrderFromCart(ctx context.Context, userID, cartID int64) (domain.Order, error) {
+        var order domain.Order
+        err := s.withTx(ctx, func(q *Queries) error {
+            // every call here runs on the same transaction; an error
+            // from any of them rolls all of them back, nothing commits
+            return nil
+        })
+        return order, err
+    }
+
+written in a hand-written method's own sibling file, such as
+`orders_extra.go`, the same place any other hand-written store method goes
+("Add a model", above). `withTx` is unexported: it is for `app/models`
+itself to call, never for a controller to reach past the store with.
+
 ### Static files and error pages
 
 `public/` is Rails's own `public/` folder: a handful of files served

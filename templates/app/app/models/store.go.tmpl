@@ -39,6 +39,37 @@ func (s *Store) Close() { s.pool.Close() }
 
 // Ping reports whether the database answers.
 func (s *Store) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }
+
+// withTx runs fn against a *Queries bound to one database transaction:
+// every call fn makes through it happens on the same connection and the
+// same not-yet-committed transaction, however many tables it touches. If fn
+// returns an error, everything it did is rolled back as if none of it had
+// happened; only a nil return commits. This is Go's version of Rails'
+// `ActiveRecord::Base.transaction do ... end` — explicit about the
+// boundary (the closure) rather than implicit about which calls join it.
+//
+// Unexported: a hand-written *Store method that needs a real transaction —
+// a checkout, a transfer, anything that writes to more than one table and
+// must not half-succeed — calls it from its own sibling file in
+// app/models/, such as orders_extra.go, not from above this package.
+//
+// Until a hand-written method calls it there is none, and this keeps
+// golangci-lint's unused check quiet.
+var _ = (*Store).withTx
+
+func (s *Store) withTx(ctx context.Context, fn func(q *Queries) error) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("models: begin transaction: %w", err)
+	}
+	if err := fn(s.q.WithTx(tx)); err != nil {
+		if rbErr := tx.Rollback(ctx); rbErr != nil {
+			return fmt.Errorf("models: %w (rollback also failed: %v)", err, rbErr)
+		}
+		return err
+	}
+	return tx.Commit(ctx)
+}
 {{if .Jobs}}
 // Pool is the connection pool, for River and nothing else: the job queue
 // shares the database so an enqueue can ride a business transaction. Every
