@@ -84,17 +84,10 @@ func (s IDScheme) referencesKind() kind {
 	return kind{sql: "bigint", sqlDef: "NOT NULL", domain: "int64", sqlcType: "int64", toRow: "%s", fromRow: "%s", reference: true}
 }
 
-// idDomain and idSQLCType are the model's own ID field's type: in
-// app/domain, and what sqlc emits for the column sqlc scans it from.
+// idDomain is the model's own ID field's type in app/domain.
 func (s IDScheme) idDomain() string {
 	if s == IDUUID {
 		return "string"
-	}
-	return "int64"
-}
-func (s IDScheme) idSQLCType() string {
-	if s == IDUUID {
-		return "pgtype.UUID"
 	}
 	return "int64"
 }
