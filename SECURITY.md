@@ -30,4 +30,4 @@ here is still welcome.
 ## Supported versions
 
 Fixes go into the next release. Only the latest release gets fixes; today
-that is v0.2.10.
+that is v0.2.11.
