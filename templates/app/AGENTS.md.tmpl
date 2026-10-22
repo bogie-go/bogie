@@ -280,7 +280,10 @@ and map no-rows to `domain.ErrNotFound`; then it runs sqlc. Types: string, text,
 uuid, jsonb, references; `:index` or `:uniq` after a type. `post:references`
 is the column `post_id` with a foreign key and an index. A `:uniq` column
 also makes `Create`/`Update` map a duplicate value to `domain.ErrInvalid`
-("email is already taken"), not a raw database error.
+("email is already taken"), not a raw database error. `Delete` maps a
+foreign-key violation (a row something else still points at) to
+`domain.ErrInvalid` too ("post is still in use"), so a controller answers 422,
+not 500.
 
 Every generated column is NOT NULL with a type-appropriate default, so sqlc
 emits plain Go types rather than pointers. A column that truly needs null is
