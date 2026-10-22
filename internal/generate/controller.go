@@ -24,6 +24,9 @@ type Wire struct {
 	Marker string
 	Line   string
 	Import string
+	// Sorted puts a mapstructure-tagged field where its tag sorts among its
+	// neighbours above the marker, instead of directly above the marker.
+	Sorted bool
 }
 
 // ParseControllerName splits what `rails g controller` accepts, posts,

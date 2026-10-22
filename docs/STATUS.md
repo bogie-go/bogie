@@ -1,7 +1,7 @@
 # Status
 
 Where Bogie stands, for whoever picks it up next, on whatever machine. Updated
-2026-10-22, at v0.3.0. `docs/DESIGN.md` is the design and the
+2026-10-22, at v0.3.1. `docs/DESIGN.md` is the design and the
 reasoning; this file is the state.
 
 ## Milestones
@@ -20,7 +20,7 @@ reasoning; this file is the state.
 
 Install: `go install github.com/bogie-go/bogie@latest` for the newest tag,
 `@main` for main, `go install .` from a clone. First release: v0.1.0,
-2026-10-03; latest: v0.3.0, 2026-10-22.
+2026-10-03; latest: v0.3.1, 2026-10-22.
 
     bogie new NAME [--module=PATH] [--id=bigint|uuid] [--jobs]
                                                  an empty service, as rails new makes: it
@@ -57,8 +57,10 @@ Install: `go install github.com/bogie-go/bogie@latest` for the newest tag,
     bogie g config smtp address:req port:int=1025 ... a group of the credentials file: a typed
                                                       struct in config/smtp.go, registered in
                                                       config.go, with development credentials;
-                                                      run again to add keys. smtp.address is
-                                                      SMTP_ADDRESS (no app prefix)
+                                                      run again to add keys; hello=world makes a
+                                                      flat top-level key. Top-level entries are kept
+                                                      alphabetical, a group's own keys as typed.
+                                                      smtp.address is SMTP_ADDRESS (no app prefix)
     bogie g seed demo_posts                           db/seeds/demo_posts.go, registered above
                                                       // bogie:seeds; db seed re-runs every seed,
                                                       so each one is written to run twice safely

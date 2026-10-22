@@ -25,15 +25,16 @@ const developmentSettings = `# Development settings for %[1]s. Edit with: make c
 # Groups at the top level, as Rails credentials are. A key's environment
 # variable is its path, upper-cased: server.addr is SERVER_ADDR, database.url
 # is DATABASE_URL, and the environment wins over this file. Keys you leave out
-# keep the defaults in config/config.go. Add a group with bogie g config.
+# keep the defaults in config/config.go. Add a group or a key with bogie g
+# config; new top-level entries go in alphabetical order.
 #
 # Staging and production live in their own files with their own keys:
 #   make credentials ENV=production
+database:
+  url: postgres://postgres:postgres@localhost:5440/%[1]s_development?sslmode=disable
 server:
   addr: ":8080"
   log_level: debug
-database:
-  url: postgres://postgres:postgres@localhost:5440/%[1]s_development?sslmode=disable
 `
 
 // writeCredentials creates config/master.key and config/credentials.yml.enc

@@ -146,4 +146,4 @@ the rest of issue #11.
 M0 decide → M1 `bogie new` producing an app that builds, migrates and serves →
 M2 generators + markers + doctor + golden tests → M3 agent layer → M4 dogfood
 against kchat → M5 publish → M6 `app:update`. All built; v0.1.0 tagged
-2026-10-03, v0.3.0 the latest (2026-10-22). `docs/STATUS.md` has what is next.
+2026-10-03, v0.3.1 the latest (2026-10-22). `docs/STATUS.md` has what is next.

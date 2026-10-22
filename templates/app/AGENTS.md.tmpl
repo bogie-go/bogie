@@ -245,6 +245,22 @@ credentials file gets. A key's environment variable is its path upper-cased:
 is no app prefix, so a setting another app exports under the same name in your
 shell reaches this one.
 
+A flat key, with no group around it, has a value or a type and no group name:
+
+    bogie g config support_email=help@example.com
+    bogie g config retries:int:req
+
+and is a field directly on `Config` (`s.Config.SupportEmail`), overridden by
+`SUPPORT_EMAIL`. Its default goes in `defaults()` in `config/config.go`, by
+hand. `bogie d config support_email` removes it. A bare word with no keys,
+`bogie g config smtp`, is a mistake and refused.
+
+Order: the top-level entries, groups and flat keys together, are kept
+alphabetical, in the credentials file and in the `Config` struct, so a new one
+is inserted where it sorts (before the first existing entry that sorts after
+it, so a file already out of order is not reshuffled). The keys *inside* a
+group are never sorted: they stay in the order you typed them.
+
 Run it again to add keys to the group: they go above the markers in
 `config/smtp.go`, and nothing that exists is overwritten, so the file's
 `defaults` method, where per-environment policy goes by hand (Mailpit in

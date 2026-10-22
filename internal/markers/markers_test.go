@@ -163,3 +163,30 @@ func TestAddImportToAFileWithoutABlock(t *testing.T) {
 		t.Errorf("result does not format: %v\n%s", err, got)
 	}
 }
+
+func TestInsertSortedPutsAFieldWhereItsTagSorts(t *testing.T) {
+	const src = "type Config struct {\n\tEnv string `mapstructure:\"-\"`\n\n\t// groups\n\tDatabase DatabaseConfig `mapstructure:\"database\"`\n\tServer   ServerConfig   `mapstructure:\"server\"`\n\t// bogie:config\n}\n"
+	got, changed, err := InsertSorted([]byte(src), "config.go", "config", "Mail MailConfig `mapstructure:\"mail\"`")
+	if err != nil || !changed {
+		t.Fatalf("%v %v", changed, err)
+	}
+	want := "type Config struct {\n\tEnv string `mapstructure:\"-\"`\n\n\t// groups\n\tDatabase DatabaseConfig `mapstructure:\"database\"`\n\tMail MailConfig `mapstructure:\"mail\"`\n\tServer   ServerConfig   `mapstructure:\"server\"`\n\t// bogie:config\n}\n"
+	if string(got) != want {
+		t.Errorf("got\n%s\nwant\n%s", got, want)
+	}
+	// After the last one, and again, which changes nothing (gofmt's padding
+	// on the earlier line must not read as a different line).
+	got, _, _ = InsertSorted(got, "config.go", "config", "Token TokenConfig `mapstructure:\"token\"`")
+	if i, j := strings.Index(string(got), "Token"), strings.Index(string(got), "// bogie:config"); i < 0 || i > j || strings.Index(string(got), "Server") > i {
+		t.Errorf("token not after server, above the marker:\n%s", got)
+	}
+	again, changed, _ := InsertSorted(got, "config.go", "config", "Token  TokenConfig  `mapstructure:\"token\"`")
+	if changed || string(again) != string(got) {
+		t.Error("a second insert changed the file")
+	}
+	// Before the first.
+	got, _, _ = InsertSorted(got, "config.go", "config", "Auth AuthConfig `mapstructure:\"auth\"`")
+	if strings.Index(string(got), "Auth") > strings.Index(string(got), "Database") || strings.Index(string(got), "Auth") < strings.Index(string(got), "// groups") {
+		t.Errorf("auth not first of the groups:\n%s", got)
+	}
+}

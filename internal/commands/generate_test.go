@@ -52,10 +52,30 @@ func TestExistingMigrationIgnoresTheStamp(t *testing.T) {
 func TestInsertGroupKeys(t *testing.T) {
 	const plain = "# header\nserver:\n  addr: \":8080\"\n\ndatabase:\n  url: postgres://x\n"
 
-	got, added := insertGroupKeys(plain, "smtp", []devKey{{"address", `address: "localhost:1025"`}, {"password", "# password: \"\""}})
-	want := plain + "smtp:\n  address: \"localhost:1025\"\n  # password: \"\"\n"
+	// A new group goes where its name sorts among the top-level entries,
+	// its own keys in the order given.
+	got, added := insertGroupKeys(plain, "smtp", []devKey{{"password", "# password: \"\""}, {"address", `address: "localhost:1025"`}})
+	want := plain + "smtp:\n  # password: \"\"\n  address: \"localhost:1025\"\n"
 	if got != want || len(added) != 2 {
-		t.Errorf("new group:\n%q\nwant\n%q (added %v)", got, want, added)
+		t.Errorf("new group at the end:\n%q\nwant\n%q (added %v)", got, want, added)
+	}
+	// The file's opening comment stays at the top: a group sorting first goes
+	// below it, not above.
+	got, _ = insertGroupKeys(plain, "cache", []devKey{{"ttl", `ttl: "5m"`}})
+	if !strings.HasPrefix(got, "# header\ncache:\n  ttl: \"5m\"\nserver:") {
+		t.Errorf("cache should go before the first entry that sorts after it, below the header:\n%s", got)
+	}
+
+	// Flat keys are top-level lines, placed alphabetically, and one already
+	// there (as a value or a commented placeholder) is left alone.
+	sorted := "# h\ndatabase:\n  url: x\nsmtp:\n  address: y\n"
+	got, added = insertGroupKeys(sorted, "", []devKey{{"hello", `hello: "world"`}, {"retries", "# retries: 0"}, {"aaa", `aaa: "1"`}})
+	want = "# h\naaa: \"1\"\ndatabase:\n  url: x\nhello: \"world\"\n# retries: 0\nsmtp:\n  address: y\n"
+	if got != want || len(added) != 3 {
+		t.Errorf("flat keys:\n%q\nwant\n%q (added %v)", got, want, added)
+	}
+	if _, added := insertGroupKeys(got, "", []devKey{{"hello", `hello: "again"`}, {"retries", "# retries: 0"}}); len(added) != 0 {
+		t.Errorf("flat keys already there were added again: %v", added)
 	}
 
 	got, added = insertGroupKeys(plain, "server", []devKey{{"log_level", "log_level: debug"}})
@@ -160,7 +180,36 @@ func (c Config) validate() error {
 		t.Errorf("d config left its registration:\n%s", read("config/config.go"))
 	}
 
-	for _, bad := range [][]string{{"config", "server", "x"}, {"config", "smtp"}, {"config", "smtp", "port:integer"}} {
+	// Flat keys: fields on Config itself, sorted in among the groups.
+	out.Reset()
+	if err := generateIn(root, []string{"config", "support_email=help@example.com", "retries:int:req"}, &out); err != nil {
+		t.Fatalf("flat g config: %v\n%s", err, out.String())
+	}
+	if err := generateIn(root, []string{"config", "alpha", "x"}, &out); err != nil {
+		t.Fatalf("g config alpha: %v", err)
+	}
+	cfg = read("config/config.go")
+	flat := strings.Join(strings.Fields(cfg), " ")
+	for _, line := range []string{"SupportEmail string", "Retries int", `requireKey(c.Env, "RETRIES", c.Retries != 0),`} {
+		if !strings.Contains(flat, line) {
+			t.Errorf("config.go lacks %q after a flat key:\n%s", line, cfg)
+		}
+	}
+	order := []string{`mapstructure:"alpha"`, `mapstructure:"retries"`, `mapstructure:"support_email"`}
+	for i := 1; i < len(order); i++ {
+		if strings.Index(cfg, order[i-1]) > strings.Index(cfg, order[i]) {
+			t.Errorf("top-level fields are not alphabetical (%s before %s):\n%s", order[i], order[i-1], cfg)
+		}
+	}
+	out.Reset()
+	if err := destroyIn(root, []string{"config", "support_email"}, &out); err != nil {
+		t.Fatalf("d config flat: %v\n%s", err, out.String())
+	}
+	if strings.Contains(read("config/config.go"), "SupportEmail") || !strings.Contains(read("config/config.go"), "Retries") {
+		t.Errorf("d config support_email should remove only that key:\n%s", read("config/config.go"))
+	}
+
+	for _, bad := range [][]string{{"config", "server", "x"}, {"config", "smtp"}, {"config", "smtp", "port:integer"}, {"config", "env=x"}, {"config", "lonely"}} {
 		if err := generateIn(root, bad, &out); err == nil {
 			t.Errorf("g %v accepted", bad)
 		}

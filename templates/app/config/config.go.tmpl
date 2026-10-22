@@ -90,22 +90,12 @@ type Config struct {
 	Source  string `mapstructure:"-"`
 	KeyFile string `mapstructure:"-"`
 
-	// One field per group of the credentials file. A group `bogie g config`
-	// adds goes above the marker, with its own type in config/<group>.go.
-	Server   ServerConfig   `mapstructure:"server"`
+	// One field per top-level entry of the credentials file, in alphabetical
+	// order, which is where `bogie g config` puts a new one: a group (with
+	// its own type in config/<group>.go) or a flat key.
 	Database DatabaseConfig `mapstructure:"database"`
+	Server   ServerConfig   `mapstructure:"server"`
 	// bogie:config
-}
-
-// ServerConfig is the server: group.
-type ServerConfig struct {
-	// Addr is the listen address, default :8080.
-	Addr string `mapstructure:"addr"`
-	// LogLevel is debug, info, warn or error.
-	LogLevel string `mapstructure:"log_level"`
-	// ShutdownGrace is how long Start waits for in-flight requests on
-	// SIGTERM, default 10s.
-	ShutdownGrace time.Duration `mapstructure:"shutdown_grace"`
 }
 
 // DatabaseConfig is the database: group.
@@ -118,6 +108,17 @@ type DatabaseConfig struct {
 	// default true. Set it to false only for a deployment that migrates from
 	// one place on purpose.
 	MigrateAtBoot bool `mapstructure:"migrate_at_boot"`
+}
+
+// ServerConfig is the server: group.
+type ServerConfig struct {
+	// Addr is the listen address, default :8080.
+	Addr string `mapstructure:"addr"`
+	// LogLevel is debug, info, warn or error.
+	LogLevel string `mapstructure:"log_level"`
+	// ShutdownGrace is how long Start waits for in-flight requests on
+	// SIGTERM, default 10s.
+	ShutdownGrace time.Duration `mapstructure:"shutdown_grace"`
 }
 
 // Load reads configuration and validates it.

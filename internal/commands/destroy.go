@@ -143,6 +143,13 @@ func destroyIn(root string, args []string, out io.Writer) error {
 		files, _, err = generate.Seed(module, name)
 		wires = generate.SeedWirePrefix(name)
 	case "config":
+		// A group has its own file; a flat key is only lines in config.go.
+		if _, statErr := os.Stat(filepath.Join(root, filepath.FromSlash(generate.ConfigPath(name)))); statErr != nil {
+			if src, readErr := os.ReadFile(filepath.Join(root, "config", "config.go")); readErr == nil && generate.ConfigGroupHas(src, name) {
+				wires = generate.ConfigFlatWirePrefixes(name)
+				break
+			}
+		}
 		if err = generate.ParseConfigGroup(name); err == nil {
 			files = []generate.File{{Path: generate.ConfigPath(name)}}
 			wires = generate.ConfigGroupWirePrefixes(name)

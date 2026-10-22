@@ -47,7 +47,8 @@ Generators:
                                     migration, db seed runs every seed every
                                     time: write it safe to run twice
   config GROUP key[:type][:flag][=value] ...
-                                    a group of the credentials file: a typed
+  config key[:type][:flag]=value    a group of the credentials file (or, with a
+                                    value or type, a flat top-level key): a typed
                                     struct in config/<group>.go, registered in
                                     config.go, with a line per key in the
                                     development credentials. Types: string
@@ -79,6 +80,7 @@ names the other model: post:references is post_id.
   bogie g job send_welcome
   bogie g seed demo_posts
   bogie g config smtp address:req port:int=1025 username password:secret
+  bogie g config support_email=help@example.com
   bogie g authentication secret
 `
 
@@ -157,7 +159,7 @@ func generateIn(root string, args []string, out io.Writer) error {
 	// reads: its keys get lines in the development credentials afterwards.
 	var configKeys, configFresh []generate.ConfigKey
 	var configGroup string
-	configRandom := false
+	configRandom, configFlat := false, false
 	switch generator {
 	case "controller":
 		ns, ctl, err := generate.ParseControllerName(positional[0])
@@ -209,6 +211,22 @@ func generateIn(root string, args []string, out io.Writer) error {
 			return fmt.Errorf("generate seed: %w", err)
 		}
 	case "config":
+		if generate.IsFlatConfigArg(positional[0]) {
+			// A flat key (hello=world): a top-level entry with no group.
+			configKeys, err = generate.ParseFlatConfigKeys(positional)
+			if err != nil {
+				return fmt.Errorf("generate config: %w", err)
+			}
+			wires, configFresh, err = planFlatConfig(root, configKeys)
+			if err != nil {
+				return fmt.Errorf("generate config: %w", err)
+			}
+			configFlat = true
+			break
+		}
+		if len(positional) == 1 {
+			return fmt.Errorf("generate config: %s is a group name, so give it keys: bogie g config %s address port:int (or for a flat key with a value: bogie g config %s=value)", name, name, name)
+		}
 		if err := generate.ParseConfigGroup(name); err != nil {
 			return fmt.Errorf("generate config: %w", err)
 		}
@@ -316,7 +334,7 @@ func generateIn(root string, args []string, out io.Writer) error {
 	// secret an authentication shape reads, a random value, so the app boots
 	// as it did. Staging and production are given theirs by hand, and refuse
 	// to boot without. New dependencies are tidied in.
-	if configGroup != "" {
+	if configGroup != "" || configFlat {
 		lines, err := developmentKeys(configFresh, configRandom)
 		if err != nil {
 			return fmt.Errorf("generate %s: %w", generator, err)
@@ -326,9 +344,12 @@ func generateIn(root string, args []string, out io.Writer) error {
 		}
 	}
 	if generator == "config" {
-		g := generate.Camel(configGroup)
-		say("%12s  read it as s.Config.%s.%s; set it in production with make credentials ENV=production, or %s\n", "next",
-			g, generate.Camel(configKeys[0].Name), configKeys[0].Env(configGroup))
+		read := "s.Config." + generate.Camel(configKeys[0].Name)
+		if !configFlat {
+			read = "s.Config." + generate.Camel(configGroup) + "." + generate.Camel(configKeys[0].Name)
+		}
+		say("%12s  read it as %s; set it in production with make credentials ENV=production, or %s\n", "next",
+			read, configKeys[0].Env(configGroup))
 	}
 	if generator == "authentication" {
 		if !*pretend && name != "secret" {

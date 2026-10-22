@@ -126,8 +126,14 @@ func (k ConfigKey) Field() string { return Camel(k.Name) }
 
 func (k ConfigKey) goType() string { return configTypes[k.Type] }
 
-// Env is the environment variable that overrides it.
-func (k ConfigKey) Env(group string) string { return strings.ToUpper(group + "_" + k.Name) }
+// Env is the environment variable that overrides it: SMTP_ADDRESS in a group,
+// just HELLO for a flat key (group "").
+func (k ConfigKey) Env(group string) string {
+	if group == "" {
+		return strings.ToUpper(k.Name)
+	}
+	return strings.ToUpper(group + "_" + k.Name)
+}
 
 // YAML is the line for the development credentials file: the value if one
 // was given, otherwise a commented placeholder, because a key present with an
@@ -148,15 +154,17 @@ func (k ConfigKey) fieldLine() string {
 	return fmt.Sprintf("%s %s `mapstructure:%q`", k.Field(), k.goType(), k.Name)
 }
 
-// validateLine is the production check for a required key, or "".
-func (k ConfigKey) validateLine(group string) string {
+// validateLine is the production check for a required key, or "". env is the
+// Go expression for the environment: the parameter inside a group's validate,
+// c.Env on Config itself.
+func (k ConfigKey) validateLine(group, env string) string {
 	switch {
 	case k.Secret:
-		return fmt.Sprintf("requireSecret(env, %q, c.%s, %d),", k.Env(group), k.Field(), k.Min)
+		return fmt.Sprintf("requireSecret(%s, %q, c.%s, %d),", env, k.Env(group), k.Field(), k.Min)
 	case k.Req && k.Type == "string":
-		return fmt.Sprintf("requireKey(env, %q, c.%s != \"\"),", k.Env(group), k.Field())
+		return fmt.Sprintf("requireKey(%s, %q, c.%s != \"\"),", env, k.Env(group), k.Field())
 	case k.Req:
-		return fmt.Sprintf("requireKey(env, %q, c.%s != 0),", k.Env(group), k.Field())
+		return fmt.Sprintf("requireKey(%s, %q, c.%s != 0),", env, k.Env(group), k.Field())
 	}
 	return ""
 }
@@ -201,7 +209,7 @@ func ConfigGroup(group string, keys []ConfigKey) (File, []Wire, error) {
 	fmt.Fprintf(&b, "// validate refuses to boot in production without a required key.\n")
 	fmt.Fprintf(&b, "func (c %s) validate(env string) error {\n\tfor _, err := range []error{\n", typ)
 	for _, k := range keys {
-		if l := k.validateLine(group); l != "" {
+		if l := k.validateLine(group, "env"); l != "" {
 			fmt.Fprintf(&b, "\t\t%s\n", l)
 		}
 	}
@@ -219,7 +227,7 @@ func ConfigGroup(group string, keys []ConfigKey) (File, []Wire, error) {
 func ConfigGroupWires(group string) []Wire {
 	f := Camel(group)
 	return []Wire{
-		{File: "config/config.go", Marker: "config", Line: fmt.Sprintf("%s %s `mapstructure:%q`", f, groupType(group), group)},
+		{File: "config/config.go", Marker: "config", Sorted: true, Line: fmt.Sprintf("%s %s `mapstructure:%q`", f, groupType(group), group)},
 		{File: "config/config.go", Marker: "defaults", Line: fmt.Sprintf("c.%s.defaults(env)", f)},
 		{File: "config/config.go", Marker: "validate", Line: fmt.Sprintf("c.%s.validate(c.Env),", f)},
 	}
@@ -246,7 +254,7 @@ func ConfigKeyWires(group string, keys []ConfigKey) []Wire {
 			w.Import = "time"
 		}
 		ws = append(ws, w)
-		if l := k.validateLine(group); l != "" {
+		if l := k.validateLine(group, "env"); l != "" {
 			ws = append(ws, Wire{File: ConfigPath(group), Marker: "validate:" + group, Line: l})
 		}
 	}
@@ -257,4 +265,60 @@ func ConfigKeyWires(group string, keys []ConfigKey) []Wire {
 // a second run adds only what is new.
 func ConfigGroupHas(src []byte, key string) bool {
 	return strings.Contains(string(src), fmt.Sprintf("`mapstructure:%q`", key))
+}
+
+// A flat key is a top-level key of the credentials file with no group around
+// it (hello: world): a field directly on Config, overridden by the variable
+// of its own name (HELLO). Its defaults go in config.go's defaults() by hand.
+
+// reservedFlatNames cannot be flat keys: they are Config's own fields, or the
+// app's own groups.
+var reservedFlatNames = []string{"env", "source", "key_file", "server", "database"}
+
+// IsFlatConfigArg reports whether the first argument of `g config` is a flat
+// key (hello=world, retries:int) rather than the name of a group.
+func IsFlatConfigArg(arg string) bool { return strings.ContainsAny(arg, "=:") }
+
+// ParseFlatConfigKeys reads flat keys, with the same grammar as a group's.
+func ParseFlatConfigKeys(args []string) ([]ConfigKey, error) {
+	keys, err := ParseConfigKeys(args)
+	if err != nil {
+		return nil, err
+	}
+	for _, k := range keys {
+		for _, r := range reservedFlatNames {
+			if k.Name == r {
+				return nil, fmt.Errorf("%s cannot be a flat key: it is one of Config's own names", k.Name)
+			}
+		}
+	}
+	return keys, nil
+}
+
+// ConfigFlatWires register flat keys in config/config.go: the field, sorted in
+// among the groups, and the production check for a required one.
+func ConfigFlatWires(keys []ConfigKey) []Wire {
+	var ws []Wire
+	for _, k := range keys {
+		w := Wire{File: "config/config.go", Marker: "config", Sorted: true, Line: k.fieldLine()}
+		if k.Type == "duration" {
+			w.Import = "time"
+		}
+		ws = append(ws, w)
+		if l := k.validateLine("", "c.Env"); l != "" {
+			ws = append(ws, Wire{File: "config/config.go", Marker: "validate", Line: l})
+		}
+	}
+	return ws
+}
+
+// ConfigFlatWirePrefixes are what destroy removes for a flat key.
+func ConfigFlatWirePrefixes(name string) []Wire {
+	k := ConfigKey{Name: name}
+	env := strings.ToUpper(name)
+	return []Wire{
+		{File: "config/config.go", Line: k.Field() + " "},
+		{File: "config/config.go", Line: fmt.Sprintf("requireKey(c.Env, %q,", env)},
+		{File: "config/config.go", Line: fmt.Sprintf("requireSecret(c.Env, %q,", env)},
+	}
 }

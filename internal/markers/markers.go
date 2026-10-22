@@ -34,6 +34,56 @@ func Insert(src []byte, file, marker, line string) (out []byte, changed bool, er
 	return []byte(strings.Join(lines, "\n")), true, nil
 }
 
+var structTag = regexp.MustCompile("`mapstructure:\"([^\"]*)\"`")
+
+// tagOf is the mapstructure name on a struct field line, or "".
+func tagOf(line string) string {
+	if m := structTag.FindStringSubmatch(line); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// InsertSorted is Insert for a struct field with a mapstructure tag: instead of
+// going directly above the marker it goes where its tag sorts among the tagged
+// fields just above the marker (a contiguous run, so the fields before them,
+// Env and the like, stay put), before the first one whose tag is greater. It
+// is idempotent by the line's words, so the padding gofmt added to an earlier
+// insert does not make it look new. A line with no tag is a plain Insert.
+func InsertSorted(src []byte, file, marker, line string) (out []byte, changed bool, err error) {
+	key := tagOf(line)
+	if key == "" {
+		return Insert(src, file, marker, line)
+	}
+	lines := strings.Split(string(src), "\n")
+	at, indent, err := find(lines, file, marker)
+	if err != nil {
+		return nil, false, err
+	}
+	words := strings.Join(strings.Fields(line), " ")
+	for _, l := range lines {
+		if strings.Join(strings.Fields(l), " ") == words {
+			return src, false, nil
+		}
+	}
+	first := at
+	for i := at - 1; i >= 0; i-- {
+		if k := tagOf(lines[i]); k == "" || k == "-" {
+			break
+		}
+		first = i
+	}
+	pos := at
+	for i := first; i < at; i++ {
+		if tagOf(lines[i]) > key {
+			pos = i
+			break
+		}
+	}
+	lines = append(lines[:pos], append([]string{indent + strings.TrimSpace(line)}, lines[pos:]...)...)
+	return []byte(strings.Join(lines, "\n")), true, nil
+}
+
 // Remove deletes the first line whose text starts with prefix, so a wire
 // line can be removed whatever arguments it was given. Runs of spaces and
 // tabs count as one: gofmt aligns a struct's fields, so the line a generator

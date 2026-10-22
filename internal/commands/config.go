@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -50,4 +51,23 @@ func developmentKeys(keys []generate.ConfigKey, randomSecrets bool) ([]devKey, e
 		out = append(out, devKey{Name: k.Name, Line: k.YAML()})
 	}
 	return out, nil
+}
+
+// planFlatConfig is planConfigGroup for flat keys: they are fields on Config
+// itself, so there is no file, only the lines in config/config.go, and a key
+// already there (or a group of the same name) is left alone.
+func planFlatConfig(root string, keys []generate.ConfigKey) (wires []generate.Wire, fresh []generate.ConfigKey, err error) {
+	src, err := os.ReadFile(filepath.Join(root, "config", "config.go"))
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, k := range keys {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(generate.ConfigPath(k.Name)))); err == nil {
+			return nil, nil, fmt.Errorf("%s is already a group (config/%s.go); a flat key needs another name", k.Name, k.Name)
+		}
+		if !generate.ConfigGroupHas(src, k.Name) {
+			fresh = append(fresh, k)
+		}
+	}
+	return generate.ConfigFlatWires(fresh), fresh, nil
 }
