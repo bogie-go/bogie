@@ -22,16 +22,18 @@ import (
 // development can never also open production.
 const developmentSettings = `# Development settings for %[1]s. Edit with: make credentials
 #
-# One section, named after the app. Each key here can be overridden by an
-# environment variable: %[1]s.addr is %[2]s_ADDR. Keys you leave out keep
-# the defaults in config/config.go.
+# Groups at the top level, as Rails credentials are. A key's environment
+# variable is its path, upper-cased: server.addr is SERVER_ADDR, database.url
+# is DATABASE_URL, and the environment wins over this file. Keys you leave out
+# keep the defaults in config/config.go. Add a group with bogie g config.
 #
 # Staging and production live in their own files with their own keys:
 #   make credentials ENV=production
-%[1]s:
+server:
   addr: ":8080"
   log_level: debug
-  database_url: postgres://postgres:postgres@localhost:5440/%[1]s_development?sslmode=disable
+database:
+  url: postgres://postgres:postgres@localhost:5440/%[1]s_development?sslmode=disable
 `
 
 // writeCredentials creates config/master.key and config/credentials.yml.enc
@@ -64,7 +66,7 @@ func writeCredentials(dest string, vars scaffold.Vars, pretend bool, report func
 		return fmt.Errorf("new: %w", err)
 	}
 	editor := credentials.NewConfigEditor(dir, "credentials.yml.enc", "master.key", "")
-	yaml := fmt.Sprintf(developmentSettings, vars.Name, vars.EnvPrefix)
+	yaml := fmt.Sprintf(developmentSettings, vars.Name)
 	if err := editor.EncryptAndSave([]byte(yaml), hex.EncodeToString(key)); err != nil {
 		return fmt.Errorf("new: %w", err)
 	}

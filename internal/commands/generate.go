@@ -46,6 +46,16 @@ Generators:
                                     bogie:seeds in db/seeds/seeds.go. Unlike a
                                     migration, db seed runs every seed every
                                     time: write it safe to run twice
+  config GROUP key[:type][:flag][=value] ...
+                                    a group of the credentials file: a typed
+                                    struct in config/<group>.go, registered in
+                                    config.go, with a line per key in the
+                                    development credentials. Types: string
+                                    (default) int bool duration; flags: req
+                                    (production refuses to boot without it),
+                                    secret (the same, never given a made-up
+                                    value). smtp.address is SMTP_ADDRESS;
+                                    run again to add keys
   authentication SHAPE              a middleware on a route group, its config
                                     key with a development value written to
                                     the credentials, and a WithX group helper
@@ -68,6 +78,7 @@ names the other model: post:references is post_id.
   bogie g service publish_post
   bogie g job send_welcome
   bogie g seed demo_posts
+  bogie g config smtp address:req port:int=1025 username password:secret
   bogie g authentication secret
 `
 
@@ -142,6 +153,11 @@ func generateIn(root string, args []string, out io.Writer) error {
 	var files []generate.File
 	var wires []generate.Wire
 	runSqlc := false
+	// A config group, from `g config` or the secret an authentication shape
+	// reads: its keys get lines in the development credentials afterwards.
+	var configKeys, configFresh []generate.ConfigKey
+	var configGroup string
+	configRandom := false
 	switch generator {
 	case "controller":
 		ns, ctl, err := generate.ParseControllerName(positional[0])
@@ -192,12 +208,35 @@ func generateIn(root string, args []string, out io.Writer) error {
 		if err != nil {
 			return fmt.Errorf("generate seed: %w", err)
 		}
+	case "config":
+		if err := generate.ParseConfigGroup(name); err != nil {
+			return fmt.Errorf("generate config: %w", err)
+		}
+		configKeys, err = generate.ParseConfigKeys(attrArgs)
+		if err != nil {
+			return fmt.Errorf("generate config: %w", err)
+		}
+		files, wires, configFresh, err = planConfigGroup(root, name, configKeys)
+		if err != nil {
+			return fmt.Errorf("generate config: %w", err)
+		}
+		configGroup = name
 	case "authentication":
 		files, wires, err = generate.Authentication(module, settings.Name, name, scheme, nextStamp(root, time.Now()))
 		if err != nil {
 			return fmt.Errorf("generate authentication: %w", err)
 		}
 		runSqlc = name == "api_key"
+		// The secret lives in a config group (token.secret); add it the way
+		// `g config` would.
+		if setting, ok := generate.AuthenticationSetting(name); ok {
+			groupFiles, groupWires, fresh, err := planConfigGroup(root, setting.Group, []generate.ConfigKey{setting.ConfigKey()})
+			if err != nil {
+				return fmt.Errorf("generate authentication: %w", err)
+			}
+			files, wires = append(files, groupFiles...), append(wires, groupWires...)
+			configGroup, configFresh, configRandom = setting.Group, fresh, true
+		}
 	case "migration", "model", "scaffold":
 		runSqlc = true
 	default:
@@ -272,15 +311,26 @@ func generateIn(root string, args []string, out io.Writer) error {
 		return fmt.Errorf("generate %s: %w", generator, err)
 	}
 
-	// A generated secret gets a development value in the credentials file,
-	// so the app boots as it did; staging and production are given theirs by
-	// hand, and refuse to boot without. New dependencies are tidied in.
-	if generator == "authentication" {
-		for _, s := range generate.AuthenticationSettings(appName(root), name) {
-			if err := addDevelopmentSetting(root, s.Key, *pretend, report); err != nil {
-				return fmt.Errorf("generate authentication: %w", err)
-			}
+	// A config group's keys get lines in the development credentials file: a
+	// value if one was given, a commented placeholder otherwise, and for the
+	// secret an authentication shape reads, a random value, so the app boots
+	// as it did. Staging and production are given theirs by hand, and refuse
+	// to boot without. New dependencies are tidied in.
+	if configGroup != "" {
+		lines, err := developmentKeys(configFresh, configRandom)
+		if err != nil {
+			return fmt.Errorf("generate %s: %w", generator, err)
 		}
+		if err := addDevelopmentKeys(root, configGroup, lines, *pretend, report); err != nil {
+			return fmt.Errorf("generate %s: %w", generator, err)
+		}
+	}
+	if generator == "config" {
+		g := generate.Camel(configGroup)
+		say("%12s  read it as s.Config.%s.%s; set it in production with make credentials ENV=production, or %s\n", "next",
+			g, generate.Camel(configKeys[0].Name), configKeys[0].Env(configGroup))
+	}
+	if generator == "authentication" {
 		if !*pretend && name != "secret" {
 			say("%12s  go mod tidy\n", "run")
 			cmd := exec.Command("go", "mod", "tidy")

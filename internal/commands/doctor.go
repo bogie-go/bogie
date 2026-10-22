@@ -44,7 +44,7 @@ func Doctor(out io.Writer) error {
 		{"app/application.go", "wire"},
 		{"app/controllers/routes.go", "routes"},
 		{"config/config.go", "config"},
-		{"config/config.go", "env"},
+		{"config/config.go", "defaults"},
 		{"config/config.go", "validate"},
 		{"main.go", "commands"},
 		{"db/seeds/seeds.go", "seeds"},

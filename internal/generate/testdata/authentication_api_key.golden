@@ -503,7 +503,7 @@ func runAPIKeys(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	store, err := models.Open(ctx, cfg.App.DatabaseURL)
+	store, err := models.Open(ctx, cfg.Database.URL)
 	if err != nil {
 		return err
 	}

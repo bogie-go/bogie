@@ -51,7 +51,7 @@ func TestHintTellsTheFailuresApart(t *testing.T) {
 	if strings.Contains(own, "make up") {
 		t.Errorf("a non-bundled port was told to run make up:\n%s", own)
 	}
-	if !strings.Contains(own, "{{.EnvPrefix}}_DATABASE_URL") {
+	if !strings.Contains(own, "DATABASE_URL") {
 		t.Errorf("a non-bundled port was not told how to repoint:\n%s", own)
 	}
 

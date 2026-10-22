@@ -53,9 +53,12 @@ committed ciphertext, keys never committed, environment variables override.
     config/credentials/production.yml.enc + config/credentials/production.key
 
 `make credentials` edits development's; `make credentials ENV=production`
-edits that file with its own key. Every file is flat and has one section,
-`{{.Name}}:`, whose keys give the environment-variable names: `{{.Name}}.addr`
-is overridden by `{{.EnvPrefix}}_ADDR`.
+edits that file with its own key. Every file is flat: groups at the top level
+(`server:`, `database:`, and any `bogie g config` adds), and a key's
+environment variable is its path, upper-cased: `server.addr` is overridden by
+`SERVER_ADDR`, `database.url` by `DATABASE_URL`. There is no app prefix on
+them, so a `DATABASE_URL` another app exports in your shell reaches this one
+in development (test never reads it).
 
 Two variables, deliberately separate: `{{.EnvPrefix}}_ENV` is a closed set,
 `development`, `test`, `production`, and selects behaviour; staging is
@@ -227,7 +230,32 @@ transaction with `InsertTx`, so the job commits with the row or not at all.
 backlog never slows a request. Args are stored as JSON: carry ids, not
 records. River's schema is applied by `migrate`, not by db/migrate.
 
-{{end}}### Add authentication
+{{end}}### Add a setting
+
+    bogie g config smtp address:req port:int=1025 username password:secret
+
+adds a group to the credentials file: a typed struct in `config/smtp.go`,
+registered in `config/config.go`, read as `s.Config.Smtp.Address`. Each key is
+`name[:type][:flag][=value]`. Types are `string` (the default), `int`, `bool`
+and `duration`. Flags are `req` (production refuses to boot without it) and
+`secret` (the same, and the development credentials get a commented
+placeholder, never an invented value). `=value` is what the development
+credentials file gets. A key's environment variable is its path upper-cased:
+`smtp.address` is `SMTP_ADDRESS`, and the environment wins over the file. There
+is no app prefix, so a setting another app exports under the same name in your
+shell reaches this one.
+
+Run it again to add keys to the group: they go above the markers in
+`config/smtp.go`, and nothing that exists is overwritten, so the file's
+`defaults` method, where per-environment policy goes by hand (Mailpit in
+development, nothing in production), is safe. A key left without a value is
+written commented out: a key present with an empty value would override the
+default with nothing. One level of group only (`smtp.address`, not
+`mail.smtp.address`), and `server` and `database` are the app's own, in
+`config/config.go`. `bogie d config smtp` removes the group and its lines in
+`config.go`; its lines in the development credentials stay, harmless.
+
+### Add authentication
 
     bogie g authentication secret      # the Rails app calls this service
     bogie g authentication token       # a user presents a bearer token
@@ -236,11 +264,11 @@ records. River's schema is applied by `migrate`, not by db/migrate.
 Each shape is a middleware on a route group, as `before_action` is. The
 generator writes the middleware and its test in `app/middlewares`, a group
 helper on the root Server in `app/controllers/authentication_<shape>.go`,
-and the config: a field, its environment override and a production check,
-above the markers in `config/config.go`, with a development value written
-into the credentials file so the app boots as before. Staging and
-production get theirs with `make credentials ENV=...`, and refuse to boot
-without. Then mount what the guard protects on the group instead of the
+and the config: a group (`token:`, or `control:` for the secret shape) with a
+`secret` key, as `bogie g config` writes it (see "Add a setting"), with a
+random development value written into the credentials file so the app boots
+as before. Staging and production get theirs with `make credentials ENV=...`,
+and refuse to boot without. Then mount what the guard protects on the group instead of the
 router, in `routes.go`:
 
     s.Posts.SetupRoutes(s.WithSecret(&r.RouterGroup))   // or WithUser, WithAPIKey

@@ -53,7 +53,7 @@ func NewServer(cfg config.Config, log *slog.Logger) *Server {
 // is worth not having.
 func (s *Server) Start(ctx context.Context) error {
 	srv := &http.Server{
-		Addr:              s.Config.App.Addr,
+		Addr:              s.Config.Server.Addr,
 		Handler:           s.Router,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
@@ -63,7 +63,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		s.Log.Info("http listening", "addr", s.Config.App.Addr, "env", s.Config.Env)
+		s.Log.Info("http listening", "addr", s.Config.Server.Addr, "env", s.Config.Env)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
@@ -73,8 +73,8 @@ func (s *Server) Start(ctx context.Context) error {
 	case err := <-errCh:
 		return err
 	case <-ctx.Done():
-		s.Log.Info("draining", "grace", s.Config.App.ShutdownGrace)
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), s.Config.App.ShutdownGrace)
+		s.Log.Info("draining", "grace", s.Config.Server.ShutdownGrace)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), s.Config.Server.ShutdownGrace)
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
 	}

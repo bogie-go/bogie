@@ -140,3 +140,26 @@ func TestCheck(t *testing.T) {
 		t.Error("missing marker passed")
 	}
 }
+
+func TestAddImportToAFileWithoutABlock(t *testing.T) {
+	cases := map[string]struct{ src, want string }{
+		"no import at all": {"package config\n\ntype T struct{}\n", "package config\n\nimport \"time\"\n\ntype T struct{}\n"},
+		"one single-line import": {"package config\n\nimport \"os\"\n\nvar _ = os.Args\n",
+			"package config\n\nimport (\n\t\"os\"\n\t\"time\"\n)\n\nvar _ = os.Args\n"},
+		"already there": {"package config\n\nimport \"time\"\n\nvar _ = time.Now\n", "package config\n\nimport \"time\"\n\nvar _ = time.Now\n"},
+	}
+	for name, tc := range cases {
+		got, _, err := AddImport([]byte(tc.src), "time")
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if string(got) != tc.want {
+			t.Errorf("%s:\ngot  %q\nwant %q", name, got, tc.want)
+		}
+	}
+	// Whatever shape it takes, the result still formats and parses.
+	got, _, _ := AddImport([]byte("package config\n\ntype T struct{ D time.Duration }\n"), "time")
+	if _, err := Format(got); err != nil {
+		t.Errorf("result does not format: %v\n%s", err, got)
+	}
+}

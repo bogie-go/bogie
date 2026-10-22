@@ -325,9 +325,104 @@ func TestAuthentication(t *testing.T) {
 	if _, _, err := Authentication("m", "blog", "oauth", IDBigint, at); err == nil {
 		t.Error("unknown shape accepted")
 	}
-	w := AuthenticationSettings("blog", "token")[0]
-	if w.Env != "BLOG_TOKEN_SECRET" || w.Field != "TokenSecret" || w.Key != "token_secret" {
-		t.Errorf("setting = %+v", w)
+	w, ok := AuthenticationSetting("token")
+	if !ok || w.Path() != "token.secret" || w.Env() != "TOKEN_SECRET" || w.Field() != "Token.Secret" || w.Min != 32 {
+		t.Errorf("token setting = %+v, %v", w, ok)
+	}
+	if c, ok := AuthenticationSetting("secret"); !ok || c.Path() != "control.secret" {
+		t.Errorf("secret setting = %+v, %v", c, ok)
+	}
+	if _, ok := AuthenticationSetting("api_key"); ok {
+		t.Error("api_key reads no config setting: its keys live in a table")
+	}
+}
+
+func TestParseConfigKeys(t *testing.T) {
+	keys, err := ParseConfigKeys([]string{"address:req", "port:int=1025", "username", "password:secret", "tls:bool=true", "timeout:duration=5s", "retry_limit:int:req"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []ConfigKey{
+		{Name: "address", Type: "string", Req: true, Min: 1},
+		{Name: "port", Type: "int", Value: "1025", HasValue: true, Min: 1},
+		{Name: "username", Type: "string", Min: 1},
+		{Name: "password", Type: "string", Secret: true, Min: 1},
+		{Name: "tls", Type: "bool", Value: "true", HasValue: true, Min: 1},
+		{Name: "timeout", Type: "duration", Value: "5s", HasValue: true, Min: 1},
+		{Name: "retry_limit", Type: "int", Req: true, Min: 1},
+	}
+	if len(keys) != len(want) {
+		t.Fatalf("keys = %+v", keys)
+	}
+	for i := range want {
+		if keys[i] != want[i] {
+			t.Errorf("key %d = %+v, want %+v", i, keys[i], want[i])
+		}
+	}
+	if got := keys[0].Env("smtp"); got != "SMTP_ADDRESS" {
+		t.Errorf("Env = %q", got)
+	}
+	for name, bad := range map[string][]string{
+		"none":                     nil,
+		"upper case":               {"Address"},
+		"unknown suffix":           {"port:integer"},
+		"twice":                    {"a", "a"},
+		"required bool":            {"tls:bool:req"},
+		"int secret":               {"pin:int:secret"},
+		"secret with a value":      {"password:secret=hunter2"},
+		"int that is not an int":   {"port:int=abc"},
+		"duration that is not one": {"timeout:duration=soon"},
+	} {
+		if _, err := ParseConfigKeys(bad); err == nil {
+			t.Errorf("%s: accepted %v", name, bad)
+		}
+	}
+}
+
+func TestParseConfigGroup(t *testing.T) {
+	for _, ok := range []string{"smtp", "mail_gateway", "s3"} {
+		if err := ParseConfigGroup(ok); err != nil {
+			t.Errorf("%q refused: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"Smtp", "", "server", "database", "a-b", "1st"} {
+		if err := ParseConfigGroup(bad); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}
+
+func TestConfigGroup(t *testing.T) {
+	keys, err := ParseConfigKeys([]string{"address:req", "port:int=1025", "username", "password:secret", "timeout:duration=5s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, wires, err := ConfigGroup("smtp", keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden(t, "config_smtp", []File{file})
+	prefixes := ConfigGroupWirePrefixes("smtp")
+	if len(prefixes) != len(wires) {
+		t.Fatalf("%d wires, %d prefixes", len(wires), len(prefixes))
+	}
+	for i, p := range prefixes {
+		if !strings.HasPrefix(wires[i].Line, p.Line) || p.File != wires[i].File {
+			t.Errorf("prefix %+v does not match %+v", p, wires[i])
+		}
+	}
+
+	// A group that exists gets only the keys it lacks, above its markers.
+	more, _ := ParseConfigKeys([]string{"retries:int:req", "timeout:duration"})
+	if !ConfigGroupHas([]byte(file.Content), "timeout") || ConfigGroupHas([]byte(file.Content), "retries") {
+		t.Error("ConfigGroupHas disagrees with the generated file")
+	}
+	ws := ConfigKeyWires("smtp", more[:1])
+	if len(ws) != 2 || ws[0].Marker != "config:smtp" || ws[1].Marker != "validate:smtp" {
+		t.Errorf("key wires = %+v", ws)
+	}
+	if ws := ConfigKeyWires("smtp", more[1:]); len(ws) != 1 || ws[0].Import != "time" {
+		t.Errorf("a duration key needs the time import: %+v", ws)
 	}
 }
 

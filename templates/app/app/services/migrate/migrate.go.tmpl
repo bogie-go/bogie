@@ -4,7 +4,7 @@
 // deliberate: the schema and the binary that expects it ship in the same
 // image, so there is no window in which a container serves traffic against a
 // schema it was not built for. Config can turn it off
-// ({{.EnvPrefix}}_MIGRATE_AT_BOOT=false) for a deployment that migrates from
+// (DATABASE_MIGRATE_AT_BOOT=false) for a deployment that migrates from
 // one place on purpose.
 package migrate
 

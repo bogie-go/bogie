@@ -75,25 +75,40 @@ func find(lines []string, file, marker string) (at int, indent string, err error
 	return at, indent, nil
 }
 
-// AddImport adds path to the file's import block, if not already there.
-// Format afterwards sorts it into place.
+// AddImport adds path to the file's imports, if not already there. A file
+// with no import gets one after its package clause, and a single-line
+// `import "x"` becomes a block, so a generated file that started with none
+// (a config group with no duration key yet) can gain one. Format afterwards
+// sorts it into place.
 func AddImport(src []byte, path string) (out []byte, changed bool, err error) {
 	quoted := fmt.Sprintf("%q", path)
 	if bytes.Contains(src, []byte(quoted)) {
 		return src, false, nil
 	}
 	s := string(src)
-	open := strings.Index(s, "import (")
-	if open < 0 {
-		return nil, false, fmt.Errorf("no import block to add %s to", path)
+	if open := strings.Index(s, "import ("); open >= 0 {
+		closeAt := strings.Index(s[open:], "\n)")
+		if closeAt < 0 {
+			return nil, false, fmt.Errorf("unterminated import block")
+		}
+		at := open + closeAt
+		return []byte(s[:at] + "\n\t" + quoted + s[at:]), true, nil
 	}
-	closeAt := strings.Index(s[open:], "\n)")
-	if closeAt < 0 {
-		return nil, false, fmt.Errorf("unterminated import block")
+	if m := singleImport.FindStringSubmatchIndex(s); m != nil {
+		// import "a"  ->  import (\n\t"a"\n\t"b"\n)
+		return []byte(s[:m[0]] + "import (\n\t" + s[m[2]:m[3]] + "\n\t" + quoted + "\n)" + s[m[1]:]), true, nil
 	}
-	at := open + closeAt
-	return []byte(s[:at] + "\n\t" + quoted + s[at:]), true, nil
+	pkg := packageClause.FindStringIndex(s)
+	if pkg == nil {
+		return nil, false, fmt.Errorf("no package clause to add the import %s after", path)
+	}
+	return []byte(s[:pkg[1]] + "\n\nimport " + quoted + s[pkg[1]:]), true, nil
 }
+
+var (
+	singleImport  = regexp.MustCompile(`(?m)^import (".+?")[ \t]*$`)
+	packageClause = regexp.MustCompile(`(?m)^package \w+[ \t]*$`)
+)
 
 var (
 	importLine    = regexp.MustCompile(`^\s*(?:(\w+)\s+)?"([^"]+)"\s*$`)

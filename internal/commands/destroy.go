@@ -17,7 +17,9 @@ const destroyUsage = `Usage: bogie destroy GENERATOR NAME [--pretend]
        bogie d ...
 
 Removes what the generator of the same name created: its files, and for a
-controller the three lines that registered it. A namespaced controller's
+controller the three lines that registered it. For a config group, its file
+and its lines in config/config.go; the group's lines in the development
+credentials stay, harmless. A namespaced controller's
 package goes too once it holds no controller, with the three lines that
 registered the namespace. Nothing else is touched; a file you added to a
 package by hand stays.
@@ -29,6 +31,7 @@ package by hand stays.
   bogie d job send_welcome
   bogie d seed demo_posts
   bogie d authentication token
+  bogie d config smtp
   bogie d model comment
   bogie d migration add_slug_to_posts
 `
@@ -139,9 +142,19 @@ func destroyIn(root string, args []string, out io.Writer) error {
 	case "seed":
 		files, _, err = generate.Seed(module, name)
 		wires = generate.SeedWirePrefix(name)
+	case "config":
+		if err = generate.ParseConfigGroup(name); err == nil {
+			files = []generate.File{{Path: generate.ConfigPath(name)}}
+			wires = generate.ConfigGroupWirePrefixes(name)
+		}
 	case "authentication":
 		files, err = generate.AuthenticationFiles(module, settings.Name, name, scheme)
 		wires = generate.AuthenticationWirePrefixes(settings.Name, name)
+		// The secret's config group goes with the shape that read it.
+		if setting, ok := generate.AuthenticationSetting(name); ok {
+			files = append(files, generate.File{Path: generate.ConfigPath(setting.Group)})
+			wires = append(wires, generate.ConfigGroupWirePrefixes(setting.Group)...)
+		}
 		if name == "api_key" {
 			files = append(files, generate.File{Path: "app/models/api_keys.sql.go"})
 			runSqlc = true

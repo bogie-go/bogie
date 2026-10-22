@@ -102,14 +102,14 @@ one you already run, point the app at it (the role needs `CREATEDB`, or create
 the databases first):
 
 ```sh
-export BLOG_DATABASE_URL='postgres://USER:PASSWORD@localhost:5432/blog_development?sslmode=disable'
+export DATABASE_URL='postgres://USER:PASSWORD@localhost:5432/blog_development?sslmode=disable'
 bogie db:prepare
 bogie s
 ```
 
-To keep the URL out of your shell, set `database_url` with
+To keep the URL out of your shell, set `database.url` with
 `bogie credentials:edit` instead. Tests never read the credentials or
-`BLOG_DATABASE_URL`, so a run can never touch development data; they take
+`DATABASE_URL`, so a run can never touch development data; they take
 their own URL:
 
 ```sh
@@ -154,6 +154,7 @@ Rails spelling, Rails layout, Go underneath:
 | `rails g controller posts index show` | `bogie g controller posts index show`, registered as it is written |
 | `namespace :admin` | `bogie g controller admin/reports`, a package per namespace |
 | `rails g job send_welcome` | `bogie g job send_welcome`, a River worker on the same Postgres |
+| `credentials.yml.enc` groups | `bogie g config smtp address:req port:int=1025 password:secret`: a typed group of the credentials file, registered, with development values; `smtp.address` is `SMTP_ADDRESS` |
 | `rails g authentication` | `bogie g authentication secret\|token\|api_key`: a middleware for a route group (shared secret, JWT bearer token, or hashed API key), its config and credentials entry, and a `WithSecret` / `WithUser` / `WithAPIKey` helper; you mount the routes it guards |
 | `rails db:migrate`, `db:rollback`, `db:seed` | the same words, run by the app's own binary |
 | `rails credentials:edit` | `bogie credentials:edit`: encrypted file, key never committed |

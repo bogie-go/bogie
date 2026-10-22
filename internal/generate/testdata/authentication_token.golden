@@ -23,7 +23,7 @@ var (
 )
 
 // Maker holds the secret and the issuer every token must carry. The secret
-// is blog.token_secret in the credentials file (BLOG_TOKEN_SECRET in the environment), at
+// is token.secret in the credentials file (TOKEN_SECRET in the environment), at
 // least 32 bytes; the issuer is the app's name, so a token minted for
 // another service with the same secret is still refused.
 type Maker struct {
@@ -228,7 +228,7 @@ import (
 )
 
 // Tokens is the token maker for this app: the secret from config
-// (blog.token_secret in the credentials file, BLOG_TOKEN_SECRET in the environment) and the
+// (token.secret in the credentials file, TOKEN_SECRET in the environment) and the
 // app's name as issuer. A sessions controller that signs users in here mints
 // with it; a Rails app that signs them in mints the same token with the jwt
 // gem and the same secret:
@@ -236,7 +236,7 @@ import (
 //	JWT.encode({ iss: "blog", sub: user.id.to_s, iat: Time.now.to_i, exp: 15.minutes.from_now.to_i, jti: SecureRandom.uuid },
 //	           Rails.application.credentials.blog_token_secret, "HS256")
 func (s *Server) Tokens() token.Maker {
-	return token.Maker{Secret: []byte(s.Config.App.TokenSecret), Issuer: "blog"}
+	return token.Maker{Secret: []byte(s.Config.Token.Secret), Issuer: "blog"}
 }
 
 // WithUser is the route group a signed-in user is required for. Mount a

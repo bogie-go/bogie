@@ -1,0 +1,38 @@
+==> config/smtp.go
+package config
+
+import "time"
+
+// SmtpConfig is the smtp: group of the credentials file. Each key is overridden by
+// the environment variable named after it: smtp.address is SMTP_ADDRESS.
+//
+// Written by `bogie g config`, once: `bogie g config smtp KEY` adds a key above
+// the marker and never overwrites this file, so defaults is yours to edit.
+type SmtpConfig struct {
+	Address  string        `mapstructure:"address"`
+	Port     int           `mapstructure:"port"`
+	Username string        `mapstructure:"username"`
+	Password string        `mapstructure:"password"`
+	Timeout  time.Duration `mapstructure:"timeout"`
+	// bogie:config:smtp
+}
+
+// defaults is what this group starts from in env. The credentials file and
+// the environment change only the keys they name, so a key absent from both
+// keeps what is set here. Per-environment policy goes here, by hand: a fake
+// service in development, nothing in production.
+func (c *SmtpConfig) defaults(env string) {}
+
+// validate refuses to boot in production without a required key.
+func (c SmtpConfig) validate(env string) error {
+	for _, err := range []error{
+		requireKey(env, "SMTP_ADDRESS", c.Address != ""),
+		requireSecret(env, "SMTP_PASSWORD", c.Password, 1),
+		// bogie:validate:smtp
+	} {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
