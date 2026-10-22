@@ -276,7 +276,7 @@ router, in `routes.go`:
 - **secret**: the `X-<App>-Secret` header (`middlewares.SecretHeader`),
   constant-time compared, Basic auth as a fallback for a browser. The Rails
   side is one header on its client, from its own credentials.
-- **token**: JWT HS256 with `{{.Name}}.token_secret`. The Rails app mints a
+- **token**: JWT HS256 with `token.secret`. The Rails app mints a
   token for its user with the `jwt` gem and this service verifies it;
   `middlewares.Subject(c)` is the subject in a handler. A service that signs
   users in itself mints with `s.Tokens().Mint(subject, ttl)`.
