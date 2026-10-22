@@ -143,6 +143,12 @@ func destroyIn(root string, args []string, out io.Writer) error {
 		files, _, err = generate.Seed(module, name)
 		wires = generate.SeedWirePrefix(name)
 	case "config":
+		// The app's own groups are never removed, and must not be mistaken
+		// for a flat key of the same name either.
+		if generate.IsCoreConfigGroup(name) {
+			err = generate.ParseConfigGroup(name)
+			break
+		}
 		// A group has its own file; a flat key is only lines in config.go.
 		if _, statErr := os.Stat(filepath.Join(root, filepath.FromSlash(generate.ConfigPath(name)))); statErr != nil {
 			if src, readErr := os.ReadFile(filepath.Join(root, "config", "config.go")); readErr == nil && generate.ConfigGroupHas(src, name) {

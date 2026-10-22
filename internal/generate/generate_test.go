@@ -379,6 +379,62 @@ func TestParseConfigKeys(t *testing.T) {
 	}
 }
 
+// Values are written the way a person would: bare when safe, quoted when YAML
+// would read them as something else; and a bool takes yes/no.
+func TestConfigKeyYAML(t *testing.T) {
+	keys, err := ParseConfigKeys([]string{"username=xxx", "mail=help@example.com", "football=yes", "addr=localhost:1125",
+		"pin=007", "ttl:duration=5m", "name=two words", "on:bool=yes", "off:bool=no", "limit:int=3", "unset", "secret_one:secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		`username: xxx`,
+		`mail: help@example.com`,
+		`football: "yes"`, // a string: YAML 1.1 would read a bare yes as a boolean
+		`addr: "localhost:1125"`,
+		`pin: "007"`, // a bare 007 is a number
+		`ttl: 5m`,
+		`name: "two words"`,
+		`on: true`,
+		`off: false`,
+		`limit: 3`,
+		`# unset: ""`,
+		`# secret_one: ""`,
+	}
+	for i, k := range keys {
+		if got := k.YAML(); got != want[i] {
+			t.Errorf("key %s: YAML() = %q, want %q", k.Name, got, want[i])
+		}
+	}
+}
+
+// A core group takes keys but is not created or destroyed here, and the
+// check for a required one reaches the key through the group.
+func TestCoreConfigGroups(t *testing.T) {
+	if err := CheckConfigGroupName("database"); err != nil {
+		t.Errorf("adding keys to database refused: %v", err)
+	}
+	if err := ParseConfigGroup("database"); err == nil {
+		t.Error("database accepted as a group to create or destroy")
+	}
+	keys, _ := ParseConfigKeys([]string{"username:req", "password:secret", "pool:int"})
+	ws := CoreConfigKeyWires("database", keys)
+	var markers, lines []string
+	for _, w := range ws {
+		markers, lines = append(markers, w.Marker), append(lines, w.Line)
+	}
+	if strings.Join(markers, ",") != "config:database,validate,config:database,validate,config:database" {
+		t.Errorf("markers = %v", markers)
+	}
+	if !strings.Contains(lines[1], `c.Database.Username != ""`) || !strings.Contains(lines[1], "c.Env,") || !strings.Contains(lines[3], `c.Database.Password, 1`) {
+		t.Errorf("validate lines = %q", lines)
+	}
+	src := []byte("type DatabaseConfig struct {\n\tURL string `mapstructure:\"url\"`\n}\ntype ServerConfig struct {\n\tAddr string `mapstructure:\"addr\"`\n}\n")
+	if !ConfigStructHas(src, "DatabaseConfig", "url") || ConfigStructHas(src, "DatabaseConfig", "addr") || !ConfigStructHas(src, "ServerConfig", "addr") {
+		t.Error("ConfigStructHas looked outside its own struct")
+	}
+}
+
 func TestParseConfigGroup(t *testing.T) {
 	for _, ok := range []string{"smtp", "mail_gateway", "s3"} {
 		if err := ParseConfigGroup(ok); err != nil {

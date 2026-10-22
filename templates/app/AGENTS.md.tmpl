@@ -245,6 +245,13 @@ credentials file gets. A key's environment variable is its path upper-cased:
 is no app prefix, so a setting another app exports under the same name in your
 shell reaches this one.
 
+Values are written as a person would: `username=xxx` is `username: xxx`, bare,
+and quoted only where YAML would read it as something else (`yes`, a number, a
+colon, a space). A `bool` key takes `yes`/`no` too: `football:bool=yes` writes
+`football: true`. `server` and `database` are the app's own groups: keys go
+into their structs in `config/config.go` (`bogie g config database
+username=xxx password=yyy`); the groups are never created or removed.
+
 A flat key, with no group around it, has a value or a type and no group name:
 
     bogie g config support_email=help@example.com
@@ -267,8 +274,7 @@ Run it again to add keys to the group: they go above the markers in
 development, nothing in production), is safe. A key left without a value is
 written commented out: a key present with an empty value would override the
 default with nothing. One level of group only (`smtp.address`, not
-`mail.smtp.address`), and `server` and `database` are the app's own, in
-`config/config.go`. `bogie d config smtp` removes the group and its lines in
+`mail.smtp.address`), and `bogie d config smtp` removes the group and its lines in
 `config.go`; its lines in the development credentials stay, harmless.
 
 ### Add authentication

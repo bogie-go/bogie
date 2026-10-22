@@ -215,3 +215,69 @@ func (c Config) validate() error {
 		}
 	}
 }
+
+// Keys can be added to the app's own groups, whose structs sit in config.go
+// with a marker inside each; the group itself is neither created nor removed.
+func TestConfigKeysIntoACoreGroup(t *testing.T) {
+	root := t.TempDir()
+	cfg := `package config
+
+type Config struct {
+	Env string
+	Database DatabaseConfig ` + "`mapstructure:\"database\"`" + `
+	// bogie:config
+}
+
+type DatabaseConfig struct {
+	URL string ` + "`mapstructure:\"url\"`" + `
+	// bogie:config:database
+}
+
+func defaults() Config {
+	c := Config{}
+	// bogie:defaults
+	return c
+}
+
+func (c Config) validate() error {
+	for _, err := range []error{
+		// bogie:validate
+	} {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+`
+	for rel, content := range map[string]string{"go.mod": "module example.com/blog\n", "config/config.go": cfg} {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var out strings.Builder
+	if err := generateIn(root, []string{"config", "database", "username:req", "password=yyyy", "url"}, &out); err != nil {
+		t.Fatalf("g config database: %v\n%s", err, out.String())
+	}
+	b, _ := os.ReadFile(filepath.Join(root, "config", "config.go"))
+	got := string(b)
+	flat := strings.Join(strings.Fields(got), " ")
+	for _, want := range []string{`Username string`, `Password string`, `requireKey(c.Env, "DATABASE_USERNAME", c.Database.Username != ""),`} {
+		if !strings.Contains(flat, want) {
+			t.Errorf("config.go lacks %q:\n%s", want, got)
+		}
+	}
+	if strings.Count(got, `mapstructure:"url"`) != 1 {
+		t.Errorf("url was added again though DatabaseConfig has it:\n%s", got)
+	}
+	if _, err := os.Stat(filepath.Join(root, "config", "database.go")); err == nil {
+		t.Error("a file was created for a core group")
+	}
+	if err := destroyIn(root, []string{"config", "database"}, &out); err == nil {
+		t.Error("d config database accepted")
+	}
+}

@@ -42,17 +42,72 @@ var (
 // live in config.go itself, not in a file this generator owns.
 var ReservedConfigGroups = []string{"server", "database"}
 
-// ParseConfigGroup checks a group name.
+// IsCoreConfigGroup reports whether group is one of the app's own (server,
+// database): its struct is in config/config.go, not in a file of its own, so
+// keys can be added to it but the group cannot be created or destroyed.
+func IsCoreConfigGroup(group string) bool {
+	for _, r := range ReservedConfigGroups {
+		if group == r {
+			return true
+		}
+	}
+	return false
+}
+
+// ParseConfigGroup checks the name of a group this generator can create and
+// destroy: a core group is the app's own.
 func ParseConfigGroup(group string) error {
 	if !configName.MatchString(group) {
 		return fmt.Errorf("%q is not a group name; lowercase words joined by underscores, like smtp or mail_gateway", group)
 	}
-	for _, r := range ReservedConfigGroups {
-		if group == r {
-			return fmt.Errorf("%s is one of the app's own groups, in config/config.go; add your keys to a group of your own", group)
-		}
+	if IsCoreConfigGroup(group) {
+		return fmt.Errorf("%s is one of the app's own groups, in config/config.go: add keys to it with g config, but it is not created or removed", group)
 	}
 	return nil
+}
+
+// CheckConfigGroupName is ParseConfigGroup for adding keys, where a core
+// group is fine.
+func CheckConfigGroupName(group string) error {
+	if IsCoreConfigGroup(group) {
+		return nil
+	}
+	return ParseConfigGroup(group)
+}
+
+// CoreConfigKeyWires add keys to a core group: the field above the marker
+// inside its struct in config/config.go, and the production check, which
+// reaches the key through the group (c.Database.Username) from Config's own
+// validate.
+func CoreConfigKeyWires(group string, keys []ConfigKey) []Wire {
+	var ws []Wire
+	for _, k := range keys {
+		w := Wire{File: "config/config.go", Marker: "config:" + group, Line: k.fieldLine()}
+		if k.Type == "duration" {
+			w.Import = "time"
+		}
+		ws = append(ws, w)
+		if l := k.validateLine(group, "c.Env"); l != "" {
+			ws = append(ws, Wire{File: "config/config.go", Marker: "validate", Line: strings.Replace(l, `", c.`+k.Field(), `", c.`+Camel(group)+"."+k.Field(), 1)})
+		}
+	}
+	return ws
+}
+
+// ConfigStructHas reports whether the struct named typeName in src already
+// declares key, looking only inside that struct, so a key with the same name
+// in another group is not mistaken for it.
+func ConfigStructHas(src []byte, typeName, key string) bool {
+	s := string(src)
+	i := strings.Index(s, "type "+typeName+" struct {")
+	if i < 0 {
+		return false
+	}
+	end := strings.Index(s[i:], "\n}")
+	if end < 0 {
+		return false
+	}
+	return ConfigGroupHas([]byte(s[i:i+end]), key)
 }
 
 // ParseConfigKeys reads `name[:type][:flag][=value]` arguments.
@@ -94,12 +149,29 @@ func ParseConfigKeys(args []string) ([]ConfigKey, error) {
 		if k.Secret && k.HasValue {
 			return nil, fmt.Errorf("%s: a secret gets no development value here; set it with make credentials", k.Name)
 		}
+		if k.Type == "bool" && k.HasValue {
+			if b, ok := parseBoolWord(k.Value); ok {
+				k.Value = strconv.FormatBool(b)
+			}
+		}
 		if err := k.checkValue(); err != nil {
 			return nil, err
 		}
 		keys = append(keys, k)
 	}
 	return keys, nil
+}
+
+// parseBoolWord reads the words people type for a boolean: true/false, and
+// yes/no, on/off, y/n.
+func parseBoolWord(v string) (value, ok bool) {
+	switch strings.ToLower(v) {
+	case "true", "yes", "on", "y", "1":
+		return true, true
+	case "false", "no", "off", "n", "0":
+		return false, true
+	}
+	return false, false
 }
 
 func (k ConfigKey) checkValue() error {
@@ -142,12 +214,31 @@ func (k ConfigKey) YAML() string {
 	if k.HasValue {
 		switch k.Type {
 		case "string", "duration":
-			return fmt.Sprintf("%s: %q", k.Name, k.Value)
+			return fmt.Sprintf("%s: %s", k.Name, yamlScalar(k.Value))
 		}
 		return fmt.Sprintf("%s: %s", k.Name, k.Value)
 	}
 	placeholder := map[string]string{"string": `""`, "int": "0", "bool": "false", "duration": `"10s"`}[k.Type]
 	return fmt.Sprintf("# %s: %s", k.Name, placeholder)
+}
+
+var bareYAML = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_./@+-]*$|^[0-9]+[A-Za-z]+$`)
+
+// yamlScalar writes a string value the way a person would: bare when that is
+// safe (xxx, help@example.com, 5m), quoted when YAML would read it as
+// something else. YAML 1.1 parsers take yes, no, on, off, y, n, true, false and
+// null as booleans or null, and a bare number as a number, and the value was
+// typed as a string, so those are quoted. So is anything with a colon, a space
+// or a quote in it.
+func yamlScalar(v string) string {
+	switch strings.ToLower(v) {
+	case "y", "n", "yes", "no", "on", "off", "true", "false", "null", "~":
+		return strconv.Quote(v)
+	}
+	if _, err := strconv.ParseFloat(v, 64); err == nil || !bareYAML.MatchString(v) {
+		return strconv.Quote(v)
+	}
+	return v
 }
 
 func (k ConfigKey) fieldLine() string {

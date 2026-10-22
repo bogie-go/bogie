@@ -92,6 +92,9 @@ generators() {
   # import) and changes nothing it already had.
   "$b" g config smtp address:req port:int=1025 username password:secret || return 1
   "$b" g config smtp address timeout:duration=5s || return 1
+  # Keys into the app's own group, and a new group sorted ahead of it.
+  "$b" g config database username=xxx password=yyyy || return 1
+  "$b" g config american football=yes || return 1
   # A flat key, sorted in among the groups.
   "$b" g config support_email=help@example.com retries:int:req || return 1
   # This app has no jobs; the first `g job` adds River itself, the same way
@@ -108,6 +111,7 @@ generators() {
   # And back out again: destroy must leave an app that still passes.
   cd "$CI_APP_DIR/blog" || return 1
   "$b" d job send_welcome || return 1
+  "$b" d config american || return 1
   "$b" d config support_email || return 1
   "$b" d config retries || return 1
   "$b" d config smtp || return 1

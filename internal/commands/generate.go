@@ -227,7 +227,7 @@ func generateIn(root string, args []string, out io.Writer) error {
 		if len(positional) == 1 {
 			return fmt.Errorf("generate config: %s is a group name, so give it keys: bogie g config %s address port:int (or for a flat key with a value: bogie g config %s=value)", name, name, name)
 		}
-		if err := generate.ParseConfigGroup(name); err != nil {
+		if err := generate.CheckConfigGroupName(name); err != nil {
 			return fmt.Errorf("generate config: %w", err)
 		}
 		configKeys, err = generate.ParseConfigKeys(attrArgs)

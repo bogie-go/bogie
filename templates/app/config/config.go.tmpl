@@ -108,6 +108,7 @@ type DatabaseConfig struct {
 	// default true. Set it to false only for a deployment that migrates from
 	// one place on purpose.
 	MigrateAtBoot bool `mapstructure:"migrate_at_boot"`
+	// bogie:config:database
 }
 
 // ServerConfig is the server: group.
@@ -119,6 +120,7 @@ type ServerConfig struct {
 	// ShutdownGrace is how long Start waits for in-flight requests on
 	// SIGTERM, default 10s.
 	ShutdownGrace time.Duration `mapstructure:"shutdown_grace"`
+	// bogie:config:server
 }
 
 // Load reads configuration and validates it.

@@ -16,6 +16,20 @@ import (
 // overwritten. fresh is the keys actually added, which are the ones the
 // development credentials need a line for.
 func planConfigGroup(root, group string, keys []generate.ConfigKey) (files []generate.File, wires []generate.Wire, fresh []generate.ConfigKey, err error) {
+	// server and database are the app's own: their structs sit in
+	// config/config.go, with a marker inside each, so keys are added there.
+	if generate.IsCoreConfigGroup(group) {
+		src, err := os.ReadFile(filepath.Join(root, "config", "config.go"))
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		for _, k := range keys {
+			if !generate.ConfigStructHas(src, generate.Camel(group)+"Config", k.Name) {
+				fresh = append(fresh, k)
+			}
+		}
+		return nil, generate.CoreConfigKeyWires(group, fresh), fresh, nil
+	}
 	src, readErr := os.ReadFile(filepath.Join(root, filepath.FromSlash(generate.ConfigPath(group))))
 	if readErr != nil {
 		f, w, err := generate.ConfigGroup(group, keys)
