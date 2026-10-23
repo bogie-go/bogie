@@ -56,7 +56,8 @@ stays clear of the Rails app's 5432.
 sqlc and goose are pinned in the generated app's `go.mod` under `tool`, so
 there is nothing else to install globally.
 
-Required for `bin/ci`: [golangci-lint v2](https://golangci-lint.run/).
+Required for `bin/ci`: [golangci-lint v2](https://golangci-lint.run/)
+(`go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest`).
 Optional: `gh extension install basecamp/gh-signoff`, so a green run signs off
 the commit.
 
@@ -232,9 +233,9 @@ Go service beside it to look and behave like something they already know.
 
 ## Status
 
-**v0.2.x, single maintainer, MIT.** Working today: `bogie new` (with or
+**v0.3.x, single maintainer, MIT.** Working today: `bogie new` (with or
 without `--jobs`); `g`/`d` for `scaffold`, `model`, `migration`, `controller`,
-`service`, `job` and `authentication`; `doctor`; the `db:*` and `credentials:*` tasks; `server` and
+`service`, `seed`, `job`, `authentication` and `config`; `doctor`; the `db:*` and `credentials:*` tasks; `server` and
 `worker` (both live-reload under Air in development), `test`, `lint`, `ci`; and `app:update`.
 
 Known gaps:
