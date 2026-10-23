@@ -44,7 +44,7 @@ func NewApplication(ctx context.Context) (*Application, error) {
 	if err != nil {
 		return nil, err
 	}
-	log := logger.New(cfg.App.LogLevel, cfg.Env)
+	log := logger.New(cfg.Server.LogLevel, cfg.Env)
 
 	// Printed before anything connects, so a wrong setting shows up next to
 	// the failure it causes rather than after it.
@@ -57,18 +57,18 @@ func NewApplication(ctx context.Context) (*Application, error) {
 	// always the one its code was built for. Failing here stops the deploy,
 	// which is the point: serving traffic against a half-applied schema is
 	// worse.
-	if cfg.App.MigrateAtBoot {
-		if err := migrate.Run(ctx, cfg.App.DatabaseURL, log); err != nil {
+	if cfg.Database.MigrateAtBoot {
+		if err := migrate.Run(ctx, cfg.Database.URL, log); err != nil {
 			// database.Hint tells apart the three ways this fails -- nothing
 			// listening, credentials refused, database not created yet --
 			// because the pgx error alone reads the same for all of them.
-			return nil, database.Hint(err, cfg.App.DatabaseURL)
+			return nil, database.Hint(err, cfg.Database.URL)
 		}
 	}
 
-	store, err := models.Open(ctx, cfg.App.DatabaseURL)
+	store, err := models.Open(ctx, cfg.Database.URL)
 	if err != nil {
-		return nil, database.Hint(err, cfg.App.DatabaseURL)
+		return nil, database.Hint(err, cfg.Database.URL)
 	}
 {{if .Jobs}}
 	// River runs on the same Postgres, so a job enqueued in a transaction
@@ -126,8 +126,8 @@ func (a *Application) StartWorker(ctx context.Context) error {
 
 	// In-flight jobs get the same grace a request does; after that River
 	// marks what is still running as retryable and returns.
-	a.Log.Info("worker draining", "grace", a.Config.App.ShutdownGrace)
-	stopCtx, cancel := context.WithTimeout(context.Background(), a.Config.App.ShutdownGrace)
+	a.Log.Info("worker draining", "grace", a.Config.Server.ShutdownGrace)
+	stopCtx, cancel := context.WithTimeout(context.Background(), a.Config.Server.ShutdownGrace)
 	defer cancel()
 	return a.Jobs.Stop(stopCtx)
 }

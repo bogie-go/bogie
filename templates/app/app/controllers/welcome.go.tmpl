@@ -32,7 +32,7 @@ func (s *Server) welcome(c *gin.Context) {
 	_ = welcomePage.Execute(c.Writer, map[string]any{
 		"Name": "{{.Name}}",
 		"Env":  s.Config.Env,
-		"Addr": s.Config.App.Addr,
+		"Addr": s.Config.Server.Addr,
 		"Go":   runtime.Version(),
 		// html/template rejects a data: URL in src unless told it is trusted.
 		"Mascot": template.URL(welcomeMascot),

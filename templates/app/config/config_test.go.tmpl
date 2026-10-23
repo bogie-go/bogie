@@ -19,39 +19,40 @@ func TestLoadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	a := cfg.App
-	if cfg.Env != EnvTest || a.Addr != ":8080" || a.LogLevel != "info" || a.ShutdownGrace.Seconds() != 10 {
-		t.Errorf("defaults = %+v", a)
+	sv, db := cfg.Server, cfg.Database
+	if cfg.Env != EnvTest || sv.Addr != ":8080" || sv.LogLevel != "info" || sv.ShutdownGrace.Seconds() != 10 {
+		t.Errorf("defaults = %+v", sv)
 	}
-	if a.DatabaseURL != "postgres://postgres:postgres@localhost:5440/{{.Name}}_test?sslmode=disable" {
-		t.Errorf("test database = %q; want the compose stack's {{.Name}}_test", a.DatabaseURL)
+	if db.URL != "postgres://postgres:postgres@localhost:5440/{{.Name}}_test?sslmode=disable" {
+		t.Errorf("test database = %q; want the compose stack's {{.Name}}_test", db.URL)
 	}
-	if !a.MigrateAtBoot {
+	if !db.MigrateAtBoot {
 		t.Error("MigrateAtBoot defaults to false; want true")
 	}
 }
 
 // The suite truncates every table and bin/ci drops the database, so test must
-// never follow a {{.EnvPrefix}}_DATABASE_URL exported for development; it
+// never follow a DATABASE_URL exported for development (or by another
+// app in the same shell); it
 // moves only with its own variable.
 func TestTestIgnoresTheSharedDatabaseURL(t *testing.T) {
 	t.Setenv(EnvVar, "test")
-	t.Setenv("{{.EnvPrefix}}_DATABASE_URL", "postgres://postgres:postgres@localhost:5440/{{.Name}}_development?sslmode=disable")
+	t.Setenv("DATABASE_URL", "postgres://postgres:postgres@localhost:5440/{{.Name}}_development?sslmode=disable")
 	t.Setenv(TestDatabaseURLVar, "")
 	cfg, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "postgres://postgres:postgres@localhost:5440/{{.Name}}_test?sslmode=disable"; cfg.App.DatabaseURL != want {
-		t.Errorf("test database = %q; want %q, whatever {{.EnvPrefix}}_DATABASE_URL says", cfg.App.DatabaseURL, want)
+	if want := "postgres://postgres:postgres@localhost:5440/{{.Name}}_test?sslmode=disable"; cfg.Database.URL != want {
+		t.Errorf("test database = %q; want %q, whatever DATABASE_URL says", cfg.Database.URL, want)
 	}
 
 	t.Setenv(TestDatabaseURLVar, "postgres://ci:ci@db:5432/{{.Name}}_test")
 	if cfg, err = Load(); err != nil {
 		t.Fatal(err)
 	}
-	if cfg.App.DatabaseURL != "postgres://ci:ci@db:5432/{{.Name}}_test" {
-		t.Errorf("test database = %q; want the one %s names", cfg.App.DatabaseURL, TestDatabaseURLVar)
+	if cfg.Database.URL != "postgres://ci:ci@db:5432/{{.Name}}_test" {
+		t.Errorf("test database = %q; want the one %s names", cfg.Database.URL, TestDatabaseURLVar)
 	}
 }
 
@@ -68,12 +69,12 @@ func TestLoadRefusesUnknownEnv(t *testing.T) {
 
 func TestLoadRefusesBadValues(t *testing.T) {
 	t.Setenv(EnvVar, "test")
-	t.Setenv("{{.EnvPrefix}}_SHUTDOWN_GRACE", "soon")
+	t.Setenv("SERVER_SHUTDOWN_GRACE", "soon")
 	if _, err := Load(); err == nil {
 		t.Error("SHUTDOWN_GRACE=soon accepted")
 	}
-	t.Setenv("{{.EnvPrefix}}_SHUTDOWN_GRACE", "5s")
-	t.Setenv("{{.EnvPrefix}}_MIGRATE_AT_BOOT", "maybe")
+	t.Setenv("SERVER_SHUTDOWN_GRACE", "5s")
+	t.Setenv("DATABASE_MIGRATE_AT_BOOT", "maybe")
 	if _, err := Load(); err == nil {
 		t.Error("MIGRATE_AT_BOOT=maybe accepted")
 	}
@@ -84,9 +85,9 @@ func TestLoadRefusesBadValues(t *testing.T) {
 func TestLoadRequiresADatabaseInProduction(t *testing.T) {
 	t.Setenv(EnvVar, "production")
 	t.Setenv(ConfigDirVar, t.TempDir()) // no credentials file anywhere
-	t.Setenv("{{.EnvPrefix}}_DATABASE_URL", "")
+	t.Setenv("DATABASE_URL", "")
 	if _, err := Load(); err == nil {
-		t.Error("production booted without {{.EnvPrefix}}_DATABASE_URL")
+		t.Error("production booted without DATABASE_URL")
 	}
 }
 
@@ -117,23 +118,23 @@ func hexOf(key []byte) string {
 // Development reads the shared file. A key the file names is taken from it, a
 // key it omits keeps its default, and the environment beats both.
 func TestLoadReadsTheSharedFile(t *testing.T) {
-	dir := writeCredentials(t, "{{.Name}}:\n  addr: \":9999\"\n  log_level: debug\n")
+	dir := writeCredentials(t, "server:\n  addr: \":9999\"\n  log_level: debug\n")
 	t.Setenv(EnvVar, "development")
 	t.Setenv(ConfigDirVar, dir)
-	t.Setenv("{{.EnvPrefix}}_LOG_LEVEL", "warn")
+	t.Setenv("SERVER_LOG_LEVEL", "warn")
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if cfg.App.Addr != ":9999" {
-		t.Errorf("addr = %q; want the file's :9999", cfg.App.Addr)
+	if cfg.Server.Addr != ":9999" {
+		t.Errorf("addr = %q; want the file's :9999", cfg.Server.Addr)
 	}
-	if cfg.App.LogLevel != "warn" {
-		t.Errorf("log_level = %q; want the environment's warn over the file's debug", cfg.App.LogLevel)
+	if cfg.Server.LogLevel != "warn" {
+		t.Errorf("log_level = %q; want the environment's warn over the file's debug", cfg.Server.LogLevel)
 	}
-	if cfg.App.ShutdownGrace.Seconds() != 10 || !cfg.App.MigrateAtBoot {
-		t.Errorf("a key absent from the file lost its default: %+v", cfg.App)
+	if cfg.Server.ShutdownGrace.Seconds() != 10 || !cfg.Database.MigrateAtBoot {
+		t.Errorf("a key absent from the file lost its default: %+v", cfg)
 	}
 	if cfg.Source != filepath.Join(dir, "credentials.yml.enc") {
 		t.Errorf("source = %q", cfg.Source)
@@ -142,7 +143,7 @@ func TestLoadReadsTheSharedFile(t *testing.T) {
 
 // Test never reads a file, even when one is right there.
 func TestTestEnvironmentIgnoresCredentials(t *testing.T) {
-	dir := writeCredentials(t, "{{.Name}}:\n  addr: \":9999\"\n")
+	dir := writeCredentials(t, "server:\n  addr: \":9999\"\n")
 	t.Setenv(EnvVar, "test")
 	t.Setenv(ConfigDirVar, dir)
 
@@ -150,14 +151,14 @@ func TestTestEnvironmentIgnoresCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if cfg.App.Addr != ":8080" {
-		t.Errorf("addr = %q; test read the credentials file", cfg.App.Addr)
+	if cfg.Server.Addr != ":8080" {
+		t.Errorf("addr = %q; test read the credentials file", cfg.Server.Addr)
 	}
 }
 
 // A deployment hands the key over in the environment and ships no key file.
 func TestMasterKeyFromTheEnvironment(t *testing.T) {
-	dir := writeCredentials(t, "{{.Name}}:\n  addr: \":7777\"\n")
+	dir := writeCredentials(t, "server:\n  addr: \":7777\"\n")
 	key, err := os.ReadFile(filepath.Join(dir, "master.key"))
 	if err != nil {
 		t.Fatal(err)
@@ -174,7 +175,7 @@ func TestMasterKeyFromTheEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load without a key file: %v", err)
 	}
-	if cfg.App.Addr != ":7777" || !strings.Contains(cfg.KeyFile, MasterKeyVar) {
+	if cfg.Server.Addr != ":7777" || !strings.Contains(cfg.KeyFile, MasterKeyVar) {
 		t.Errorf("cfg = %+v", cfg)
 	}
 }

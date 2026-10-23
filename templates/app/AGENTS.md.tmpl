@@ -53,9 +53,12 @@ committed ciphertext, keys never committed, environment variables override.
     config/credentials/production.yml.enc + config/credentials/production.key
 
 `make credentials` edits development's; `make credentials ENV=production`
-edits that file with its own key. Every file is flat and has one section,
-`{{.Name}}:`, whose keys give the environment-variable names: `{{.Name}}.addr`
-is overridden by `{{.EnvPrefix}}_ADDR`.
+edits that file with its own key. Every file is flat: groups at the top level
+(`server:`, `database:`, and any `bogie g config` adds), and a key's
+environment variable is its path, upper-cased: `server.addr` is overridden by
+`SERVER_ADDR`, `database.url` by `DATABASE_URL`. There is no app prefix on
+them, so a `DATABASE_URL` another app exports in your shell reaches this one
+in development (test never reads it).
 
 Two variables, deliberately separate: `{{.EnvPrefix}}_ENV` is a closed set,
 `development`, `test`, `production`, and selects behaviour; staging is
@@ -227,7 +230,54 @@ transaction with `InsertTx`, so the job commits with the row or not at all.
 backlog never slows a request. Args are stored as JSON: carry ids, not
 records. River's schema is applied by `migrate`, not by db/migrate.
 
-{{end}}### Add authentication
+{{end}}### Add a setting
+
+    bogie g config smtp address:req port:int=1025 username password:secret
+
+adds a group to the credentials file: a typed struct in `config/smtp.go`,
+registered in `config/config.go`, read as `s.Config.Smtp.Address`. Each key is
+`name[:type][:flag][=value]`. Types are `string` (the default), `int`, `bool`
+and `duration`. Flags are `req` (production refuses to boot without it) and
+`secret` (the same, and the development credentials get a commented
+placeholder, never an invented value). `=value` is what the development
+credentials file gets. A key's environment variable is its path upper-cased:
+`smtp.address` is `SMTP_ADDRESS`, and the environment wins over the file. There
+is no app prefix, so a setting another app exports under the same name in your
+shell reaches this one.
+
+Values are written as a person would: `username=xxx` is `username: xxx`, bare,
+and quoted only where YAML would read it as something else (`yes`, a number, a
+colon, a space). A `bool` key takes `yes`/`no` too: `football:bool=yes` writes
+`football: true`. `server` and `database` are the app's own groups: keys go
+into their structs in `config/config.go` (`bogie g config database
+username=xxx password=yyy`); the groups are never created or removed.
+
+A flat key, with no group around it, has a value or a type and no group name:
+
+    bogie g config support_email=help@example.com
+    bogie g config retries:int:req
+
+and is a field directly on `Config` (`s.Config.SupportEmail`), overridden by
+`SUPPORT_EMAIL`. Its default goes in `defaults()` in `config/config.go`, by
+hand. `bogie d config support_email` removes it. A bare word with no keys,
+`bogie g config smtp`, is a mistake and refused.
+
+Order: the top-level entries, groups and flat keys together, are kept
+alphabetical, in the credentials file and in the `Config` struct, so a new one
+is inserted where it sorts (before the first existing entry that sorts after
+it, so a file already out of order is not reshuffled). The keys *inside* a
+group are never sorted: they stay in the order you typed them.
+
+Run it again to add keys to the group: they go above the markers in
+`config/smtp.go`, and nothing that exists is overwritten, so the file's
+`defaults` method, where per-environment policy goes by hand (Mailpit in
+development, nothing in production), is safe. A key left without a value is
+written commented out: a key present with an empty value would override the
+default with nothing. One level of group only (`smtp.address`, not
+`mail.smtp.address`), and `bogie d config smtp` removes the group and its lines in
+`config.go`; its lines in the development credentials stay, harmless.
+
+### Add authentication
 
     bogie g authentication secret      # the Rails app calls this service
     bogie g authentication token       # a user presents a bearer token
@@ -236,11 +286,11 @@ records. River's schema is applied by `migrate`, not by db/migrate.
 Each shape is a middleware on a route group, as `before_action` is. The
 generator writes the middleware and its test in `app/middlewares`, a group
 helper on the root Server in `app/controllers/authentication_<shape>.go`,
-and the config: a field, its environment override and a production check,
-above the markers in `config/config.go`, with a development value written
-into the credentials file so the app boots as before. Staging and
-production get theirs with `make credentials ENV=...`, and refuse to boot
-without. Then mount what the guard protects on the group instead of the
+and the config: a group (`token:`, or `control:` for the secret shape) with a
+`secret` key, as `bogie g config` writes it (see "Add a setting"), with a
+random development value written into the credentials file so the app boots
+as before. Staging and production get theirs with `make credentials ENV=...`,
+and refuse to boot without. Then mount what the guard protects on the group instead of the
 router, in `routes.go`:
 
     s.Posts.SetupRoutes(s.WithSecret(&r.RouterGroup))   // or WithUser, WithAPIKey
@@ -248,7 +298,7 @@ router, in `routes.go`:
 - **secret**: the `X-<App>-Secret` header (`middlewares.SecretHeader`),
   constant-time compared, Basic auth as a fallback for a browser. The Rails
   side is one header on its client, from its own credentials.
-- **token**: JWT HS256 with `{{.Name}}.token_secret`. The Rails app mints a
+- **token**: JWT HS256 with `token.secret`. The Rails app mints a
   token for its user with the `jwt` gem and this service verifies it;
   `middlewares.Subject(c)` is the subject in a handler. A service that signs
   users in itself mints with `s.Tokens().Mint(subject, ttl)`.
@@ -280,7 +330,10 @@ and map no-rows to `domain.ErrNotFound`; then it runs sqlc. Types: string, text,
 uuid, jsonb, references; `:index` or `:uniq` after a type. `post:references`
 is the column `post_id` with a foreign key and an index. A `:uniq` column
 also makes `Create`/`Update` map a duplicate value to `domain.ErrInvalid`
-("email is already taken"), not a raw database error.
+("email is already taken"), not a raw database error. `Delete` maps a
+foreign-key violation (a row something else still points at) to
+`domain.ErrInvalid` too ("post is still in use"), so a controller answers 422,
+not 500.
 
 Every generated column is NOT NULL with a type-appropriate default, so sqlc
 emits plain Go types rather than pointers. A column that truly needs null is

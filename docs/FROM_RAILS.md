@@ -59,7 +59,7 @@ autoloads.
 | `db/schema.rb` | — | The migrations are the schema; sqlc compiles the queries against them. |
 | `db/seeds.rb` | `db/seeds/*.go` | One function per file, registered above `// bogie:seeds`; `db seed` re-runs every one, so each must be safe to run twice, as `db/seeds.rb` already has to be. |
 | `config/database.yml` | `DATABASE_URL` in credentials or the environment | One URL per environment; test never reads a credentials file, and takes only `TEST_DATABASE_URL`, so a development URL in your shell cannot reach the suite's truncates. |
-| `config/credentials.yml.enc`, `master.key` | the same files | Same pattern, same names, same `-e production`. |
+| `config/credentials.yml.enc`, `master.key` | the same files | Same pattern, same names, same `-e production`. Groups at the top level (`database:`, `smtp:`), as in Rails; a key's environment variable is its path, `smtp.address` is `SMTP_ADDRESS`. `bogie g config smtp address:req port:int` adds a group. |
 | `config/application.rb`, initializers | `app/application.go` | Where everything is constructed and wired, in order, with the markers. |
 | `config/puma.rb` | — | `net/http` with timeouts set in `app/controllers/application.go`. |
 | `config/deploy.yml` | `config/deploy.yml` | Kamal 2, unchanged. |

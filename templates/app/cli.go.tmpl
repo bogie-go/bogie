@@ -49,8 +49,8 @@ func runMigrate(ctx context.Context, args []string) (err error) {
 	if err != nil {
 		return err
 	}
-	log := logger.New(cfg.App.LogLevel, cfg.Env)
-	url := cfg.App.DatabaseURL
+	log := logger.New(cfg.Server.LogLevel, cfg.Env)
+	url := cfg.Database.URL
 	// Every branch below ends in a connection, so the hint goes on once here
 	// rather than at each return.
 	defer func() { err = database.Hint(err, url) }()
@@ -137,8 +137,8 @@ func runDB(ctx context.Context, args []string) (err error) {
 	if err != nil {
 		return err
 	}
-	log := logger.New(cfg.App.LogLevel, cfg.Env)
-	url := cfg.App.DatabaseURL
+	log := logger.New(cfg.Server.LogLevel, cfg.Env)
+	url := cfg.Database.URL
 	// Every branch below ends in a connection, so the hint goes on once here
 	// rather than at each return.
 	defer func() { err = database.Hint(err, url) }()

@@ -19,27 +19,40 @@ import (
 //	         clients (line-connect's applications)
 var AuthenticationShapes = []string{"secret", "token", "api_key"}
 
-// Setting is a configuration key a shape adds: its credentials-file key
-// under the app's section, the environment variable that overrides it, and
-// the Go field on AppConfig.
+// Setting is the one secret a shape reads from config: the group of the
+// credentials file it sits in and its key, like token and secret, so the file
+// has token.secret and the environment TOKEN_SECRET.
 type Setting struct {
-	Key   string // control_secret
-	Env   string // BLOG_CONTROL_SECRET
-	Field string // ControlSecret
-	Min   int    // required length in production
+	Group string // token
+	Key   string // secret
+	Min   int    // shortest accepted length in production
 }
 
-// AuthenticationSettings are the settings a shape reads from config, so the
-// command can write development values into the credentials file.
-func AuthenticationSettings(name, shape string) []Setting {
-	prefix := strings.ToUpper(name)
+// Path is the key in the credentials file: token.secret.
+func (s Setting) Path() string { return s.Group + "." + s.Key }
+
+// Env is the environment variable that overrides it: TOKEN_SECRET.
+func (s Setting) Env() string { return strings.ToUpper(s.Group + "_" + s.Key) }
+
+// Field is how config reaches it: Token.Secret, as in s.Config.Token.Secret.
+func (s Setting) Field() string { return Camel(s.Group) + "." + Camel(s.Key) }
+
+// ConfigKey is the key in the shape's config group.
+func (s Setting) ConfigKey() ConfigKey {
+	return ConfigKey{Name: s.Key, Type: "string", Secret: true, Min: s.Min}
+}
+
+// AuthenticationSetting is the setting a shape reads from config, so the
+// command can add its group and write a development value into the
+// credentials. api_key reads none: its keys live in a table.
+func AuthenticationSetting(shape string) (Setting, bool) {
 	switch shape {
 	case "secret":
-		return []Setting{{"control_secret", prefix + "_CONTROL_SECRET", "ControlSecret", 32}}
+		return Setting{Group: "control", Key: "secret", Min: 32}, true
 	case "token":
-		return []Setting{{"token_secret", prefix + "_TOKEN_SECRET", "TokenSecret", 32}}
+		return Setting{Group: "token", Key: "secret", Min: 32}, true
 	}
-	return nil
+	return Setting{}, false
 }
 
 // Authentication writes one shape: the middleware and its test, the route
@@ -78,25 +91,16 @@ func Authentication(module, name, shape string, scheme IDScheme, now time.Time) 
 	return files, wires, nil
 }
 
-// AuthenticationWirePrefixes are what destroy removes for a shape.
+// AuthenticationWirePrefixes are what destroy removes for a shape, apart from
+// its config group, which destroy removes as `d config` does.
 func AuthenticationWirePrefixes(name, shape string) []Wire {
-	a := auth{name: name}
 	var ws []Wire
-	for _, s := range AuthenticationSettings(name, shape) {
-		ws = append(ws, a.settingWires(s)...)
-	}
 	if shape == "api_key" {
 		ws = append(ws,
 			Wire{File: "app/controllers/application.go", Line: "APIKeys *api_keys.Service"},
 			Wire{File: "app/application.go", Line: "server.APIKeys ="},
 			Wire{File: "main.go", Line: `"api_keys":`},
 		)
-	}
-	for i := range ws {
-		// A prefix is the start of the line up to the value.
-		if j := strings.Index(ws[i].Line, " = envOr("); j > 0 {
-			ws[i].Line = ws[i].Line[:j+len(" = envOr(")]
-		}
 	}
 	return ws
 }
@@ -108,18 +112,8 @@ type auth struct {
 
 func (a auth) header() string { return "X-" + Camel(a.name) + "-Secret" }
 
-// settingWires are the three lines a setting needs in config.go: the field,
-// the environment override, and the production check.
-func (a auth) settingWires(s Setting) []Wire {
-	return []Wire{
-		{File: "config/config.go", Marker: "config", Line: fmt.Sprintf("%s string `mapstructure:%q`", s.Field, s.Key)},
-		{File: "config/config.go", Marker: "env", Line: fmt.Sprintf("a.%s = envOr(%q, a.%s)", s.Field, s.Env, s.Field)},
-		{File: "config/config.go", Marker: "validate", Line: fmt.Sprintf("requireSecret(c.Env, %q, a.%s, %d),", s.Env, s.Field, s.Min)},
-	}
-}
-
 func (a auth) secret() ([]File, []Wire, error) {
-	setting := AuthenticationSettings(a.name, "secret")[0]
+	setting, _ := AuthenticationSetting("secret")
 	files := []File{
 		{Path: "app/middlewares/require_secret.go", Content: fmt.Sprintf(`package middlewares
 
@@ -138,7 +132,7 @@ const SecretHeader = %[1]q
 // Anything that needs to know WHICH person is acting carries that in the
 // request body, because the permission check already happened in Rails.
 //
-// The secret comes from config (%[2]s.%[3]s in the credentials file,
+// The secret comes from config (%[3]s in the credentials file,
 // %[4]s in the environment); an empty one opens nothing.
 func RequireSecret(secret string) gin.HandlerFunc {
 	want := []byte(secret)
@@ -166,7 +160,7 @@ func RequireSecret(secret string) gin.HandlerFunc {
 		c.Next()
 	}
 }
-`, a.header(), a.name, setting.Key, setting.Env)},
+`, a.header(), a.name, setting.Path(), setting.Env())},
 		{Path: "app/middlewares/require_secret_test.go", Content: fmt.Sprintf(`package middlewares
 
 import (
@@ -219,7 +213,7 @@ import (
 )
 
 // WithSecret is the route group the Rails app calls. Every route mounted in
-// it needs the shared secret from config (%[2]s.%[3]s in the credentials
+// it needs the shared secret from config (%[3]s in the credentials
 // file, %[4]s in the environment) in the %[5]s header. Mount a
 // controller here instead of on the router, in routes.go:
 //
@@ -229,15 +223,15 @@ import (
 //
 //	Faraday.new(url: ENV["%[6]s_URL"], headers: { "%[5]s" => Rails.application.credentials.%[2]s_secret })
 func (s *Server) WithSecret(r *gin.RouterGroup) *gin.RouterGroup {
-	return r.Group("", middlewares.RequireSecret(s.Config.App.%[7]s))
+	return r.Group("", middlewares.RequireSecret(s.Config.%[7]s))
 }
-`, a.module+"/app/middlewares", a.name, setting.Key, setting.Env, a.header(), strings.ToUpper(a.name), setting.Field)},
+`, a.module+"/app/middlewares", a.name, setting.Path(), setting.Env(), a.header(), strings.ToUpper(a.name), setting.Field())},
 	}
-	return files, a.settingWires(setting), nil
+	return files, nil, nil
 }
 
 func (a auth) token() ([]File, []Wire, error) {
-	setting := AuthenticationSettings(a.name, "token")[0]
+	setting, _ := AuthenticationSetting("token")
 	files := []File{
 		{Path: "app/services/token/token.go", Content: fmt.Sprintf(`// Package token mints and verifies the bearer tokens a signed-in user
 // presents. JWT, HS256, one shared secret: the Rails app next door can mint
@@ -263,7 +257,7 @@ var (
 )
 
 // Maker holds the secret and the issuer every token must carry. The secret
-// is %[1]s.%[2]s in the credentials file (%[3]s in the environment), at
+// is %[1]s in the credentials file (%[2]s in the environment), at
 // least 32 bytes; the issuer is the app's name, so a token minted for
 // another service with the same secret is still refused.
 type Maker struct {
@@ -316,7 +310,7 @@ func (m Maker) Verify(raw string) (Claims, error) {
 	}
 	return Claims{Subject: claims.Subject, ExpiresAt: claims.ExpiresAt.Time, ID: claims.ID}, nil
 }
-`, a.name, setting.Key, setting.Env)},
+`, setting.Path(), setting.Env())},
 		{Path: "app/services/token/token_test.go", Content: `package token
 
 import (
@@ -468,7 +462,7 @@ import (
 )
 
 // Tokens is the token maker for this app: the secret from config
-// (%[3]s.%[4]s in the credentials file, %[5]s in the environment) and the
+// (%[4]s in the credentials file, %[5]s in the environment) and the
 // app's name as issuer. A sessions controller that signs users in here mints
 // with it; a Rails app that signs them in mints the same token with the jwt
 // gem and the same secret:
@@ -476,7 +470,7 @@ import (
 //	JWT.encode({ iss: %[3]q, sub: user.id.to_s, iat: Time.now.to_i, exp: 15.minutes.from_now.to_i, jti: SecureRandom.uuid },
 //	           Rails.application.credentials.%[3]s_token_secret, "HS256")
 func (s *Server) Tokens() token.Maker {
-	return token.Maker{Secret: []byte(s.Config.App.%[6]s), Issuer: %[3]q}
+	return token.Maker{Secret: []byte(s.Config.%[6]s), Issuer: %[3]q}
 }
 
 // WithUser is the route group a signed-in user is required for. Mount a
@@ -488,9 +482,9 @@ func (s *Server) Tokens() token.Maker {
 func (s *Server) WithUser(r *gin.RouterGroup) *gin.RouterGroup {
 	return r.Group("", middlewares.RequireUser(s.Tokens()))
 }
-`, a.module+"/app/middlewares", a.module+"/app/services/token", a.name, setting.Key, setting.Env, setting.Field)},
+`, a.module+"/app/middlewares", a.module+"/app/services/token", a.name, setting.Path(), setting.Env(), setting.Field())},
 	}
-	return files, a.settingWires(setting), nil
+	return files, nil, nil
 }
 
 // fakeIDAssign is a Go expression the api_keys service's fake store uses to
@@ -819,7 +813,7 @@ func runAPIKeys(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	store, err := models.Open(ctx, cfg.App.DatabaseURL)
+	store, err := models.Open(ctx, cfg.Database.URL)
 	if err != nil {
 		return err
 	}

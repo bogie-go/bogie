@@ -87,6 +87,16 @@ generators() {
   "$b" g authentication secret || return 1
   "$b" g authentication token || return 1
   "$b" g authentication api_key || return 1
+  # A config group: a typed struct, registered, with development credentials,
+  # then a second run that adds a key (including one that needs the time
+  # import) and changes nothing it already had.
+  "$b" g config smtp address:req port:int=1025 username password:secret || return 1
+  "$b" g config smtp address timeout:duration=5s || return 1
+  # Keys into the app's own group, and a new group sorted ahead of it.
+  "$b" g config database username=xxx password=yyyy || return 1
+  "$b" g config american football=yes || return 1
+  # A flat key, sorted in among the groups.
+  "$b" g config support_email=help@example.com retries:int:req || return 1
   # This app has no jobs; the first `g job` adds River itself, the same way
   # `app:update` merges a layout change, before writing the job as usual. The
   # app's own bin/ci below then also covers the worker role it just gained.
@@ -101,6 +111,10 @@ generators() {
   # And back out again: destroy must leave an app that still passes.
   cd "$CI_APP_DIR/blog" || return 1
   "$b" d job send_welcome || return 1
+  "$b" d config american || return 1
+  "$b" d config support_email || return 1
+  "$b" d config retries || return 1
+  "$b" d config smtp || return 1
   "$b" d authentication api_key || return 1
   "$b" d authentication token || return 1
   "$b" d authentication secret || return 1
@@ -120,7 +134,7 @@ generators() {
 serves() {
   [ -d "$CI_APP_DIR/blog" ] || { echo "no generated app to start"; return 1; }
   cd "$CI_APP_DIR/blog" || return 1
-  BLOG_ENV=test BLOG_ADDR=:18080 go run . serve >"$CI_APP_DIR/serve.log" 2>&1 &
+  BLOG_ENV=test SERVER_ADDR=:18080 go run . serve >"$CI_APP_DIR/serve.log" 2>&1 &
   pid=$!
   i=0
   until curl -fs localhost:18080/healthz >/dev/null 2>&1; do
@@ -200,7 +214,7 @@ reloads() {
   # setsid, so Air gets a process group of its own. Without it Air shares
   # this script's group, and interrupting that group to stop Air stops
   # bin/ci too.
-  BLOG_ADDR=:18081 setsid "$CI_APP_DIR/bogie" server >>"$CI_APP_DIR/reload.log" 2>&1 &
+  SERVER_ADDR=:18081 setsid "$CI_APP_DIR/bogie" server >>"$CI_APP_DIR/reload.log" 2>&1 &
   pid=$!
   reload_up /healthz || { echo "did not come up under reload"; cat "$CI_APP_DIR/reload.log"; reload_stop; return 1; }
 

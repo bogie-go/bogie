@@ -148,6 +148,10 @@ func (s *Store) DeleteUser(ctx context.Context, id string) error {
 	}
 	n, err := s.q.DeleteUser(ctx, pk)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			return fmt.Errorf("%w: user is still in use", domain.ErrInvalid)
+		}
 		return fmt.Errorf("models: delete user %s: %w", id, err)
 	}
 	if n == 0 {

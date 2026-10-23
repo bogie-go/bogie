@@ -59,7 +59,7 @@ func Hint(err error, databaseURL string) error {
 	case unreachable(err):
 		return fmt.Errorf("%w\n\n%s", err, startPostgres(databaseURL))
 	case errors.As(err, &pgErr) && (pgErr.Code == invalidPassword || pgErr.Code == invalidAuth):
-		return fmt.Errorf("%w\n\nPostgres is running at %s and refused these credentials.\nThe URL comes from {{.EnvPrefix}}_DATABASE_URL if it is set, otherwise from\nthe encrypted settings: bogie credentials:edit", err, endpoint(databaseURL))
+		return fmt.Errorf("%w\n\nPostgres is running at %s and refused these credentials.\nThe URL comes from DATABASE_URL if it is set, otherwise from\nthe encrypted settings: bogie credentials:edit", err, endpoint(databaseURL))
 	case errors.As(err, &pgErr) && pgErr.Code == invalidCatalogName:
 		return fmt.Errorf("%w\n\nPostgres is running at %s; this database is not there yet.\nCreate and migrate it:  bogie db:prepare\nFor the test database:   {{.EnvPrefix}}_ENV=test bogie db:prepare", err, endpoint(databaseURL))
 	}
@@ -99,7 +99,7 @@ func startPostgres(databaseURL string) string {
 	if _, port, err := net.SplitHostPort(where); err == nil && port == bundledPort {
 		return "Nothing is listening on " + where + ", which is the bundled Postgres.\nStart it, then create the database:\n  make up\n  bogie db:prepare"
 	}
-	return "Nothing is listening on " + where + ".\nStart your Postgres service, then:  bogie db:prepare\nTo point somewhere else, set {{.EnvPrefix}}_DATABASE_URL (or edit the\nencrypted settings: bogie credentials:edit)"
+	return "Nothing is listening on " + where + ".\nStart your Postgres service, then:  bogie db:prepare\nTo point somewhere else, set DATABASE_URL (or edit the\nencrypted settings: bogie credentials:edit)"
 }
 
 // endpoint is the host:port a URL points at, for a message that names where

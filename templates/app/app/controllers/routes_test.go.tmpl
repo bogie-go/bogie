@@ -24,7 +24,7 @@ import (
 // constructed and mounted.
 func testServer(env string) *Server {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	s := NewServer(config.Config{Env: env, App: config.AppConfig{Addr: ":0", LogLevel: "info"}}, log)
+	s := NewServer(config.Config{Env: env, Server: config.ServerConfig{Addr: ":0", LogLevel: "info"}}, log)
 	fields := reflect.ValueOf(s).Elem()
 	for i := range fields.NumField() {
 		if f := fields.Field(i); f.Kind() == reflect.Pointer && f.IsNil() && f.CanSet() {

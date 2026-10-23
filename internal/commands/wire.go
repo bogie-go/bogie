@@ -38,7 +38,11 @@ func wire(root string, wires []generate.Wire, pending map[string][]byte, pretend
 			files[w.File] = e
 			order = append(order, w.File)
 		}
-		out, changed, err := markers.Insert(e.content, w.File, w.Marker, w.Line)
+		insert := markers.Insert
+		if w.Sorted {
+			insert = markers.InsertSorted
+		}
+		out, changed, err := insert(e.content, w.File, w.Marker, w.Line)
 		if err != nil {
 			return err
 		}

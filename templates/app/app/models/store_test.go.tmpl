@@ -33,10 +33,10 @@ func testStore(t *testing.T) *Store {
 	}
 	ctx := context.Background()
 	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
-	if err := migrate.Run(ctx, cfg.App.DatabaseURL, quiet); err != nil {
+	if err := migrate.Run(ctx, cfg.Database.URL, quiet); err != nil {
 		t.Fatalf("migrate: %v\n%s", err, dbHint)
 	}
-	store, err := Open(ctx, cfg.App.DatabaseURL)
+	store, err := Open(ctx, cfg.Database.URL)
 	if err != nil {
 		t.Fatalf("%v\n%s", err, dbHint)
 	}

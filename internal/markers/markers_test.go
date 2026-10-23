@@ -140,3 +140,53 @@ func TestCheck(t *testing.T) {
 		t.Error("missing marker passed")
 	}
 }
+
+func TestAddImportToAFileWithoutABlock(t *testing.T) {
+	cases := map[string]struct{ src, want string }{
+		"no import at all": {"package config\n\ntype T struct{}\n", "package config\n\nimport \"time\"\n\ntype T struct{}\n"},
+		"one single-line import": {"package config\n\nimport \"os\"\n\nvar _ = os.Args\n",
+			"package config\n\nimport (\n\t\"os\"\n\t\"time\"\n)\n\nvar _ = os.Args\n"},
+		"already there": {"package config\n\nimport \"time\"\n\nvar _ = time.Now\n", "package config\n\nimport \"time\"\n\nvar _ = time.Now\n"},
+	}
+	for name, tc := range cases {
+		got, _, err := AddImport([]byte(tc.src), "time")
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if string(got) != tc.want {
+			t.Errorf("%s:\ngot  %q\nwant %q", name, got, tc.want)
+		}
+	}
+	// Whatever shape it takes, the result still formats and parses.
+	got, _, _ := AddImport([]byte("package config\n\ntype T struct{ D time.Duration }\n"), "time")
+	if _, err := Format(got); err != nil {
+		t.Errorf("result does not format: %v\n%s", err, got)
+	}
+}
+
+func TestInsertSortedPutsAFieldWhereItsTagSorts(t *testing.T) {
+	const src = "type Config struct {\n\tEnv string `mapstructure:\"-\"`\n\n\t// groups\n\tDatabase DatabaseConfig `mapstructure:\"database\"`\n\tServer   ServerConfig   `mapstructure:\"server\"`\n\t// bogie:config\n}\n"
+	got, changed, err := InsertSorted([]byte(src), "config.go", "config", "Mail MailConfig `mapstructure:\"mail\"`")
+	if err != nil || !changed {
+		t.Fatalf("%v %v", changed, err)
+	}
+	want := "type Config struct {\n\tEnv string `mapstructure:\"-\"`\n\n\t// groups\n\tDatabase DatabaseConfig `mapstructure:\"database\"`\n\tMail MailConfig `mapstructure:\"mail\"`\n\tServer   ServerConfig   `mapstructure:\"server\"`\n\t// bogie:config\n}\n"
+	if string(got) != want {
+		t.Errorf("got\n%s\nwant\n%s", got, want)
+	}
+	// After the last one, and again, which changes nothing (gofmt's padding
+	// on the earlier line must not read as a different line).
+	got, _, _ = InsertSorted(got, "config.go", "config", "Token TokenConfig `mapstructure:\"token\"`")
+	if i, j := strings.Index(string(got), "Token"), strings.Index(string(got), "// bogie:config"); i < 0 || i > j || strings.Index(string(got), "Server") > i {
+		t.Errorf("token not after server, above the marker:\n%s", got)
+	}
+	again, changed, _ := InsertSorted(got, "config.go", "config", "Token  TokenConfig  `mapstructure:\"token\"`")
+	if changed || string(again) != string(got) {
+		t.Error("a second insert changed the file")
+	}
+	// Before the first.
+	got, _, _ = InsertSorted(got, "config.go", "config", "Auth AuthConfig `mapstructure:\"auth\"`")
+	if strings.Index(string(got), "Auth") > strings.Index(string(got), "Database") || strings.Index(string(got), "Auth") < strings.Index(string(got), "// groups") {
+		t.Errorf("auth not first of the groups:\n%s", got)
+	}
+}

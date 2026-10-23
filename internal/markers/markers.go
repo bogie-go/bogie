@@ -34,6 +34,56 @@ func Insert(src []byte, file, marker, line string) (out []byte, changed bool, er
 	return []byte(strings.Join(lines, "\n")), true, nil
 }
 
+var structTag = regexp.MustCompile("`mapstructure:\"([^\"]*)\"`")
+
+// tagOf is the mapstructure name on a struct field line, or "".
+func tagOf(line string) string {
+	if m := structTag.FindStringSubmatch(line); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// InsertSorted is Insert for a struct field with a mapstructure tag: instead of
+// going directly above the marker it goes where its tag sorts among the tagged
+// fields just above the marker (a contiguous run, so the fields before them,
+// Env and the like, stay put), before the first one whose tag is greater. It
+// is idempotent by the line's words, so the padding gofmt added to an earlier
+// insert does not make it look new. A line with no tag is a plain Insert.
+func InsertSorted(src []byte, file, marker, line string) (out []byte, changed bool, err error) {
+	key := tagOf(line)
+	if key == "" {
+		return Insert(src, file, marker, line)
+	}
+	lines := strings.Split(string(src), "\n")
+	at, indent, err := find(lines, file, marker)
+	if err != nil {
+		return nil, false, err
+	}
+	words := strings.Join(strings.Fields(line), " ")
+	for _, l := range lines {
+		if strings.Join(strings.Fields(l), " ") == words {
+			return src, false, nil
+		}
+	}
+	first := at
+	for i := at - 1; i >= 0; i-- {
+		if k := tagOf(lines[i]); k == "" || k == "-" {
+			break
+		}
+		first = i
+	}
+	pos := at
+	for i := first; i < at; i++ {
+		if tagOf(lines[i]) > key {
+			pos = i
+			break
+		}
+	}
+	lines = append(lines[:pos], append([]string{indent + strings.TrimSpace(line)}, lines[pos:]...)...)
+	return []byte(strings.Join(lines, "\n")), true, nil
+}
+
 // Remove deletes the first line whose text starts with prefix, so a wire
 // line can be removed whatever arguments it was given. Runs of spaces and
 // tabs count as one: gofmt aligns a struct's fields, so the line a generator
@@ -75,25 +125,40 @@ func find(lines []string, file, marker string) (at int, indent string, err error
 	return at, indent, nil
 }
 
-// AddImport adds path to the file's import block, if not already there.
-// Format afterwards sorts it into place.
+// AddImport adds path to the file's imports, if not already there. A file
+// with no import gets one after its package clause, and a single-line
+// `import "x"` becomes a block, so a generated file that started with none
+// (a config group with no duration key yet) can gain one. Format afterwards
+// sorts it into place.
 func AddImport(src []byte, path string) (out []byte, changed bool, err error) {
 	quoted := fmt.Sprintf("%q", path)
 	if bytes.Contains(src, []byte(quoted)) {
 		return src, false, nil
 	}
 	s := string(src)
-	open := strings.Index(s, "import (")
-	if open < 0 {
-		return nil, false, fmt.Errorf("no import block to add %s to", path)
+	if open := strings.Index(s, "import ("); open >= 0 {
+		closeAt := strings.Index(s[open:], "\n)")
+		if closeAt < 0 {
+			return nil, false, fmt.Errorf("unterminated import block")
+		}
+		at := open + closeAt
+		return []byte(s[:at] + "\n\t" + quoted + s[at:]), true, nil
 	}
-	closeAt := strings.Index(s[open:], "\n)")
-	if closeAt < 0 {
-		return nil, false, fmt.Errorf("unterminated import block")
+	if m := singleImport.FindStringSubmatchIndex(s); m != nil {
+		// import "a"  ->  import (\n\t"a"\n\t"b"\n)
+		return []byte(s[:m[0]] + "import (\n\t" + s[m[2]:m[3]] + "\n\t" + quoted + "\n)" + s[m[1]:]), true, nil
 	}
-	at := open + closeAt
-	return []byte(s[:at] + "\n\t" + quoted + s[at:]), true, nil
+	pkg := packageClause.FindStringIndex(s)
+	if pkg == nil {
+		return nil, false, fmt.Errorf("no package clause to add the import %s after", path)
+	}
+	return []byte(s[:pkg[1]] + "\n\nimport " + quoted + s[pkg[1]:]), true, nil
 }
+
+var (
+	singleImport  = regexp.MustCompile(`(?m)^import (".+?")[ \t]*$`)
+	packageClause = regexp.MustCompile(`(?m)^package \w+[ \t]*$`)
+)
 
 var (
 	importLine    = regexp.MustCompile(`^\s*(?:(\w+)\s+)?"([^"]+)"\s*$`)

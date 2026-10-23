@@ -176,12 +176,11 @@ func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 	uniq := uniqueAttrs(attrs)
 	var b strings.Builder
 	b.WriteString("package models\n\n")
-	b.WriteString("import (\n\t\"context\"\n\t\"errors\"\n\t\"fmt\"\n\n\t\"github.com/jackc/pgx/v5\"\n")
+	// pgconn is always needed now: every Delete classifies a foreign-key
+	// violation. gofmt sorts imports, so pgconn goes before pgtype.
+	b.WriteString("import (\n\t\"context\"\n\t\"errors\"\n\t\"fmt\"\n\n\t\"github.com/jackc/pgx/v5\"\n\t\"github.com/jackc/pgx/v5/pgconn\"\n")
 	if needsPgtype(attrs) {
 		b.WriteString("\t\"github.com/jackc/pgx/v5/pgtype\"\n")
-	}
-	if len(uniq) > 0 {
-		b.WriteString("\t\"github.com/jackc/pgx/v5/pgconn\"\n")
 	}
 	fmt.Fprintf(&b, "\n\t%q\n)\n\n", module+"/app/domain")
 
@@ -277,7 +276,7 @@ func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 	fmt.Fprintf(&b, "// Delete%s removes a %s, and says so if there was none.\n", typ, name)
 	fmt.Fprintf(&b, "func (s *Store) Delete%s(ctx context.Context, id string) error {\n", typ)
 	fmt.Fprintf(&b, "\tpk, err := %s(id)\n\tif err != nil {\n\t\treturn domain.ErrNotFound\n\t}\n", scheme.parseFunc())
-	fmt.Fprintf(&b, "\tn, err := s.q.Delete%s(ctx, pk)\n\tif err != nil {\n\t\treturn fmt.Errorf(\"models: delete %s %%s: %%w\", id, err)\n\t}\n", typ, name)
+	fmt.Fprintf(&b, "\tn, err := s.q.Delete%s(ctx, pk)\n\tif err != nil {\n\t\tvar pgErr *pgconn.PgError\n\t\tif errors.As(err, &pgErr) && pgErr.Code == \"23503\" {\n\t\t\treturn fmt.Errorf(\"%%w: %s is still in use\", domain.ErrInvalid)\n\t\t}\n\t\treturn fmt.Errorf(\"models: delete %s %%s: %%w\", id, err)\n\t}\n", typ, name, name)
 	b.WriteString("\tif n == 0 {\n\t\treturn domain.ErrNotFound\n\t}\n\treturn nil\n}\n\n")
 
 	// fromRow
