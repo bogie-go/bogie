@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/bogie-go/bogie/internal/generate"
@@ -31,7 +32,7 @@ a real overlap leaves conflict markers, and the report names those files.
 Refuses on a dirty git tree, so the result is one reviewable diff. Files the
 templates never produced are not touched: everything bogie g and you wrote
 is safe by construction. Afterwards bogie.toml records the new version,
-go mod tidy runs, and bogie doctor checks the markers.
+the credentials module is raised if the app's is older, go mod tidy runs, and bogie doctor checks the markers.
 
   --pretend   the report only; nothing written
 `
@@ -87,7 +88,8 @@ func readSettings(root string) (Settings, error) {
 
 // notMerged are files app:update never merges. go.mod and go.sum are
 // tidied rather than merged, since `go mod tidy` adds what the new
-// templates import and the recorded versions are the app's own; the marker
+// templates import and the recorded versions are the app's own (except
+// Bogie's own credentials module, raised to the template's version); the marker
 // is rewritten, not merged; and the credentials file and its key are made
 // by `new` outside the templates, with a random key, so the old version's
 // render of them is noise.
@@ -210,6 +212,17 @@ func Update(args []string, out io.Writer) error {
 		say("%12s  go get -tool %s\n", "run", tool)
 		if err := goIn(root, out, "get", "-tool", tool); err != nil {
 			return fmt.Errorf("app:update: go get -tool %s: %w", tool, err)
+		}
+	}
+	// The credentials module is Bogie's own, and the templates call into it:
+	// config.go from v0.3.0 needs credentials.ApplyEnvOverrides, which a v1.5.0
+	// go.mod does not have. Every other requirement stays the app's own, but
+	// this one is raised to the template's version, or the updated app does not
+	// build.
+	for _, mod := range staleBogieModules(theirs["go.mod"], root) {
+		say("%12s  go get %s\n", "run", mod)
+		if err := goIn(root, out, "get", mod); err != nil {
+			return fmt.Errorf("app:update: go get %s: %w", mod, err)
 		}
 	}
 	say("%12s  go mod tidy\n", "run")
@@ -644,4 +657,93 @@ func toolDirectives(src []byte) []string {
 		}
 	}
 	return tools
+}
+
+// bogieModules are the requirements app:update raises to the template's
+// version when the app's is older: modules Bogie publishes, whose API the
+// templated code calls.
+var bogieModules = []string{"github.com/bogie-go/credentials"}
+
+// staleBogieModules returns "module@version" for each of bogieModules that the
+// template requires at a newer version than the app's go.mod does. A module
+// the app does not require at all is left to go mod tidy.
+func staleBogieModules(template []byte, root string) []string {
+	have, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		return nil
+	}
+	want, got := requiredVersions(template), requiredVersions(have)
+	var stale []string
+	for _, mod := range bogieModules {
+		if w, ok := want[mod]; ok {
+			if g, ok := got[mod]; ok && semverLess(g, w) {
+				stale = append(stale, mod+"@"+w)
+			}
+		}
+	}
+	return stale
+}
+
+// requiredVersions reads module -> version from the require lines of a
+// go.mod, in either the block or the one-line form.
+func requiredVersions(src []byte) map[string]string {
+	out := map[string]string{}
+	inBlock := false
+	for _, line := range strings.Split(string(src), "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case line == "" || strings.HasPrefix(line, "//"):
+			continue
+		case inBlock && line == ")":
+			inBlock = false
+			continue
+		case line == "require (":
+			inBlock = true
+			continue
+		case strings.HasPrefix(line, "require "):
+			line = strings.TrimSpace(strings.TrimPrefix(line, "require "))
+		case !inBlock:
+			continue
+		}
+		if f := strings.Fields(line); len(f) >= 2 {
+			out[f[0]] = f[1]
+		}
+	}
+	return out
+}
+
+// semverLess reports whether vA is an older release than vB, comparing
+// vMAJOR.MINOR.PATCH numerically. A version it cannot parse is never older.
+func semverLess(a, b string) bool {
+	pa, okA := semverParts(a)
+	pb, okB := semverParts(b)
+	if !okA || !okB {
+		return false
+	}
+	for i := range pa {
+		if pa[i] != pb[i] {
+			return pa[i] < pb[i]
+		}
+	}
+	return false
+}
+
+func semverParts(v string) ([3]int, bool) {
+	var p [3]int
+	v = strings.TrimPrefix(v, "v")
+	if i := strings.IndexAny(v, "-+"); i >= 0 {
+		v = v[:i]
+	}
+	f := strings.Split(v, ".")
+	if len(f) != 3 {
+		return p, false
+	}
+	for i, s := range f {
+		n, err := strconv.Atoi(s)
+		if err != nil {
+			return p, false
+		}
+		p[i] = n
+	}
+	return p, true
 }
