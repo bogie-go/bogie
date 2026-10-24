@@ -151,6 +151,11 @@ func kindFor(a Attr, scheme IDScheme) kind {
 	return kinds[a.Type]
 }
 
+// attrAliases are accepted spellings that resolve to a type in kinds. `bogie g
+// config` takes int and bool; scaffold, model and migration take integer and
+// boolean, as Rails does. Each now takes both.
+var attrAliases = map[string]string{"int": "integer", "bool": "boolean"}
+
 var attrPattern = regexp.MustCompile(`^([a-z][a-z0-9_]*)(?::([a-z]+))?(?::(index|uniq))?$`)
 
 // ParseAttrs reads `name[:type][:index|:uniq]` arguments. A bare name with no
@@ -166,6 +171,10 @@ func ParseAttrs(args []string) ([]Attr, error) {
 		typ := m[2]
 		if typ == "" {
 			typ = "string"
+		}
+		// The names `bogie g config` uses, accepted here too, so one habit works.
+		if canon, ok := attrAliases[typ]; ok {
+			typ = canon
 		}
 		attr := Attr{Name: m[1], Type: typ, Index: m[3] == "index", Unique: m[3] == "uniq"}
 		if _, ok := kinds[attr.Type]; !ok {
