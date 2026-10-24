@@ -5,14 +5,14 @@ import "fmt"
 // Job writes app/jobs/<name>.go, a River job: an Args type with a Kind, a
 // Worker with Work, and a test; and the line that registers the worker above
 // the bogie:jobs marker.
-func Job(name string) ([]File, []Wire, error) {
+func Job(module, name string) ([]File, []Wire, error) {
 	if !namePattern.MatchString(name) {
 		return nil, nil, fmt.Errorf("%q is not a job name: lowercase letters, digits and underscores", name)
 	}
 	typ := Camel(name)
 	files := []File{
 		{Path: "app/jobs/" + name + ".go", Content: jobFile(name, typ)},
-		{Path: "app/jobs/" + name + "_test.go", Content: jobTest(name, typ)},
+		{Path: "app/jobs/" + name + "_test.go", Content: jobTest(module, name, typ)},
 	}
 	wires := []Wire{{
 		File:   "app/jobs/jobs.go",
@@ -67,25 +67,40 @@ func (w *%[2]sWorker) Work(ctx context.Context, job *river.Job[%[2]sArgs]) error
 `, name, typ, name)
 }
 
-func jobTest(name, typ string) string {
-	return fmt.Sprintf(`package jobs
+func jobTest(module, name, typ string) string {
+	return fmt.Sprintf(`package jobs_test
 
 import (
 	"context"
 	"io"
 	"log/slog"
-	"testing"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
+
+	"%[3]s/app/jobs"
 )
 
-func Test%[2]sWork(t *testing.T) {
-	w := &%[2]sWorker{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
-	job := &river.Job[%[2]sArgs]{JobRow: &rivertype.JobRow{ID: 1}, Args: %[2]sArgs{}}
-	if err := w.Work(context.Background(), job); err != nil {
-		t.Fatalf("Work: %%v", err)
-	}
-}
-`, name, typ)
+var _ = Describe("%[2]sWorker", func() {
+	var (
+		worker *jobs.%[2]sWorker
+		job    *river.Job[jobs.%[2]sArgs]
+	)
+
+	Describe("Work", func() {
+		Context("with a job and no dependencies", func() {
+			BeforeEach(func() {
+				worker = &jobs.%[2]sWorker{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+				job = &river.Job[jobs.%[2]sArgs]{JobRow: &rivertype.JobRow{ID: 1}, Args: jobs.%[2]sArgs{}}
+			})
+
+			It("succeeds", func() {
+				Expect(worker.Work(context.Background(), job)).To(Succeed())
+			})
+		})
+	})
+})
+`, name, typ, module)
 }

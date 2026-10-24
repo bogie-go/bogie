@@ -35,21 +35,50 @@ func (s *Service) Run(ctx context.Context) error {
 	s.log.InfoContext(ctx, "publish_post: not implemented yet")
 	return nil
 }
+==> app/services/publish_post/publish_post_suite_test.go
+package publish_post_test
+
+import (
+	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+)
+
+func TestPublishPost(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "PublishPost")
+}
 ==> app/services/publish_post/publish_post_test.go
-package publish_post
+package publish_post_test
 
 import (
 	"context"
 	"io"
 	"log/slog"
-	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"example.com/blog/app/services/publish_post"
 )
 
+// fakeStore stands in for the store interface the service declares. Give it
+// the methods that interface lists, backed by a map or a slice.
 type fakeStore struct{}
 
-func TestRun(t *testing.T) {
-	svc := New(fakeStore{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err := svc.Run(context.Background()); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-}
+var _ = Describe("Service", func() {
+	var svc *publish_post.Service
+
+	Describe("Run", func() {
+		Context("with an empty store", func() {
+			BeforeEach(func() {
+				svc = publish_post.New(fakeStore{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			})
+
+			It("succeeds", func() {
+				Expect(svc.Run(context.Background())).To(Succeed())
+			})
+		})
+	})
+})

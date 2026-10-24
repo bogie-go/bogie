@@ -124,20 +124,20 @@ func destroyIn(root string, args []string, out io.Writer) error {
 			empty := len(matches) > 0
 			for _, m := range matches {
 				base := filepath.Base(m)
-				if !removing[base] && base != "server.go" && base != "routes.go" {
+				if !removing[base] && base != "server.go" && base != "routes.go" && base != filepath.Base(generate.NamespaceSuitePath(ns)) {
 					empty = false
 				}
 			}
 			if empty {
 				rel := "app/controllers/" + ns + "_controller/"
-				files = append(files, generate.File{Path: rel + "server.go"}, generate.File{Path: rel + "routes.go"})
+				files = append(files, generate.File{Path: rel + "server.go"}, generate.File{Path: rel + "routes.go"}, generate.File{Path: generate.NamespaceSuitePath(ns)})
 				wires = append(wires, generate.NamespaceWirePrefixes(ns)...)
 			}
 		}
 	case "service":
 		files, err = generate.Service(module, name)
 	case "job":
-		files, _, err = generate.Job(name)
+		files, _, err = generate.Job(module, name)
 		wires = generate.JobWirePrefix(name)
 	case "seed":
 		files, _, err = generate.Seed(module, name)

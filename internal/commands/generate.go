@@ -201,7 +201,7 @@ func generateIn(root string, args []string, out io.Writer) error {
 				return fmt.Errorf("generate job: %w", err)
 			}
 		}
-		files, wires, err = generate.Job(name)
+		files, wires, err = generate.Job(module, name)
 		if err != nil {
 			return fmt.Errorf("generate job: %w", err)
 		}

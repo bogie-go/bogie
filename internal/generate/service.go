@@ -13,7 +13,8 @@ func Service(module, name string) ([]File, error) {
 	dir := "app/services/" + name + "/"
 	return []File{
 		{Path: dir + name + ".go", Content: serviceFile(name)},
-		{Path: dir + name + "_test.go", Content: serviceTest(name)},
+		{Path: dir + name + "_suite_test.go", Content: suiteFile(name, Camel(name))},
+		{Path: dir + name + "_test.go", Content: serviceTest(module, name)},
 	}, nil
 }
 
@@ -57,23 +58,57 @@ func (s *Service) Run(ctx context.Context) error {
 `, name)
 }
 
-func serviceTest(name string) string {
-	return fmt.Sprintf(`package %[1]s
+// suiteFile is the Ginkgo entry point of a package of its own: the one Test
+// function go test finds, which runs every spec in the package's _test files.
+func suiteFile(pkg, title string) string {
+	return fmt.Sprintf(`package %[1]s_test
+
+import (
+	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+)
+
+func Test%[2]s(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, %[2]q)
+}
+`, pkg, title)
+}
+
+func serviceTest(module, name string) string {
+	return fmt.Sprintf(`package %[1]s_test
 
 import (
 	"context"
 	"io"
 	"log/slog"
-	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"%[2]s/app/services/%[1]s"
 )
 
+// fakeStore stands in for the store interface the service declares. Give it
+// the methods that interface lists, backed by a map or a slice.
 type fakeStore struct{}
 
-func TestRun(t *testing.T) {
-	svc := New(fakeStore{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err := svc.Run(context.Background()); err != nil {
-		t.Fatalf("Run: %%v", err)
-	}
-}
-`, name)
+var _ = Describe("Service", func() {
+	var svc *%[1]s.Service
+
+	Describe("Run", func() {
+		Context("with an empty store", func() {
+			BeforeEach(func() {
+				svc = %[1]s.New(fakeStore{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			})
+
+			It("succeeds", func() {
+				Expect(svc.Run(context.Background())).To(Succeed())
+			})
+		})
+	})
+})
+`, name, module)
 }

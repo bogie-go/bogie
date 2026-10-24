@@ -76,54 +76,113 @@ func (m Maker) Verify(raw string) (Claims, error) {
 	}
 	return Claims{Subject: claims.Subject, ExpiresAt: claims.ExpiresAt.Time, ID: claims.ID}, nil
 }
-==> app/services/token/token_test.go
-package token
+==> app/services/token/token_suite_test.go
+package token_test
 
 import (
-	"errors"
 	"testing"
-	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-var maker = Maker{Secret: []byte("a-test-secret-of-at-least-thirty-two-bytes"), Issuer: "test"}
-
-func TestMintThenVerify(t *testing.T) {
-	raw, err := maker.Mint("user-42", time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
-	claims, err := maker.Verify(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if claims.Subject != "user-42" || claims.ID == "" || time.Until(claims.ExpiresAt) <= 0 {
-		t.Errorf("claims = %+v", claims)
-	}
+func TestToken(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Token")
 }
+==> app/services/token/token_test.go
+package token_test
 
-func TestVerifyRefuses(t *testing.T) {
-	expired, _ := maker.Mint("user-42", -time.Minute)
-	otherSecret, _ := Maker{Secret: []byte("another-secret-of-at-least-thirty-two-bytes"), Issuer: "test"}.Mint("user-42", time.Minute)
-	otherIssuer, _ := Maker{Secret: maker.Secret, Issuer: "someone-else"}.Mint("user-42", time.Minute)
+import (
+	"time"
 
-	for name, tc := range map[string]struct {
-		raw  string
-		want error
-	}{
-		"expired":        {expired, ErrExpired},
-		"another secret": {otherSecret, ErrInvalid},
-		"another issuer": {otherIssuer, ErrInvalid},
-		"garbage":        {"not.a.token", ErrInvalid},
-		"empty":          {"", ErrInvalid},
-	} {
-		if _, err := maker.Verify(tc.raw); !errors.Is(err, tc.want) {
-			t.Errorf("%s: err = %v, want %v", name, err, tc.want)
-		}
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"example.com/blog/app/services/token"
+)
+
+var maker = token.Maker{Secret: []byte("a-test-secret-of-at-least-thirty-two-bytes"), Issuer: "test"}
+
+var _ = Describe("Maker", func() {
+	var (
+		raw    string
+		claims token.Claims
+		err    error
+	)
+
+	mint := func(m token.Maker, ttl time.Duration) string {
+		signed, err := m.Mint("user-42", ttl)
+		Expect(err).NotTo(HaveOccurred())
+		return signed
 	}
-	if _, err := maker.Mint("", time.Minute); err == nil {
-		t.Error("minted a token with no subject")
-	}
-}
+
+	Describe("Mint and Verify", func() {
+		Context("with a valid token", func() {
+			BeforeEach(func() {
+				raw = mint(maker, time.Minute)
+				claims, err = maker.Verify(raw)
+			})
+
+			It("verifies", func() { Expect(err).NotTo(HaveOccurred()) })
+			It("gives back the subject", func() { Expect(claims.Subject).To(Equal("user-42")) })
+			It("carries an id", func() { Expect(claims.ID).NotTo(BeEmpty()) })
+			It("expires in the future", func() { Expect(claims.ExpiresAt).To(BeTemporally(">", time.Now())) })
+		})
+
+		Context("with an expired token", func() {
+			BeforeEach(func() {
+				_, err = maker.Verify(mint(maker, -time.Minute))
+			})
+
+			It("is refused as expired", func() { Expect(err).To(MatchError(token.ErrExpired)) })
+		})
+
+		Context("with a token signed by another secret", func() {
+			BeforeEach(func() {
+				other := token.Maker{Secret: []byte("another-secret-of-at-least-thirty-two-bytes"), Issuer: "test"}
+				_, err = maker.Verify(mint(other, time.Minute))
+			})
+
+			It("is refused as invalid", func() { Expect(err).To(MatchError(token.ErrInvalid)) })
+		})
+
+		Context("with a token from another issuer", func() {
+			BeforeEach(func() {
+				other := token.Maker{Secret: maker.Secret, Issuer: "someone-else"}
+				_, err = maker.Verify(mint(other, time.Minute))
+			})
+
+			It("is refused as invalid", func() { Expect(err).To(MatchError(token.ErrInvalid)) })
+		})
+
+		Context("with garbage", func() {
+			BeforeEach(func() {
+				_, err = maker.Verify("not.a.token")
+			})
+
+			It("is refused as invalid", func() { Expect(err).To(MatchError(token.ErrInvalid)) })
+		})
+
+		Context("with an empty string", func() {
+			BeforeEach(func() {
+				_, err = maker.Verify("")
+			})
+
+			It("is refused as invalid", func() { Expect(err).To(MatchError(token.ErrInvalid)) })
+		})
+	})
+
+	Describe("Mint", func() {
+		Context("with an empty subject", func() {
+			BeforeEach(func() {
+				_, err = maker.Mint("", time.Minute)
+			})
+
+			It("refuses to mint", func() { Expect(err).To(HaveOccurred()) })
+		})
+	})
+})
 ==> app/middlewares/require_user.go
 package middlewares
 
@@ -173,26 +232,27 @@ func RequireUser(tokens userTokens) gin.HandlerFunc {
 // RequireUser does not guard.
 func Subject(c *gin.Context) string { return c.GetString(subjectKey) }
 ==> app/middlewares/require_user_test.go
-package middlewares
+package middlewares_test
 
 import (
 	"net/http"
 	"net/http/httptest"
-	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
+	"example.com/blog/app/middlewares"
 	"example.com/blog/app/services/token"
 )
 
 var testTokens = token.Maker{Secret: []byte("a-test-secret-of-at-least-thirty-two-bytes"), Issuer: "test"}
 
-func userRequest(t *testing.T, authorization string) *httptest.ResponseRecorder {
-	t.Helper()
+func userRequest(authorization string) *httptest.ResponseRecorder {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.GET("/me", RequireUser(testTokens), func(c *gin.Context) { c.String(http.StatusOK, Subject(c)) })
+	router.GET("/me", middlewares.RequireUser(testTokens), func(c *gin.Context) { c.String(http.StatusOK, middlewares.Subject(c)) })
 	req := httptest.NewRequest(http.MethodGet, "/me", nil)
 	if authorization != "" {
 		req.Header.Set("Authorization", authorization)
@@ -202,21 +262,52 @@ func userRequest(t *testing.T, authorization string) *httptest.ResponseRecorder 
 	return rec
 }
 
-func TestRequireUser(t *testing.T) {
-	good, _ := testTokens.Mint("user-42", time.Minute)
-	expired, _ := testTokens.Mint("user-42", -time.Minute)
+var _ = Describe("RequireUser", func() {
+	var rec *httptest.ResponseRecorder
 
-	if rec := userRequest(t, "Bearer "+good); rec.Code != http.StatusOK || rec.Body.String() != "user-42" {
-		t.Errorf("good token: %d %q", rec.Code, rec.Body.String())
-	}
-	for name, header := range map[string]string{
-		"none": "", "expired": "Bearer " + expired, "garbage": "Bearer nope", "wrong scheme": "Basic " + good,
-	} {
-		if rec := userRequest(t, header); rec.Code != http.StatusUnauthorized {
-			t.Errorf("%s: %d, want 401", name, rec.Code)
-		}
-	}
-}
+	Context("with a good token", func() {
+		BeforeEach(func() {
+			good, err := testTokens.Mint("user-42", time.Minute)
+			Expect(err).NotTo(HaveOccurred())
+			rec = userRequest("Bearer " + good)
+		})
+
+		It("lets the request through", func() { Expect(rec.Code).To(Equal(http.StatusOK)) })
+		It("puts the subject on the context", func() { Expect(rec.Body.String()).To(Equal("user-42")) })
+	})
+
+	Context("with no token", func() {
+		BeforeEach(func() { rec = userRequest("") })
+
+		It("answers 401", func() { Expect(rec.Code).To(Equal(http.StatusUnauthorized)) })
+	})
+
+	Context("with an expired token", func() {
+		BeforeEach(func() {
+			expired, err := testTokens.Mint("user-42", -time.Minute)
+			Expect(err).NotTo(HaveOccurred())
+			rec = userRequest("Bearer " + expired)
+		})
+
+		It("answers 401", func() { Expect(rec.Code).To(Equal(http.StatusUnauthorized)) })
+	})
+
+	Context("with garbage", func() {
+		BeforeEach(func() { rec = userRequest("Bearer nope") })
+
+		It("answers 401", func() { Expect(rec.Code).To(Equal(http.StatusUnauthorized)) })
+	})
+
+	Context("with the wrong scheme", func() {
+		BeforeEach(func() {
+			good, err := testTokens.Mint("user-42", time.Minute)
+			Expect(err).NotTo(HaveOccurred())
+			rec = userRequest("Basic " + good)
+		})
+
+		It("answers 401", func() { Expect(rec.Code).To(Equal(http.StatusUnauthorized)) })
+	})
+})
 ==> app/controllers/authentication_token.go
 package controllers
 
@@ -253,10 +344,14 @@ package testapp
 
 import "time"
 
-// As signs the request in as that token subject: whatever the app's sessions
-// mint, usually a user's id as a string. Mint tokens for a guest the same way.
+// As signs a request test in as that token subject: whatever the app's
+// sessions mint, usually a user's id as a string. The token is minted with
+// the app's own secret, so the real RequireUser accepts it.
 //
-//	app.Get("/posts").As(strconv.FormatInt(user.ID, 10)).Do()
+//	app := testapp.New(GinkgoT())
+//	app.Get("/posts").As(strconv.FormatInt(user.ID, 10)).Do().Status(http.StatusOK)
+//
+// Leave As off to test the 401.
 func (r *Request) As(subject string) *Request {
 	signed, err := r.app.Server.Tokens().Mint(subject, time.Hour)
 	if err != nil {

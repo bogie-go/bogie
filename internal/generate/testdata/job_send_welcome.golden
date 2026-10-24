@@ -36,22 +36,37 @@ func (w *SendWelcomeWorker) Work(ctx context.Context, job *river.Job[SendWelcome
 	return nil
 }
 ==> app/jobs/send_welcome_test.go
-package jobs
+package jobs_test
 
 import (
 	"context"
 	"io"
 	"log/slog"
-	"testing"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
+
+	"example.com/blog/app/jobs"
 )
 
-func TestSendWelcomeWork(t *testing.T) {
-	w := &SendWelcomeWorker{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
-	job := &river.Job[SendWelcomeArgs]{JobRow: &rivertype.JobRow{ID: 1}, Args: SendWelcomeArgs{}}
-	if err := w.Work(context.Background(), job); err != nil {
-		t.Fatalf("Work: %v", err)
-	}
-}
+var _ = Describe("SendWelcomeWorker", func() {
+	var (
+		worker *jobs.SendWelcomeWorker
+		job    *river.Job[jobs.SendWelcomeArgs]
+	)
+
+	Describe("Work", func() {
+		Context("with a job and no dependencies", func() {
+			BeforeEach(func() {
+				worker = &jobs.SendWelcomeWorker{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+				job = &river.Job[jobs.SendWelcomeArgs]{JobRow: &rivertype.JobRow{ID: 1}, Args: jobs.SendWelcomeArgs{}}
+			})
+
+			It("succeeds", func() {
+				Expect(worker.Work(context.Background(), job)).To(Succeed())
+			})
+		})
+	})
+})

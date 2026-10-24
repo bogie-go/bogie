@@ -103,9 +103,11 @@ nobody's secrets and can never open the development database.
     test/                        what tests share: testdb (a clean test database),
                                  factories, testapp (the whole app), requests/
 
-Tests live beside the code they test, stdlib `testing` only. What they share
-(the test database, factories, the whole app) lives in `test/`, as Rails's
-`test/` does.
+Tests live beside the code they test, in Ginkgo and Gomega (RSpec style), in
+external `_test` packages. Each package with tests has one `<pkg>_suite_test.go`
+that owns its shared setup (`app` in controllers, `store` in models). What
+packages share (the test database, factories, the whole app) lives in `test/`,
+as Rails's `test/` does.
 
 ## Deploy
 
@@ -156,8 +158,8 @@ gives the logic a home that knows nothing about HTTP.
 
 One Rails controller is one Go file, `app/controllers/comments_controller.go`
 in the `controllers` package: a `CommentsController` type holding its
-dependencies, `SetupRoutes`, and one method per action, with a test beside
-it. Name a resource in the plural, as Rails does: the name is used as typed,
+dependencies, `SetupRoutes`, and one method per action, with a request
+test beside it. Name a resource in the plural, as Rails does: the name is used as typed,
 so `comments` answers at `/comments` and `comment` at `/comment`. Go has no
 autoload, so a controller exists only once it is constructed,
 held and mounted. That is three one-line insertions, each above a marker
@@ -198,7 +200,8 @@ three edits, all in files you own:
    `server.Comments = controllers.NewCommentsController(store, log)`.
    `*models.Store` satisfies any interface made of its own methods.
 
-The test hands in a fake with the same methods; it needs no database. A
+A service's test hands in a fake with the same methods; it needs no database.
+A controller's test does not: it goes through the wired `Server`. A
 scaffolded controller shows the finished shape.
 
 ### Add a namespace
@@ -452,36 +455,71 @@ other value baked in, by the same rule that keeps `app/views` JSON-only.
 
 ### Write a test
 
-Tests sit beside the code, stdlib `testing`. What they share lives in `test/`:
+Tests are **Ginkgo and Gomega** (`Describe`/`Context`/`It`, `Expect`), in
+external `_test` packages (`package models_test`), beside the code. One suite
+file per package, `<pkg>_suite_test.go`, runs the specs and owns the shared
+setup as a package variable rebuilt before every spec, as RSpec uses `let`:
+`app` in `app/controllers` and `test/requests`, `store` in `app/models`. What
+the suites share lives in `test/`:
 
-- `test/testdb`: `testdb.Store(t)` opens the TEST database, migrates it and
-  truncates every table, so each test starts from nothing; `testdb.Pool(t)`
+- `test/testdb`: `testdb.Store(GinkgoT())` opens the TEST database, migrates it and
+  truncates every table, so each spec starts from nothing; `testdb.Pool(t)`
   is a second connection for raw SQL. It needs Postgres up (`make up`) and
   never touches development data.
 - `test/factories`: one function per model that builds a valid record,
-  overrides only what the test cares about, saves it through the real store
+  overrides only what the spec cares about, saves it through the real store
   and fails the test on error. `factories.Sequence("user")` keeps unique
   columns unique. Hand-written, no library.
-- `test/testapp`: the whole app for a test. `app := testapp.New(t)`, then
-  `app.Get("/posts").Do().Status(200).JSON(&v)`{{if .Jobs}}, and
-  `app.Jobs("kind")` for what a request queued{{end}}.
-- `test/requests`: the request tests, one file per area of the API.
+- `test/testapp`: the whole app for a test, which the suite builds as `app`.
+  `app.Get("/posts").Do().Status(200).JSON(&v)`, `.WithHeader(name, value)`
+  on a request{{if .Jobs}}, and
+  `app.Jobs("kind")` / `app.JobArgs("kind")` for what a request queued{{end}}.
+- `app/controllers/*_controller_test.go`: one request test file beside each
+  controller; `test/requests` keeps what spans controllers (a whole journey,
+  wiring, failures).
 
 Test **outside in**: the request test is the one every feature must have;
 the store, domain and service tests below it cover the edge cases the request
 test would make tedious.
 
-- A **request test** (`test/requests`) sends HTTP through the real router to
-  the real application and the test database. Arrange with factories, assert
-  on status and JSON.
-- A **controller test** mounts the controller alone on `gin.New()` with a
-  fake of its interface; keep it for failure paths a real database makes
-  hard to reach (the store returning an unexpected error).
+**How a spec reads.** `Describe` says what is under test; `Context` says the
+situation, and is followed straight away by the `BeforeEach` that creates it;
+`It` states one behavior and only acts and asserts.
+
+```go
+Describe("POST /sessions", func() {
+    var user domain.User
+
+    Context("when the user exists", func() {
+        BeforeEach(func() {
+            user = factories.User(GinkgoT(), app.Store)
+        })
+
+        It("logs in with the right password", func() { ... })
+        It("answers 401 for a wrong password", func() { ... })
+    })
+
+    Context("when the email is unknown", func() {
+        It("answers 401, as it does for a wrong password", func() { ... })
+    })
+})
+```
+
+- A **request test** (beside the controller, in `package controllers_test`)
+  sends HTTP through the real `Server`: its router, middleware, controllers
+  and store, wired exactly as `serve` wires them, on the test database.
+  Arrange with factories, assert on status and JSON. There is no test of a
+  controller on its own with a fake store: the wiring is part of what is
+  tested, and `test/requests/wiring_test.go` checks every controller is
+  constructed and mounted.
 - A **store test**, in `package models_test` so it can use the factories,
-  calls `testdb.Store(t)`.
+  uses `store`, which the suite resets before every spec.
 - A **domain test** is a plain function call: `Validate` and whatever rules
   live in `app/domain`, nothing to set up.
 - A **service test** fakes the store interface the service declared.
+- To test something unexported, add an `export_test.go` in the package
+  (`package services`) that exports it for the external test package only; it
+  is compiled for tests and never shipped (see `app/controllers/export_test.go`).
 
 `bogie test` runs everything with the race detector and coverage.
 

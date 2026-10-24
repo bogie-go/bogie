@@ -34,6 +34,30 @@ func (s *Server) SetupRoutes(router *gin.RouterGroup) {
 	admin := router.Group("/admin")
 	// bogie:routes
 }
+==> app/controllers/admin_controller/admin_controller_suite_test.go
+package admin_controller_test
+
+import (
+	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"example.com/blog/test/testapp"
+)
+
+// app is the whole application on a clean test database, rebuilt before
+// every spec: the specs in this package use it as RSpec specs use a `let`.
+var app *testapp.App
+
+var _ = BeforeEach(func() {
+	app = testapp.New(GinkgoT())
+})
+
+func TestAdmin(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Admin")
+}
 ==> app/controllers/admin_controller/reports_controller.go
 package admin_controller
 
@@ -91,36 +115,30 @@ func (ctl *ReportsController) Show(c *gin.Context) {
 	c.JSON(http.StatusNotImplemented, views.ErrorMessage("reports#show is not implemented yet"))
 }
 ==> app/controllers/admin_controller/reports_controller_test.go
-package admin_controller
+package admin_controller_test
 
 import (
-	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"testing"
 
-	"github.com/gin-gonic/gin"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-// Every action is mounted: a route that answers 404 was never registered.
-func TestReportsRoutesAreMounted(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	ns := NewServer(log)
-	ns.Reports = NewReportsController(log)
-	ns.SetupRoutes(&router.RouterGroup)
-
-	routes := []struct{ method, path string }{
-		{http.MethodGet, "/admin/reports"},
-		{http.MethodGet, "/admin/reports/1"},
-	}
-	for _, r := range routes {
+var _ = Describe("GET /admin/reports", func() {
+	It("is mounted", func() {
 		rec := httptest.NewRecorder()
-		router.ServeHTTP(rec, httptest.NewRequest(r.method, r.path, nil))
-		if rec.Code == http.StatusNotFound {
-			t.Errorf("%s %s is not mounted", r.method, r.path)
-		}
-	}
-}
+		app.Server.Router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/reports", nil))
+
+		Expect(rec.Code).NotTo(Equal(http.StatusNotFound))
+	})
+})
+
+var _ = Describe("GET /admin/reports/1", func() {
+	It("is mounted", func() {
+		rec := httptest.NewRecorder()
+		app.Server.Router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/reports/1", nil))
+
+		Expect(rec.Code).NotTo(Equal(http.StatusNotFound))
+	})
+})

@@ -173,33 +173,112 @@ func userFromRow(r User) domain.User {
 package models_test
 
 import (
-	"context"
-	"errors"
-	"testing"
+	"strconv"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
 	"example.com/blog/app/domain"
-	"example.com/blog/test/testdb"
+	"example.com/blog/test/factories"
 )
 
-// Whatever the id looks like, a user that is not there is ErrNotFound, and a
-// caller cannot tell a malformed id from a well-formed one that names nothing.
-func TestUnknownUsersAreNotFound(t *testing.T) {
-	store := testdb.Store(t)
-	ctx := context.Background()
+var _ = Describe("Users", func() {
+	DescribeTable("an unknown user is not found",
+		func(id string) {
+			_, err := store.GetUser(GinkgoT().Context(), id)
+			Expect(err).To(MatchError(domain.ErrNotFound))
+			Expect(store.DeleteUser(GinkgoT().Context(), id)).To(MatchError(domain.ErrNotFound))
+		},
+		Entry("a malformed id", "nope"),
+		Entry("an empty id", ""),
+		Entry("a well-formed id that names nothing", "999999999"),
+	)
 
-	for _, id := range []string{"nope", "", "999999999"} {
-		if _, err := store.GetUser(ctx, id); !errors.Is(err, domain.ErrNotFound) {
-			t.Errorf("GetUser(%q): err = %v, want ErrNotFound", id, err)
-		}
-		if err := store.DeleteUser(ctx, id); !errors.Is(err, domain.ErrNotFound) {
-			t.Errorf("DeleteUser(%q): err = %v, want ErrNotFound", id, err)
-		}
-	}
+	Describe("UpdateUser", func() {
+		Context("when the user is not there", func() {
+			var missing domain.User
 
-	if _, err := store.UpdateUser(ctx, domain.User{ID: 999999999}); !errors.Is(err, domain.ErrNotFound) {
-		t.Errorf("UpdateUser(%d): err = %v, want ErrNotFound", 999999999, err)
+			BeforeEach(func() {
+				missing = factories.NewUser()
+				missing.ID = 999999999
+			})
+
+			It("is not found", func() {
+				_, err := store.UpdateUser(GinkgoT().Context(), missing)
+				Expect(err).To(MatchError(domain.ErrNotFound))
+			})
+		})
+	})
+
+	Context("with a saved user", func() {
+		var record domain.User
+		var id string
+
+		BeforeEach(func() {
+			record = factories.User(GinkgoT(), store)
+			id = strconv.FormatInt(record.ID, 10)
+		})
+
+		It("reads it back by id", func() {
+			Expect(store.GetUser(GinkgoT().Context(), id)).To(Equal(record))
+		})
+
+		It("lists it", func() {
+			all, err := store.ListUsers(GinkgoT().Context(), 10)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(all).To(HaveLen(1))
+			Expect(all[0].ID).To(Equal(record.ID))
+		})
+
+		It("updates it", func() {
+			record.Email = "Edited"
+			updated, err := store.UpdateUser(GinkgoT().Context(), record)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updated.ID).To(Equal(record.ID))
+			Expect(updated.Email).To(BeEquivalentTo("Edited"))
+		})
+
+		It("deletes it", func() {
+			Expect(store.DeleteUser(GinkgoT().Context(), id)).To(Succeed())
+			_, err := store.GetUser(GinkgoT().Context(), id)
+			Expect(err).To(MatchError(domain.ErrNotFound))
+		})
+	})
+})
+==> test/factories/users.go
+package factories
+
+import (
+	"context"
+
+	"example.com/blog/app/domain"
+	"example.com/blog/app/models"
+)
+
+// NewUser is a valid user that is not saved: every attribute has a default,
+// and "with" overrides what the spec cares about.
+//
+// Written once by `bogie g model` and yours to edit: add an attribute's
+// default here when you add the column. Running the generator again leaves a
+// changed file alone unless --force.
+func NewUser(with ...func(*domain.User)) domain.User {
+	record := domain.User{
+		Email:          Sequence("email "),
+		PasswordDigest: Sequence("password digest "),
 	}
+	for _, f := range with {
+		f(&record)
+	}
+	return record
 }
 
-// TODO: a round trip. Create a user with real values, Get it, List it,
-// Update it, Delete it; see posts_test.go for the shape.
+// User saves a NewUser through the real store and fails the spec if it
+// cannot, so a spec reads as its arrangement and nothing else.
+func User(t T, s *models.Store, with ...func(*domain.User)) domain.User {
+	t.Helper()
+	created, err := s.CreateUser(context.Background(), NewUser(with...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return created
+}

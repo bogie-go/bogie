@@ -161,21 +161,27 @@ func RequireSecret(secret string) gin.HandlerFunc {
 	}
 }
 `, a.header(), a.name, setting.Path(), setting.Env())},
-		{Path: "app/middlewares/require_secret_test.go", Content: fmt.Sprintf(`package middlewares
+		{Path: "app/middlewares/require_secret_test.go", Content: fmt.Sprintf(`package middlewares_test
 
 import (
 	"net/http"
 	"net/http/httptest"
-	"testing"
 
 	"github.com/gin-gonic/gin"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	%[1]q
 )
 
-func secretRequest(t *testing.T, secret string, set func(*http.Request)) int {
-	t.Helper()
+const secret = "a-secret-that-is-at-least-thirty-two-bytes"
+
+// secretRequest sends one request through a router guarded by
+// RequireSecret(configured) and returns the status.
+func secretRequest(configured string, set func(*http.Request)) int {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.GET("/guarded", RequireSecret(secret), func(c *gin.Context) { c.Status(http.StatusOK) })
+	router.GET("/guarded", middlewares.RequireSecret(configured), func(c *gin.Context) { c.Status(http.StatusOK) })
 	req := httptest.NewRequest(http.MethodGet, "/guarded", nil)
 	set(req)
 	rec := httptest.NewRecorder()
@@ -183,27 +189,58 @@ func secretRequest(t *testing.T, secret string, set func(*http.Request)) int {
 	return rec.Code
 }
 
-func TestRequireSecret(t *testing.T) {
-	const secret = "a-secret-that-is-at-least-thirty-two-bytes"
-	cases := map[string]struct {
-		configured string
-		set        func(*http.Request)
-		want       int
-	}{
-		"the header opens":          {secret, func(r *http.Request) { r.Header.Set(SecretHeader, secret) }, http.StatusOK},
-		"basic auth opens":          {secret, func(r *http.Request) { r.SetBasicAuth("anyone", secret) }, http.StatusOK},
-		"nothing is refused":        {secret, func(*http.Request) {}, http.StatusUnauthorized},
-		"a wrong secret is refused": {secret, func(r *http.Request) { r.Header.Set(SecretHeader, "nope") }, http.StatusUnauthorized},
-		"a prefix is refused":       {secret, func(r *http.Request) { r.Header.Set(SecretHeader, secret[:10]) }, http.StatusUnauthorized},
-		"an empty secret opens nothing": {"", func(r *http.Request) { r.Header.Set(SecretHeader, "") }, http.StatusUnauthorized},
-	}
-	for name, tc := range cases {
-		if got := secretRequest(t, tc.configured, tc.set); got != tc.want {
-			t.Errorf("%%s: %%d, want %%d", name, got, tc.want)
-		}
-	}
-}
-`)},
+var _ = Describe("RequireSecret", func() {
+	var code int
+
+	Context("with the secret in the header", func() {
+		BeforeEach(func() {
+			code = secretRequest(secret, func(r *http.Request) { r.Header.Set(middlewares.SecretHeader, secret) })
+		})
+
+		It("opens", func() { Expect(code).To(Equal(http.StatusOK)) })
+	})
+
+	Context("with the secret as the basic auth password", func() {
+		BeforeEach(func() {
+			code = secretRequest(secret, func(r *http.Request) { r.SetBasicAuth("anyone", secret) })
+		})
+
+		It("opens", func() { Expect(code).To(Equal(http.StatusOK)) })
+	})
+
+	Context("with no secret", func() {
+		BeforeEach(func() {
+			code = secretRequest(secret, func(*http.Request) {})
+		})
+
+		It("is refused", func() { Expect(code).To(Equal(http.StatusUnauthorized)) })
+	})
+
+	Context("with a wrong secret", func() {
+		BeforeEach(func() {
+			code = secretRequest(secret, func(r *http.Request) { r.Header.Set(middlewares.SecretHeader, "nope") })
+		})
+
+		It("is refused", func() { Expect(code).To(Equal(http.StatusUnauthorized)) })
+	})
+
+	Context("with only a prefix of the secret", func() {
+		BeforeEach(func() {
+			code = secretRequest(secret, func(r *http.Request) { r.Header.Set(middlewares.SecretHeader, secret[:10]) })
+		})
+
+		It("is refused", func() { Expect(code).To(Equal(http.StatusUnauthorized)) })
+	})
+
+	Context("when no secret is configured", func() {
+		BeforeEach(func() {
+			code = secretRequest("", func(r *http.Request) { r.Header.Set(middlewares.SecretHeader, "") })
+		})
+
+		It("opens nothing", func() { Expect(code).To(Equal(http.StatusUnauthorized)) })
+	})
+})
+`, a.module+"/app/middlewares")},
 		{Path: "app/controllers/authentication_secret.go", Content: fmt.Sprintf(`package controllers
 
 import (
@@ -311,54 +348,100 @@ func (m Maker) Verify(raw string) (Claims, error) {
 	return Claims{Subject: claims.Subject, ExpiresAt: claims.ExpiresAt.Time, ID: claims.ID}, nil
 }
 `, setting.Path(), setting.Env())},
-		{Path: "app/services/token/token_test.go", Content: `package token
+		{Path: "app/services/token/token_suite_test.go", Content: suiteFile("token", "Token")},
+		{Path: "app/services/token/token_test.go", Content: fmt.Sprintf(`package token_test
 
 import (
-	"errors"
-	"testing"
 	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	%[1]q
 )
 
-var maker = Maker{Secret: []byte("a-test-secret-of-at-least-thirty-two-bytes"), Issuer: "test"}
+var maker = token.Maker{Secret: []byte("a-test-secret-of-at-least-thirty-two-bytes"), Issuer: "test"}
 
-func TestMintThenVerify(t *testing.T) {
-	raw, err := maker.Mint("user-42", time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
-	claims, err := maker.Verify(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if claims.Subject != "user-42" || claims.ID == "" || time.Until(claims.ExpiresAt) <= 0 {
-		t.Errorf("claims = %+v", claims)
-	}
-}
+var _ = Describe("Maker", func() {
+	var (
+		raw    string
+		claims token.Claims
+		err    error
+	)
 
-func TestVerifyRefuses(t *testing.T) {
-	expired, _ := maker.Mint("user-42", -time.Minute)
-	otherSecret, _ := Maker{Secret: []byte("another-secret-of-at-least-thirty-two-bytes"), Issuer: "test"}.Mint("user-42", time.Minute)
-	otherIssuer, _ := Maker{Secret: maker.Secret, Issuer: "someone-else"}.Mint("user-42", time.Minute)
+	mint := func(m token.Maker, ttl time.Duration) string {
+		signed, err := m.Mint("user-42", ttl)
+		Expect(err).NotTo(HaveOccurred())
+		return signed
+	}
 
-	for name, tc := range map[string]struct {
-		raw  string
-		want error
-	}{
-		"expired":        {expired, ErrExpired},
-		"another secret": {otherSecret, ErrInvalid},
-		"another issuer": {otherIssuer, ErrInvalid},
-		"garbage":        {"not.a.token", ErrInvalid},
-		"empty":          {"", ErrInvalid},
-	} {
-		if _, err := maker.Verify(tc.raw); !errors.Is(err, tc.want) {
-			t.Errorf("%s: err = %v, want %v", name, err, tc.want)
-		}
-	}
-	if _, err := maker.Mint("", time.Minute); err == nil {
-		t.Error("minted a token with no subject")
-	}
-}
-`},
+	Describe("Mint and Verify", func() {
+		Context("with a valid token", func() {
+			BeforeEach(func() {
+				raw = mint(maker, time.Minute)
+				claims, err = maker.Verify(raw)
+			})
+
+			It("verifies", func() { Expect(err).NotTo(HaveOccurred()) })
+			It("gives back the subject", func() { Expect(claims.Subject).To(Equal("user-42")) })
+			It("carries an id", func() { Expect(claims.ID).NotTo(BeEmpty()) })
+			It("expires in the future", func() { Expect(claims.ExpiresAt).To(BeTemporally(">", time.Now())) })
+		})
+
+		Context("with an expired token", func() {
+			BeforeEach(func() {
+				_, err = maker.Verify(mint(maker, -time.Minute))
+			})
+
+			It("is refused as expired", func() { Expect(err).To(MatchError(token.ErrExpired)) })
+		})
+
+		Context("with a token signed by another secret", func() {
+			BeforeEach(func() {
+				other := token.Maker{Secret: []byte("another-secret-of-at-least-thirty-two-bytes"), Issuer: "test"}
+				_, err = maker.Verify(mint(other, time.Minute))
+			})
+
+			It("is refused as invalid", func() { Expect(err).To(MatchError(token.ErrInvalid)) })
+		})
+
+		Context("with a token from another issuer", func() {
+			BeforeEach(func() {
+				other := token.Maker{Secret: maker.Secret, Issuer: "someone-else"}
+				_, err = maker.Verify(mint(other, time.Minute))
+			})
+
+			It("is refused as invalid", func() { Expect(err).To(MatchError(token.ErrInvalid)) })
+		})
+
+		Context("with garbage", func() {
+			BeforeEach(func() {
+				_, err = maker.Verify("not.a.token")
+			})
+
+			It("is refused as invalid", func() { Expect(err).To(MatchError(token.ErrInvalid)) })
+		})
+
+		Context("with an empty string", func() {
+			BeforeEach(func() {
+				_, err = maker.Verify("")
+			})
+
+			It("is refused as invalid", func() { Expect(err).To(MatchError(token.ErrInvalid)) })
+		})
+	})
+
+	Describe("Mint", func() {
+		Context("with an empty subject", func() {
+			BeforeEach(func() {
+				_, err = maker.Mint("", time.Minute)
+			})
+
+			It("refuses to mint", func() { Expect(err).To(HaveOccurred()) })
+		})
+	})
+})
+`, a.module+"/app/services/token")},
 		{Path: "app/middlewares/require_user.go", Content: fmt.Sprintf(`package middlewares
 
 import (
@@ -407,26 +490,27 @@ func RequireUser(tokens userTokens) gin.HandlerFunc {
 // RequireUser does not guard.
 func Subject(c *gin.Context) string { return c.GetString(subjectKey) }
 `, a.module+"/app/services/token", a.module+"/app/views", a.name)},
-		{Path: "app/middlewares/require_user_test.go", Content: fmt.Sprintf(`package middlewares
+		{Path: "app/middlewares/require_user_test.go", Content: fmt.Sprintf(`package middlewares_test
 
 import (
 	"net/http"
 	"net/http/httptest"
-	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
 	%[1]q
+	%[2]q
 )
 
 var testTokens = token.Maker{Secret: []byte("a-test-secret-of-at-least-thirty-two-bytes"), Issuer: "test"}
 
-func userRequest(t *testing.T, authorization string) *httptest.ResponseRecorder {
-	t.Helper()
+func userRequest(authorization string) *httptest.ResponseRecorder {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.GET("/me", RequireUser(testTokens), func(c *gin.Context) { c.String(http.StatusOK, Subject(c)) })
+	router.GET("/me", middlewares.RequireUser(testTokens), func(c *gin.Context) { c.String(http.StatusOK, middlewares.Subject(c)) })
 	req := httptest.NewRequest(http.MethodGet, "/me", nil)
 	if authorization != "" {
 		req.Header.Set("Authorization", authorization)
@@ -436,22 +520,53 @@ func userRequest(t *testing.T, authorization string) *httptest.ResponseRecorder 
 	return rec
 }
 
-func TestRequireUser(t *testing.T) {
-	good, _ := testTokens.Mint("user-42", time.Minute)
-	expired, _ := testTokens.Mint("user-42", -time.Minute)
+var _ = Describe("RequireUser", func() {
+	var rec *httptest.ResponseRecorder
 
-	if rec := userRequest(t, "Bearer "+good); rec.Code != http.StatusOK || rec.Body.String() != "user-42" {
-		t.Errorf("good token: %%d %%q", rec.Code, rec.Body.String())
-	}
-	for name, header := range map[string]string{
-		"none": "", "expired": "Bearer " + expired, "garbage": "Bearer nope", "wrong scheme": "Basic " + good,
-	} {
-		if rec := userRequest(t, header); rec.Code != http.StatusUnauthorized {
-			t.Errorf("%%s: %%d, want 401", name, rec.Code)
-		}
-	}
-}
-`, a.module+"/app/services/token")},
+	Context("with a good token", func() {
+		BeforeEach(func() {
+			good, err := testTokens.Mint("user-42", time.Minute)
+			Expect(err).NotTo(HaveOccurred())
+			rec = userRequest("Bearer " + good)
+		})
+
+		It("lets the request through", func() { Expect(rec.Code).To(Equal(http.StatusOK)) })
+		It("puts the subject on the context", func() { Expect(rec.Body.String()).To(Equal("user-42")) })
+	})
+
+	Context("with no token", func() {
+		BeforeEach(func() { rec = userRequest("") })
+
+		It("answers 401", func() { Expect(rec.Code).To(Equal(http.StatusUnauthorized)) })
+	})
+
+	Context("with an expired token", func() {
+		BeforeEach(func() {
+			expired, err := testTokens.Mint("user-42", -time.Minute)
+			Expect(err).NotTo(HaveOccurred())
+			rec = userRequest("Bearer " + expired)
+		})
+
+		It("answers 401", func() { Expect(rec.Code).To(Equal(http.StatusUnauthorized)) })
+	})
+
+	Context("with garbage", func() {
+		BeforeEach(func() { rec = userRequest("Bearer nope") })
+
+		It("answers 401", func() { Expect(rec.Code).To(Equal(http.StatusUnauthorized)) })
+	})
+
+	Context("with the wrong scheme", func() {
+		BeforeEach(func() {
+			good, err := testTokens.Mint("user-42", time.Minute)
+			Expect(err).NotTo(HaveOccurred())
+			rec = userRequest("Basic " + good)
+		})
+
+		It("answers 401", func() { Expect(rec.Code).To(Equal(http.StatusUnauthorized)) })
+	})
+})
+`, a.module+"/app/middlewares", a.module+"/app/services/token")},
 		{Path: "app/controllers/authentication_token.go", Content: fmt.Sprintf(`package controllers
 
 import (
@@ -487,10 +602,14 @@ func (s *Server) WithUser(r *gin.RouterGroup) *gin.RouterGroup {
 
 import "time"
 
-// As signs the request in as that token subject: whatever the app's sessions
-// mint, usually a user's id as a string. Mint tokens for a guest the same way.
+// As signs a request test in as that token subject: whatever the app's
+// sessions mint, usually a user's id as a string. The token is minted with
+// the app's own secret, so the real RequireUser accepts it.
 //
-//	app.Get("/posts").As(strconv.FormatInt(user.ID, 10)).Do()
+//	app := testapp.New(GinkgoT())
+//	app.Get("/posts").As(strconv.FormatInt(user.ID, 10)).Do().Status(http.StatusOK)
+//
+// Leave As off to test the 401.
 func (r *Request) As(subject string) *Request {
 	signed, err := r.app.Server.Tokens().Mint(subject, time.Hour)
 	if err != nil {
@@ -632,14 +751,17 @@ func random(n int) (string, error) {
 	return hex.EncodeToString(b), nil
 }
 `, a.module+"/app/domain")},
-		File{Path: "app/services/api_keys/api_keys_test.go", Content: fmt.Sprintf(`package api_keys
+		File{Path: "app/services/api_keys/api_keys_suite_test.go", Content: suiteFile("api_keys", "APIKeys")},
+		File{Path: "app/services/api_keys/api_keys_test.go", Content: fmt.Sprintf(`package api_keys_test
 
 import (
 	"context"
-	"errors"
-	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
 	%[1]q
+	%[3]q
 )
 
 // fakeStore keeps keys in memory, by prefix.
@@ -659,33 +781,80 @@ func (f *fakeStore) GetApiKeyByPrefix(_ context.Context, prefix string) (domain.
 	return k, nil
 }
 
-func TestCreateThenVerify(t *testing.T) {
-	svc := New(&fakeStore{keys: map[string]domain.ApiKey{}})
-	ctx := context.Background()
+var _ = Describe("Service", func() {
+	var (
+		svc       *api_keys.Service
+		ctx       context.Context
+		presented string
+		made      domain.ApiKey
+	)
 
-	presented, made, err := svc.Create(ctx, "billing")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if made.Name != "billing" || made.Digest == "" || made.Digest == presented {
-		t.Errorf("stored %%+v for key %%q", made, presented)
-	}
-	got, err := svc.Verify(ctx, presented)
-	if err != nil || got.ID != made.ID {
-		t.Errorf("Verify = %%+v, %%v", got, err)
-	}
-	for name, bad := range map[string]string{
-		"wrong secret":  made.Prefix + ".nope",
-		"wrong prefix":  "nope." + presented[len(made.Prefix)+1:],
-		"no dot":        "nope",
-		"empty":         "",
-	} {
-		if _, err := svc.Verify(ctx, bad); !errors.Is(err, ErrInvalid) {
-			t.Errorf("%%s: err = %%v, want ErrInvalid", name, err)
-		}
-	}
-}
-`, a.module+"/app/domain", fakeIDAssign(a.scheme))},
+	BeforeEach(func() {
+		svc = api_keys.New(&fakeStore{keys: map[string]domain.ApiKey{}})
+		ctx = context.Background()
+	})
+
+	Describe("Create", func() {
+		Context("with a name", func() {
+			BeforeEach(func() {
+				var err error
+				presented, made, err = svc.Create(ctx, "billing")
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("stores the name", func() { Expect(made.Name).To(Equal("billing")) })
+			It("stores a digest, never the key", func() {
+				Expect(made.Digest).NotTo(BeEmpty())
+				Expect(made.Digest).NotTo(Equal(presented))
+			})
+		})
+	})
+
+	Describe("Verify", func() {
+		Context("with a key the service made", func() {
+			BeforeEach(func() {
+				var err error
+				presented, made, err = svc.Create(ctx, "billing")
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("returns the row it names", func() {
+				got, err := svc.Verify(ctx, presented)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(got.ID).To(Equal(made.ID))
+			})
+
+			Context("with a wrong secret", func() {
+				It("is refused", func() {
+					_, err := svc.Verify(ctx, made.Prefix+".nope")
+					Expect(err).To(MatchError(api_keys.ErrInvalid))
+				})
+			})
+
+			Context("with a wrong prefix", func() {
+				It("is refused", func() {
+					_, err := svc.Verify(ctx, "nope."+presented[len(made.Prefix)+1:])
+					Expect(err).To(MatchError(api_keys.ErrInvalid))
+				})
+			})
+		})
+
+		Context("with a key that has no dot", func() {
+			It("is refused", func() {
+				_, err := svc.Verify(ctx, "nope")
+				Expect(err).To(MatchError(api_keys.ErrInvalid))
+			})
+		})
+
+		Context("with an empty key", func() {
+			It("is refused", func() {
+				_, err := svc.Verify(ctx, "")
+				Expect(err).To(MatchError(api_keys.ErrInvalid))
+			})
+		})
+	})
+})
+`, a.module+"/app/domain", fakeIDAssign(a.scheme), a.module+"/app/services/api_keys")},
 		File{Path: "app/middlewares/require_api_key.go", Content: fmt.Sprintf(`package middlewares
 
 import (
@@ -732,20 +901,23 @@ func RequireAPIKey(keys apiKeys) gin.HandlerFunc {
 // that RequireAPIKey does not guard.
 func APIKeyName(c *gin.Context) string { return c.GetString(apiKeyNameKey) }
 `, a.module+"/app/domain", a.module+"/app/views", a.name, a.name)},
-		File{Path: "app/middlewares/require_api_key_test.go", Content: fmt.Sprintf(`package middlewares
+		File{Path: "app/middlewares/require_api_key_test.go", Content: fmt.Sprintf(`package middlewares_test
 
 import (
 	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"testing"
 
 	"github.com/gin-gonic/gin"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
 	%[1]q
+	%[2]q
 )
 
+// fakeAPIKeys accepts one key, "good.key".
 type fakeAPIKeys struct{}
 
 func (fakeAPIKeys) Verify(_ context.Context, presented string) (domain.ApiKey, error) {
@@ -755,11 +927,10 @@ func (fakeAPIKeys) Verify(_ context.Context, presented string) (domain.ApiKey, e
 	return domain.ApiKey{}, errors.New("invalid")
 }
 
-func apiKeyRequest(t *testing.T, authorization string) *httptest.ResponseRecorder {
-	t.Helper()
+func apiKeyRequest(authorization string) *httptest.ResponseRecorder {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.GET("/guarded", RequireAPIKey(fakeAPIKeys{}), func(c *gin.Context) { c.String(http.StatusOK, APIKeyName(c)) })
+	router.GET("/guarded", middlewares.RequireAPIKey(fakeAPIKeys{}), func(c *gin.Context) { c.String(http.StatusOK, middlewares.APIKeyName(c)) })
 	req := httptest.NewRequest(http.MethodGet, "/guarded", nil)
 	if authorization != "" {
 		req.Header.Set("Authorization", authorization)
@@ -769,17 +940,35 @@ func apiKeyRequest(t *testing.T, authorization string) *httptest.ResponseRecorde
 	return rec
 }
 
-func TestRequireAPIKey(t *testing.T) {
-	if rec := apiKeyRequest(t, "Bearer good.key"); rec.Code != http.StatusOK || rec.Body.String() != "billing" {
-		t.Errorf("good key: %%d %%q", rec.Code, rec.Body.String())
-	}
-	for name, header := range map[string]string{"none": "", "wrong": "Bearer bad.key", "wrong scheme": "Basic good.key"} {
-		if rec := apiKeyRequest(t, header); rec.Code != http.StatusUnauthorized {
-			t.Errorf("%%s: %%d, want 401", name, rec.Code)
-		}
-	}
-}
-`, a.module+"/app/domain")},
+var _ = Describe("RequireAPIKey", func() {
+	var rec *httptest.ResponseRecorder
+
+	Context("with a good key", func() {
+		BeforeEach(func() { rec = apiKeyRequest("Bearer good.key") })
+
+		It("lets the request through", func() { Expect(rec.Code).To(Equal(http.StatusOK)) })
+		It("puts the key's name on the context", func() { Expect(rec.Body.String()).To(Equal("billing")) })
+	})
+
+	Context("with no key", func() {
+		BeforeEach(func() { rec = apiKeyRequest("") })
+
+		It("answers 401", func() { Expect(rec.Code).To(Equal(http.StatusUnauthorized)) })
+	})
+
+	Context("with a wrong key", func() {
+		BeforeEach(func() { rec = apiKeyRequest("Bearer bad.key") })
+
+		It("answers 401", func() { Expect(rec.Code).To(Equal(http.StatusUnauthorized)) })
+	})
+
+	Context("with the wrong scheme", func() {
+		BeforeEach(func() { rec = apiKeyRequest("Basic good.key") })
+
+		It("answers 401", func() { Expect(rec.Code).To(Equal(http.StatusUnauthorized)) })
+	})
+})
+`, a.module+"/app/middlewares", a.module+"/app/domain")},
 		File{Path: "app/controllers/authentication_api_key.go", Content: fmt.Sprintf(`package controllers
 
 import (

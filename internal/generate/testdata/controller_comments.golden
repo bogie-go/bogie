@@ -75,36 +75,48 @@ func (ctl *CommentsController) Search(c *gin.Context) {
 	c.JSON(http.StatusNotImplemented, views.ErrorMessage("comments#search is not implemented yet"))
 }
 ==> app/controllers/comments_controller_test.go
-package controllers
+package controllers_test
 
 import (
-	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"testing"
 
-	"github.com/gin-gonic/gin"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-// Every action is mounted: a route that answers 404 was never registered.
-func TestCommentsRoutesAreMounted(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	NewCommentsController(log).SetupRoutes(&router.RouterGroup)
-
-	routes := []struct{ method, path string }{
-		{http.MethodGet, "/comments"},
-		{http.MethodGet, "/comments/1"},
-		{http.MethodPost, "/comments"},
-		{http.MethodGet, "/comments/search"},
-	}
-	for _, r := range routes {
+var _ = Describe("GET /comments", func() {
+	It("is mounted", func() {
 		rec := httptest.NewRecorder()
-		router.ServeHTTP(rec, httptest.NewRequest(r.method, r.path, nil))
-		if rec.Code == http.StatusNotFound {
-			t.Errorf("%s %s is not mounted", r.method, r.path)
-		}
-	}
-}
+		app.Server.Router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/comments", nil))
+
+		Expect(rec.Code).NotTo(Equal(http.StatusNotFound))
+	})
+})
+
+var _ = Describe("GET /comments/1", func() {
+	It("is mounted", func() {
+		rec := httptest.NewRecorder()
+		app.Server.Router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/comments/1", nil))
+
+		Expect(rec.Code).NotTo(Equal(http.StatusNotFound))
+	})
+})
+
+var _ = Describe("POST /comments", func() {
+	It("is mounted", func() {
+		rec := httptest.NewRecorder()
+		app.Server.Router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/comments", nil))
+
+		Expect(rec.Code).NotTo(Equal(http.StatusNotFound))
+	})
+})
+
+var _ = Describe("GET /comments/search", func() {
+	It("is mounted", func() {
+		rec := httptest.NewRecorder()
+		app.Server.Router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/comments/search", nil))
+
+		Expect(rec.Code).NotTo(Equal(http.StatusNotFound))
+	})
+})

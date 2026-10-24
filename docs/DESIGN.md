@@ -143,7 +143,7 @@ scaffold creates no test directory, because kchat made `spec/{factories,
 fixtures,support}` from Rails habit and never used it. The book's reference
 shop (and line-connect, which does use its `spec/`) showed what that left out:
 the things tests *share*. Unit and edge-case tests still sit beside the code,
-stdlib `testing` only, no mocking library. Three things that more than one
+no mocking library. Three things that more than one
 package needs live in `test/`, as Rails's `test/` holds `test_helper.rb` and
 `factories`:
 
@@ -155,6 +155,23 @@ package needs live in `test/`, as Rails's `test/` holds `test_helper.rb` and
   reflection and a dependency).
 - `test/testapp`: the real application, router and all, on the test database,
   with a request helper. `test/requests` holds the request tests built on it.
+
+**Ginkgo and Gomega (v0.5.0).** Every test in a generated app, including the
+ones the scaffold ships, is a Ginkgo v2 spec with Gomega matchers: RSpec's
+`Describe`/`Context`/`It`/`BeforeEach` and `Expect`, which is what a Rails
+developer reads without translation. Tests are in external `_test` packages
+(`package models_test`), so they use a package the way its callers do; the
+rare unexported thing they need is exported for tests only by an
+`export_test.go` in the package. Each package with tests has one
+`<pkg>_suite_test.go` that runs the specs and owns the shared setup as a
+package variable rebuilt in a `BeforeEach`, as RSpec uses `let`: `app` (the
+whole application, `testapp.New(GinkgoT())`) in `app/controllers` and
+`test/requests`, `store` (`testdb.Store(GinkgoT())`) in `app/models`. The
+helpers in `test/` take a small `T` interface (what `GinkgoT()` and
+`*testing.T` both satisfy) rather than `*testing.T`. A controller's request
+tests sit beside the controller and go through the wired `Server`; there is no
+fake-store controller test, and `test/requests/wiring_test.go` checks every
+controller is constructed and mounted.
 
 The order is outside in: a feature starts with a request test, and the store,
 domain and service tests below cover the edge cases. Because the factories

@@ -178,33 +178,87 @@ func commentFromRow(r Comment) domain.Comment {
 package models_test
 
 import (
-	"context"
-	"errors"
-	"testing"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
 	"example.com/blog/app/domain"
-	"example.com/blog/test/testdb"
+	"example.com/blog/test/factories"
 )
 
-// Whatever the id looks like, a comment that is not there is ErrNotFound, and a
-// caller cannot tell a malformed id from a well-formed one that names nothing.
-func TestUnknownCommentsAreNotFound(t *testing.T) {
-	store := testdb.Store(t)
-	ctx := context.Background()
+var _ = Describe("Comments", func() {
+	DescribeTable("an unknown comment is not found",
+		func(id string) {
+			_, err := store.GetComment(GinkgoT().Context(), id)
+			Expect(err).To(MatchError(domain.ErrNotFound))
+			Expect(store.DeleteComment(GinkgoT().Context(), id)).To(MatchError(domain.ErrNotFound))
+		},
+		Entry("a malformed id", "nope"),
+		Entry("an empty id", ""),
+		Entry("a well-formed id that names nothing", "999999999"),
+	)
 
-	for _, id := range []string{"nope", "", "999999999"} {
-		if _, err := store.GetComment(ctx, id); !errors.Is(err, domain.ErrNotFound) {
-			t.Errorf("GetComment(%q): err = %v, want ErrNotFound", id, err)
-		}
-		if err := store.DeleteComment(ctx, id); !errors.Is(err, domain.ErrNotFound) {
-			t.Errorf("DeleteComment(%q): err = %v, want ErrNotFound", id, err)
-		}
-	}
+	Describe("UpdateComment", func() {
+		Context("when the comment is not there", func() {
+			var missing domain.Comment
 
-	if _, err := store.UpdateComment(ctx, domain.Comment{ID: 999999999}); !errors.Is(err, domain.ErrNotFound) {
-		t.Errorf("UpdateComment(%d): err = %v, want ErrNotFound", 999999999, err)
+			BeforeEach(func() {
+				missing = factories.NewComment()
+				missing.ID = 999999999
+			})
+
+			It("is not found", func() {
+				_, err := store.UpdateComment(GinkgoT().Context(), missing)
+				Expect(err).To(MatchError(domain.ErrNotFound))
+			})
+		})
+	})
+
+	// No round trip here: a comment belongs to a parent that has to be saved
+	// first. Make the parent with its factory and add the specs, with the
+	// reference set in the factory's "with" function.
+})
+==> test/factories/comments.go
+package factories
+
+import (
+	"context"
+	"time"
+
+	"example.com/blog/app/domain"
+	"example.com/blog/app/models"
+)
+
+// NewComment is a valid comment that is not saved: every attribute has a default,
+// and "with" overrides what the spec cares about.
+//
+// Written once by `bogie g model` and yours to edit: add an attribute's
+// default here when you add the column. Running the generator again leaves a
+// changed file alone unless --force.
+//
+// Left at zero: PostID. The parent has to exist first, so set it from the
+// parent's own factory:
+//
+//	factories.Comment(t, s, func(v *domain.Comment) { v.PostID = parent.ID })
+func NewComment(with ...func(*domain.Comment)) domain.Comment {
+	record := domain.Comment{
+		Body:        Sequence("body "),
+		Score:       1,
+		PublishedAt: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+		Meta:        []byte("{}"),
 	}
+	for _, f := range with {
+		f(&record)
+	}
+	return record
 }
 
-// TODO: a round trip. Create a comment with real values, Get it, List it,
-// Update it, Delete it; see posts_test.go for the shape.
+// Comment saves a NewComment through the real store and fails the spec if it
+// cannot, so a spec reads as its arrangement and nothing else.
+func Comment(t T, s *models.Store, with ...func(*domain.Comment)) domain.Comment {
+	t.Helper()
+	created, err := s.CreateComment(context.Background(), NewComment(with...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return created
+}

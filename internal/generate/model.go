@@ -2,14 +2,15 @@ package generate
 
 import (
 	"fmt"
+	"go/format"
 	"strings"
 	"time"
 )
 
 // Model writes what `bogie generate model post title:string body:text`
 // produces: the create_<table> migration, a starter db/queries/<table>.sql,
-// the domain type, and the hand-written half of the store that converts sqlc's
-// row type to it. Running sqlc afterwards is the caller's job; the files here
+// the domain type, the hand-written half of the store that converts sqlc's
+// row type to it, its spec and its test factory. Running sqlc afterwards is the caller's job; the files here
 // are written to match what it will generate.
 func Model(module, name string, attrs []Attr, scheme IDScheme, now time.Time) ([]File, error) {
 	if !namePattern.MatchString(name) {
@@ -36,75 +37,242 @@ func Model(module, name string, attrs []Attr, scheme IDScheme, now time.Time) ([
 		{Path: "app/domain/" + name + ".go", Content: domainType(name, attrs, scheme)},
 		{Path: "app/models/" + table + ".go", Content: store(module, name, table, attrs, scheme)},
 		{Path: "app/models/" + table + "_test.go", Content: storeTest(module, name, table, attrs, scheme)},
+		{Path: "test/factories/" + table + ".go", Content: factory(module, name, attrs, scheme)},
 	}, nil
 }
 
-// storeTest is the model's test, against the real test database as every
-// store test is: the not-found cases, which hold for any set of attributes,
-// and a place to put the round trip once the model has values worth
-// inserting.
+// storeTest is the model's spec, against the real test database as every
+// store spec is, in package models_test where the suite's store is already
+// built: the not-found cases, which hold for any set of attributes, and a
+// round trip through the model's factory when the model can be saved on its
+// own. A model with a references column cannot: its parent has to exist
+// first, and bogie cannot know the parent's factory does.
 func storeTest(module, name, table string, attrs []Attr, scheme IDScheme) string {
-	typ := Camel(name)
-	// Every reference attribute gets a well-formed value, so the store
-	// reaches the query and answers not-found rather than refusing a
-	// malformed id.
+	typ, many := Camel(name), Camel(table)
+	hasRefs := hasReferences(attrs)
+	missingID := scheme.sampleID()
+	if scheme == IDUUID {
+		missingID = fmt.Sprintf("%q", missingID)
+	}
+	// Every uuid reference gets a well-formed value, so the store reaches the
+	// query and answers not-found rather than refusing a malformed id.
 	refFields := ""
 	for _, a := range attrs {
-		if kindFor(a, scheme).sqlcType == "pgtype.UUID" {
-			refFields += fmt.Sprintf(", %s: %q", a.goName(), "00000000-0000-4000-8000-000000000000")
+		if a.Type == "references" && scheme == IDUUID {
+			refFields += fmt.Sprintf("\t\t\t\tmissing.%s = %q\n", a.goName(), scheme.sampleID())
 		}
 	}
 
-	// Update takes a domain value, not a URL string, so what "a malformed
-	// id" means for it depends on the scheme: under uuid the domain's id
-	// is a string too, so the same loop that drives Get/Delete can embed
-	// it directly; under bigint the domain's id is already an int64, so
-	// there is no malformed value to embed, only a well-formed one that
-	// names nothing, checked once after the loop instead.
-	var updateInLoop, updateAfterLoop string
-	if scheme == IDUUID {
-		updateInLoop = fmt.Sprintf(`
-		if _, err := store.Update%[1]s(ctx, domain.%[1]s{ID: id%[2]s}); !errors.Is(err, domain.ErrNotFound) {
-			t.Errorf("Update%[1]s(%%q): err = %%v, want ErrNotFound", id, err)
-		}`, typ, refFields)
+	imports := []string{"\t. \"github.com/onsi/ginkgo/v2\"", "\t. \"github.com/onsi/gomega\""}
+	var b strings.Builder
+	var specs strings.Builder
+	fmt.Fprintf(&specs, `var _ = Describe(%[1]q, func() {
+	DescribeTable("an unknown %[2]s is not found",
+		func(id string) {
+			_, err := store.Get%[3]s(GinkgoT().Context(), id)
+			Expect(err).To(MatchError(domain.ErrNotFound))
+			Expect(store.Delete%[3]s(GinkgoT().Context(), id)).To(MatchError(domain.ErrNotFound))
+		},
+		Entry("a malformed id", "nope"),
+		Entry("an empty id", ""),
+		Entry("a well-formed id that names nothing", %[4]q),
+	)
+
+	Describe("Update%[3]s", func() {
+		Context("when the %[2]s is not there", func() {
+			var missing domain.%[3]s
+
+			BeforeEach(func() {
+				missing = factories.New%[3]s()
+				missing.ID = %[5]s
+%[6]s			})
+
+			It("is not found", func() {
+				_, err := store.Update%[3]s(GinkgoT().Context(), missing)
+				Expect(err).To(MatchError(domain.ErrNotFound))
+			})
+		})
+	})
+`, many, name, typ, scheme.sampleID(), missingID, refFields)
+
+	if hasRefs {
+		fmt.Fprintf(&specs, `
+	// No round trip here: a %[1]s belongs to a parent that has to be saved
+	// first. Make the parent with its factory and add the specs, with the
+	// reference set in the factory's "with" function.
+`, name)
 	} else {
-		updateAfterLoop = fmt.Sprintf(`
-	if _, err := store.Update%[1]s(ctx, domain.%[1]s{ID: %[2]s%[3]s}); !errors.Is(err, domain.ErrNotFound) {
-		t.Errorf("Update%[1]s(%%d): err = %%v, want ErrNotFound", %[2]s, err)
-	}
-`, typ, scheme.sampleID(), refFields)
-	}
-
-	return fmt.Sprintf(`package models_test
-
-import (
-	"context"
-	"errors"
-	"testing"
-
-	%[3]q
-	%[8]q
-)
-
-// Whatever the id looks like, a %[2]s that is not there is ErrNotFound, and a
-// caller cannot tell a malformed id from a well-formed one that names nothing.
-func TestUnknown%[4]sAreNotFound(t *testing.T) {
-	store := testdb.Store(t)
-	ctx := context.Background()
-
-	for _, id := range []string{"nope", "", %[7]q} {
-		if _, err := store.Get%[1]s(ctx, id); !errors.Is(err, domain.ErrNotFound) {
-			t.Errorf("Get%[1]s(%%q): err = %%v, want ErrNotFound", id, err)
+		idExpr := "record.ID"
+		if scheme != IDUUID {
+			idExpr = "strconv.FormatInt(record.ID, 10)"
+			imports = append([]string{"\t\"strconv\""}, imports...)
 		}
-		if err := store.Delete%[1]s(ctx, id); !errors.Is(err, domain.ErrNotFound) {
-			t.Errorf("Delete%[1]s(%%q): err = %%v, want ErrNotFound", id, err)
-		}%[5]s
-	}
-%[6]s}
+		var change, check string
+		for _, a := range attrs {
+			if _, lit := edited(a, scheme); lit != "" {
+				change = fmt.Sprintf("\t\t\trecord.%s = %s\n", a.goName(), lit)
+				check = fmt.Sprintf("\t\t\tExpect(updated.%s).To(BeEquivalentTo(%s))\n", a.goName(), lit)
+				break
+			}
+		}
+		fmt.Fprintf(&specs, `
+	Context("with a saved %[1]s", func() {
+		var record domain.%[2]s
+		var id string
 
-// TODO: a round trip. Create a %[2]s with real values, Get it, List it,
-// Update it, Delete it; see posts_test.go for the shape.
-`, typ, name, module+"/app/domain", Camel(table), updateInLoop, updateAfterLoop, scheme.sampleID(), module+"/test/testdb")
+		BeforeEach(func() {
+			record = factories.%[2]s(GinkgoT(), store)
+			id = %[3]s
+		})
+
+		It("reads it back by id", func() {
+			Expect(store.Get%[2]s(GinkgoT().Context(), id)).To(Equal(record))
+		})
+
+		It("lists it", func() {
+			all, err := store.List%[4]s(GinkgoT().Context(), 10)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(all).To(HaveLen(1))
+			Expect(all[0].ID).To(Equal(record.ID))
+		})
+
+		It("updates it", func() {
+%[5]s			updated, err := store.Update%[2]s(GinkgoT().Context(), record)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updated.ID).To(Equal(record.ID))
+%[6]s		})
+
+		It("deletes it", func() {
+			Expect(store.Delete%[2]s(GinkgoT().Context(), id)).To(Succeed())
+			_, err := store.Get%[2]s(GinkgoT().Context(), id)
+			Expect(err).To(MatchError(domain.ErrNotFound))
+		})
+	})
+`, name, typ, idExpr, many, change, check)
+	}
+	specs.WriteString("})\n")
+
+	fmt.Fprintf(&b, "package models_test\n\nimport (\n")
+	for _, imp := range imports[:len(imports)-2] {
+		b.WriteString(imp + "\n")
+	}
+	if len(imports) > 2 {
+		b.WriteString("\n")
+	}
+	b.WriteString(imports[len(imports)-2] + "\n" + imports[len(imports)-1] + "\n\n")
+	fmt.Fprintf(&b, "\t%q\n\t%q\n)\n\n", module+"/app/domain", module+"/test/factories")
+	b.WriteString(specs.String())
+	return formatted(b.String())
+}
+
+func hasReferences(attrs []Attr) bool {
+	for _, a := range attrs {
+		if a.Type == "references" {
+			return true
+		}
+	}
+	return false
+}
+
+// formatted gofmts generated source, which aligns what the generators leave
+// loose. Source that does not parse is returned as it is, so the caller's
+// test fails on the real text.
+func formatted(src string) string {
+	out, err := format.Source([]byte(src))
+	if err != nil {
+		return src
+	}
+	return string(out)
+}
+
+// factory is test/factories/<table>.go: a builder and a saver for the model
+// with valid defaults, so a spec says only what it cares about.
+//
+// A references column is the one thing it cannot default: the parent has to
+// exist, and bogie cannot know the parent has a factory (it may be a model
+// made by hand). The column stays at its zero value, the doc comment says so,
+// and the spec passes the parent's id in "with".
+func factory(module, name string, attrs []Attr, scheme IDScheme) string {
+	typ := Camel(name)
+	imports := map[string]bool{"context": true}
+	var fields strings.Builder
+	var refs []string
+	for _, a := range attrs {
+		var v string
+		switch a.Type {
+		case "string", "text":
+			v = fmt.Sprintf("Sequence(%q)", strings.ReplaceAll(a.Name, "_", " ")+" ")
+		case "integer", "bigint":
+			v = "1"
+		case "boolean":
+			v = "true"
+		case "datetime":
+			v = "time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)"
+			imports["time"] = true
+		case "uuid":
+			v = "uuid.NewString()"
+			imports["github.com/google/uuid"] = true
+		case "jsonb":
+			v = `[]byte("{}")`
+		case "references":
+			refs = append(refs, a.goName())
+			continue
+		}
+		fmt.Fprintf(&fields, "\t\t%s: %s,\n", a.goName(), v)
+	}
+	var std, third []string
+	for _, imp := range sortedKeys(imports) {
+		if strings.Contains(imp, ".") {
+			third = append(third, imp)
+		} else {
+			std = append(std, imp)
+		}
+	}
+	var b strings.Builder
+	b.WriteString("package factories\n\nimport (\n")
+	for _, imp := range std {
+		fmt.Fprintf(&b, "\t%q\n", imp)
+	}
+	b.WriteString("\n")
+	for _, imp := range third {
+		fmt.Fprintf(&b, "\t%q\n", imp)
+	}
+	if len(third) > 0 {
+		b.WriteString("\n")
+	}
+	fmt.Fprintf(&b, "\t%q\n\t%q\n)\n\n", module+"/app/domain", module+"/app/models")
+
+	note := ""
+	if len(refs) > 0 {
+		note = fmt.Sprintf("//\n// Left at zero: %s. The parent has to exist first, so set it from the\n// parent's own factory:\n//\n//\tfactories.%s(t, s, func(v *domain.%s) { v.%s = parent.ID })\n", strings.Join(refs, ", "), typ, typ, refs[0])
+	}
+	fmt.Fprintf(&b, `// New%[1]s is a valid %[2]s that is not saved: every attribute has a default,
+// and "with" overrides what the spec cares about.
+//
+// Written once by `+"`bogie g model`"+` and yours to edit: add an attribute's
+// default here when you add the column. Running the generator again leaves a
+// changed file alone unless --force.
+%[4]sfunc New%[1]s(with ...func(*domain.%[1]s)) domain.%[1]s {
+	record := domain.%[1]s{
+%[3]s	}
+	for _, f := range with {
+		f(&record)
+	}
+	return record
+}
+
+// %[1]s saves a New%[1]s through the real store and fails the spec if it
+// cannot, so a spec reads as its arrangement and nothing else.
+func %[1]s(t T, s *models.Store, with ...func(*domain.%[1]s)) domain.%[1]s {
+	t.Helper()
+	created, err := s.Create%[1]s(context.Background(), New%[1]s(with...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return created
+}
+`, typ, name, fields.String(), note)
+	return formatted(b.String())
 }
 
 func queries(name, table string, attrs []Attr) string {

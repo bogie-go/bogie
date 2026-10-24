@@ -1,0 +1,46 @@
+package requests_test
+
+import (
+	"reflect"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+)
+
+// The Server is built in app/application.go and mounted in routes.go. These
+// specs say it is all connected: nothing left unconstructed, nothing declared
+// and not mounted.
+var _ = Describe("The wired server", func() {
+	// nilFields names every pointer field of s that was never assigned. A namespace
+	// (admin_controller.Server) is entered.
+	var nilFields func(prefix string, s any) []string
+	nilFields = func(prefix string, s any) []string {
+		var missing []string
+		v := reflect.ValueOf(s).Elem()
+		for i := range v.NumField() {
+			field := v.Type().Field(i)
+			f, name := v.Field(i), prefix+field.Name
+			if f.Kind() != reflect.Pointer || !f.CanInterface() || field.Name == "Router" || field.Name == "Log" {
+				continue
+			}
+			if f.IsNil() {
+				missing = append(missing, name)
+			} else if f.Type().Elem().Name() == "Server" {
+				missing = append(missing, nilFields(name+".", f.Interface())...)
+			}
+		}
+		return missing
+	}
+
+	It("has every controller constructed", func() {
+		Expect(nilFields("", app.Server)).To(BeEmpty())
+	})
+
+	It("mounts a handler on every route", func() {
+		routes := app.Server.Router.Routes()
+		Expect(routes).NotTo(BeEmpty())
+		for _, r := range routes {
+			Expect(r.HandlerFunc).NotTo(BeNil(), "%s %s", r.Method, r.Path)
+		}
+	})
+})

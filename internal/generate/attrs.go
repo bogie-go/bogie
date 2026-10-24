@@ -127,20 +127,6 @@ func (s IDScheme) sampleID() string {
 	return "999999999"
 }
 
-// testIDs are two distinct, well-formed id values, written as Go source,
-// for a generated controller test that needs two different domain ids to
-// tell apart (e.g. a two-item Index list). The text doubles as the JSON a
-// value of this type renders as: a Go string literal is already quoted the
-// way JSON quotes a string, and a bare int64 literal already is its own
-// JSON number, so the same two strings work as a struct literal, a
-// comparison, and a response-body substring to look for.
-func (s IDScheme) testIDs() (a, b string) {
-	if s == IDUUID {
-		return `"a"`, `"b"`
-	}
-	return "1", "2"
-}
-
 // kindFor resolves an attribute to its kind under scheme: every type but
 // references is scheme-independent and comes straight from kinds; a
 // references attribute is whatever shape this scheme's foreign keys are.

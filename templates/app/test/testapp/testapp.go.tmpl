@@ -23,21 +23,30 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"testing"
 
 	"{{.Module}}/app"
 	"{{.Module}}/test/testdb"
 )
 
+// T is the part of *testing.T the helpers need, so they also work with
+// Ginkgo's GinkgoT().
+type T interface {
+	Helper()
+	Fatal(args ...any)
+	Fatalf(format string, args ...any)
+	Cleanup(func())
+	Setenv(key, value string)
+}
+
 // App is a running application and the helpers around it.
 type App struct {
 	*app.Application
-	t *testing.T
+	t T
 }
 
 // New builds the application against an emptied test database. The
 // environment is forced to test by testdb, so development data is safe.
-func New(t *testing.T) *App {
+func New(t T) *App {
 	t.Helper()
 	// The request log is noise in a test; failures still print.
 	t.Setenv("SERVER_LOG_LEVEL", "error")
@@ -56,6 +65,7 @@ type Request struct {
 	method, path  string
 	body          any
 	authorization string
+	headers       map[string]string
 }
 
 // Get starts a GET request.
@@ -91,6 +101,15 @@ func (r *Request) WithAuthorization(v string) *Request {
 	return r
 }
 
+// WithHeader sets a header on the request.
+func (r *Request) WithHeader(name, value string) *Request {
+	if r.headers == nil {
+		r.headers = map[string]string{}
+	}
+	r.headers[name] = value
+	return r
+}
+
 // Do sends the request through the real router.
 func (r *Request) Do() *Response {
 	t := r.app.t
@@ -113,6 +132,9 @@ func (r *Request) Do() *Response {
 	if r.authorization != "" {
 		req.Header.Set("Authorization", r.authorization)
 	}
+	for name, value := range r.headers {
+		req.Header.Set(name, value)
+	}
 	rec := httptest.NewRecorder()
 	r.app.Server.Router.ServeHTTP(rec, req)
 	return &Response{t: t, Code: rec.Code, Body: rec.Body.Bytes()}
@@ -120,7 +142,7 @@ func (r *Request) Do() *Response {
 
 // Response is what came back.
 type Response struct {
-	t    *testing.T
+	t    T
 	Code int
 	Body []byte
 }
@@ -161,5 +183,25 @@ func (a *App) Jobs(kind string) int {
 		a.t.Fatal(err)
 	}
 	return n
+}
+
+// JobArgs is the JSON arguments of each queued job of a kind, oldest first,
+// for the jobs that carry facts about the request (who, from where).
+func (a *App) JobArgs(kind string) []string {
+	a.t.Helper()
+	rows, err := a.Store.Pool().Query(context.Background(), "SELECT args::text FROM river_job WHERE kind = $1 ORDER BY id", kind)
+	if err != nil {
+		a.t.Fatal(err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var args string
+		if err := rows.Scan(&args); err != nil {
+			a.t.Fatal(err)
+		}
+		out = append(out, args)
+	}
+	return out
 }
 {{- end}}

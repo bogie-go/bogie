@@ -1,15 +1,19 @@
-{{if .Jobs}}package jobs
+{{if .Jobs}}package jobs_test
 
 import (
 	"io"
 	"log/slog"
-	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"{{.Module}}/app/jobs"
 )
 
-func TestWorkersBuild(t *testing.T) {
-	workers, _ := Workers(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if workers == nil {
-		t.Fatal("no workers bundle")
-	}
-}
+var _ = Describe("Workers", func() {
+	It("builds a bundle", func() {
+		workers, _ := jobs.Workers(slog.New(slog.NewTextHandler(io.Discard, nil)))
+		Expect(workers).NotTo(BeNil())
+	})
+})
 {{end -}}

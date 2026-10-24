@@ -516,7 +516,7 @@ func TestModelWithUniqueAttribute(t *testing.T) {
 }
 
 func TestJob(t *testing.T) {
-	files, wires, err := Job("send_welcome")
+	files, wires, err := Job("example.com/blog", "send_welcome")
 	if err != nil {
 		t.Fatal(err)
 	}

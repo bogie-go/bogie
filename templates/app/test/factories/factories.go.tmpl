@@ -18,6 +18,13 @@ import (
 	"sync/atomic"
 )
 
+// T is the part of *testing.T the factories need, so they also work with
+// Ginkgo's GinkgoT().
+type T interface {
+	Helper()
+	Fatal(args ...any)
+}
+
 var counters sync.Map // prefix -> *int64
 
 // Sequence returns prefix followed by a number that is new each call:

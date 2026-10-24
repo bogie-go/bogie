@@ -119,6 +119,7 @@ func Namespace(module, ns string) ([]File, []Wire, error) {
 	files := []File{
 		{Path: dir + "server.go", Content: namespaceServer(pkg, ns)},
 		{Path: dir + "routes.go", Content: namespaceRoutes(pkg, ns)},
+		{Path: NamespaceSuitePath(ns), Content: namespaceSuite(module, ns)},
 	}
 	wires := []Wire{
 		{File: "app/controllers/application.go", Marker: "controllers", Line: fmt.Sprintf("%s *%s.Server", field, pkg), Import: importPath},
@@ -296,41 +297,69 @@ func routeFor(action string) (method, path string) {
 	return "GET", "/" + action
 }
 
-// test checks every action is mounted. A plain controller is mounted on a
-// bare router; a namespaced one through its namespace Server, so the test
-// also fails if the namespace's routes.go lost the mount line.
+// test is the controller's request spec, beside the controller: every action
+// is mounted, which fails when a route was never registered or the namespace's
+// routes.go lost the mount line, since the request goes through the whole
+// application the suite builds (package controllers_test, or the namespace's
+// own suite).
 func (c controller) test() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "package %s\n\n", c.pkg())
-	b.WriteString("import (\n\t\"io\"\n\t\"log/slog\"\n\t\"net/http\"\n\t\"net/http/httptest\"\n\t\"testing\"\n\n\t\"github.com/gin-gonic/gin\"\n)\n\n")
-	b.WriteString("// Every action is mounted: a route that answers 404 was never registered.\n")
-	fmt.Fprintf(&b, "func Test%sRoutesAreMounted(t *testing.T) {\n", Camel(c.name))
-	b.WriteString("\tgin.SetMode(gin.TestMode)\n\trouter := gin.New()\n")
-	b.WriteString("\tlog := slog.New(slog.NewTextHandler(io.Discard, nil))\n")
-	if c.ns == "" {
-		fmt.Fprintf(&b, "\tNew%s(log).SetupRoutes(&router.RouterGroup)\n\n", c.typeName())
-	} else {
-		b.WriteString("\tns := NewServer(log)\n")
-		fmt.Fprintf(&b, "\tns.%s = New%s(log)\n", Camel(c.name), c.typeName())
-		b.WriteString("\tns.SetupRoutes(&router.RouterGroup)\n\n")
-	}
-	b.WriteString("\troutes := []struct{ method, path string }{")
+	fmt.Fprintf(&b, "package %s_test\n\n", c.pkg())
 	if len(c.actions) == 0 {
-		b.WriteString("} // none yet; list each action's route here as you add it\n")
-	} else {
-		b.WriteString("\n")
-		for _, a := range c.actions {
-			method, path := routeFor(a)
-			fmt.Fprintf(&b, "\t\t{http.Method%s, \"%s%s\"},\n", methodConst[method], c.prefix(), strings.ReplaceAll(path, ":id", "1"))
-		}
-		b.WriteString("\t}\n")
+		b.WriteString("// No actions yet. Add a request spec per route as you add it: the suite\n// provides app, the whole application on a clean test database.\n")
+		return b.String()
 	}
-	b.WriteString("\tfor _, r := range routes {\n")
-	b.WriteString("\t\trec := httptest.NewRecorder()\n")
-	b.WriteString("\t\trouter.ServeHTTP(rec, httptest.NewRequest(r.method, r.path, nil))\n")
-	b.WriteString("\t\tif rec.Code == http.StatusNotFound {\n")
-	b.WriteString("\t\t\tt.Errorf(\"%s %s is not mounted\", r.method, r.path)\n\t\t}\n\t}\n}\n")
-	return b.String()
+	b.WriteString("import (\n\t\"net/http\"\n\t\"net/http/httptest\"\n\n\t. \"github.com/onsi/ginkgo/v2\"\n\t. \"github.com/onsi/gomega\"\n)\n\n")
+	for _, a := range c.actions {
+		method, path := routeFor(a)
+		route := c.prefix() + strings.ReplaceAll(path, ":id", "1")
+		fmt.Fprintf(&b, `var _ = Describe("%[1]s %[2]s", func() {
+	It("is mounted", func() {
+		rec := httptest.NewRecorder()
+		app.Server.Router.ServeHTTP(rec, httptest.NewRequest(http.Method%[3]s, %[2]q, nil))
+
+		Expect(rec.Code).NotTo(Equal(http.StatusNotFound))
+	})
+})
+
+`, method, route, methodConst[method])
+	}
+	return strings.TrimRight(b.String(), "\n") + "\n"
+}
+
+// namespaceSuite is the Ginkgo suite of a namespace's package: the app every
+// spec in it uses, rebuilt before each, as the controllers package has.
+func namespaceSuite(module, ns string) string {
+	return fmt.Sprintf(`package %[1]s_controller_test
+
+import (
+	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	%[3]q
+)
+
+// app is the whole application on a clean test database, rebuilt before
+// every spec: the specs in this package use it as RSpec specs use a `+"`let`"+`.
+var app *testapp.App
+
+var _ = BeforeEach(func() {
+	app = testapp.New(GinkgoT())
+})
+
+func Test%[2]s(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, %[2]q)
+}
+`, ns, Camel(ns), module+"/test/testapp")
+}
+
+// NamespaceSuitePath is the suite file of a namespace's package, which
+// Namespace writes and destroy removes with the last controller in it.
+func NamespaceSuitePath(ns string) string {
+	return "app/controllers/" + ns + "_controller/" + ns + "_controller_suite_test.go"
 }
 
 func namespaceServer(pkg, ns string) string {

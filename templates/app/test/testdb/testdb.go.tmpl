@@ -11,7 +11,6 @@ import (
 	"context"
 	"io"
 	"log/slog"
-	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -19,6 +18,16 @@ import (
 	"{{.Module}}/app/services/migrate"
 	"{{.Module}}/config"
 )
+
+// T is the part of *testing.T the helpers need, so they also work with
+// Ginkgo's GinkgoT(), which is not a *testing.T.
+type T interface {
+	Helper()
+	Fatal(args ...any)
+	Fatalf(format string, args ...any)
+	Cleanup(func())
+	Setenv(key, value string)
+}
 
 // hint names both things a fresh checkout is missing: Postgres itself, and
 // the test database, which db:prepare in development does not create.
@@ -29,7 +38,7 @@ var hint = "Is the database up, and the test database created? Run: make up && "
 // each test starts from nothing. The environment is forced to test here so
 // that `go test` run by hand in a development shell can never truncate
 // development data.
-func Store(t *testing.T) *models.Store {
+func Store(t T) *models.Store {
 	t.Helper()
 	url := testURL(t)
 	ctx := context.Background()
@@ -77,7 +86,7 @@ func Store(t *testing.T) *models.Store {
 // test wants to run or check directly (an UPDATE the store has no method
 // for, a count of rows that should be gone) without widening the store's
 // own API for it.
-func Pool(t *testing.T) *pgxpool.Pool {
+func Pool(t T) *pgxpool.Pool {
 	t.Helper()
 	pool, err := pgxpool.New(context.Background(), testURL(t))
 	if err != nil {
@@ -87,7 +96,7 @@ func Pool(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
-func testURL(t *testing.T) string {
+func testURL(t T) string {
 	t.Helper()
 	t.Setenv(config.EnvVar, config.EnvTest)
 	cfg, err := config.Load()

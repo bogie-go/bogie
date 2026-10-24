@@ -177,36 +177,90 @@ func postFromRow(r Post) domain.Post {
 package models_test
 
 import (
-	"context"
-	"errors"
-	"testing"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
 	"example.com/blog/app/domain"
-	"example.com/blog/test/testdb"
+	"example.com/blog/test/factories"
 )
 
-// Whatever the id looks like, a post that is not there is ErrNotFound, and a
-// caller cannot tell a malformed id from a well-formed one that names nothing.
-func TestUnknownPostsAreNotFound(t *testing.T) {
-	store := testdb.Store(t)
-	ctx := context.Background()
+var _ = Describe("Posts", func() {
+	DescribeTable("an unknown post is not found",
+		func(id string) {
+			_, err := store.GetPost(GinkgoT().Context(), id)
+			Expect(err).To(MatchError(domain.ErrNotFound))
+			Expect(store.DeletePost(GinkgoT().Context(), id)).To(MatchError(domain.ErrNotFound))
+		},
+		Entry("a malformed id", "nope"),
+		Entry("an empty id", ""),
+		Entry("a well-formed id that names nothing", "999999999"),
+	)
 
-	for _, id := range []string{"nope", "", "999999999"} {
-		if _, err := store.GetPost(ctx, id); !errors.Is(err, domain.ErrNotFound) {
-			t.Errorf("GetPost(%q): err = %v, want ErrNotFound", id, err)
-		}
-		if err := store.DeletePost(ctx, id); !errors.Is(err, domain.ErrNotFound) {
-			t.Errorf("DeletePost(%q): err = %v, want ErrNotFound", id, err)
-		}
-	}
+	Describe("UpdatePost", func() {
+		Context("when the post is not there", func() {
+			var missing domain.Post
 
-	if _, err := store.UpdatePost(ctx, domain.Post{ID: 999999999}); !errors.Is(err, domain.ErrNotFound) {
-		t.Errorf("UpdatePost(%d): err = %v, want ErrNotFound", 999999999, err)
+			BeforeEach(func() {
+				missing = factories.NewPost()
+				missing.ID = 999999999
+			})
+
+			It("is not found", func() {
+				_, err := store.UpdatePost(GinkgoT().Context(), missing)
+				Expect(err).To(MatchError(domain.ErrNotFound))
+			})
+		})
+	})
+
+	// No round trip here: a post belongs to a parent that has to be saved
+	// first. Make the parent with its factory and add the specs, with the
+	// reference set in the factory's "with" function.
+})
+==> test/factories/posts.go
+package factories
+
+import (
+	"context"
+	"time"
+
+	"example.com/blog/app/domain"
+	"example.com/blog/app/models"
+)
+
+// NewPost is a valid post that is not saved: every attribute has a default,
+// and "with" overrides what the spec cares about.
+//
+// Written once by `bogie g model` and yours to edit: add an attribute's
+// default here when you add the column. Running the generator again leaves a
+// changed file alone unless --force.
+//
+// Left at zero: AuthorID. The parent has to exist first, so set it from the
+// parent's own factory:
+//
+//	factories.Post(t, s, func(v *domain.Post) { v.AuthorID = parent.ID })
+func NewPost(with ...func(*domain.Post)) domain.Post {
+	record := domain.Post{
+		Title:       Sequence("title "),
+		Body:        Sequence("body "),
+		Score:       1,
+		PublishedAt: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
 	}
+	for _, f := range with {
+		f(&record)
+	}
+	return record
 }
 
-// TODO: a round trip. Create a post with real values, Get it, List it,
-// Update it, Delete it; see posts_test.go for the shape.
+// Post saves a NewPost through the real store and fails the spec if it
+// cannot, so a spec reads as its arrangement and nothing else.
+func Post(t T, s *models.Store, with ...func(*domain.Post)) domain.Post {
+	t.Helper()
+	created, err := s.CreatePost(context.Background(), NewPost(with...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return created
+}
 ==> app/views/posts.go
 package views
 
@@ -256,8 +310,7 @@ import (
 
 // postsStore is the slice of the store this controller uses, declared next to
 // its caller (rule 2) and holding only the methods the actions call.
-// *models.Store satisfies it, and app/application.go passes it in; the
-// test's fake is a few lines.
+// *models.Store satisfies it, and app/application.go passes it in.
 type postsStore interface {
 	CreatePost(ctx context.Context, p domain.Post) (domain.Post, error)
 	GetPost(ctx context.Context, id string) (domain.Post, error)
@@ -404,176 +457,54 @@ func postsView(posts []domain.Post) views.PostsResponse {
 	return out
 }
 ==> app/controllers/posts_controller_test.go
-package controllers
+package controllers_test
 
 import (
-	"context"
-	"encoding/json"
-	"errors"
-	"io"
-	"log/slog"
 	"net/http"
-	"net/http/httptest"
-	"strings"
-	"testing"
 
-	"github.com/gin-gonic/gin"
-
-	"example.com/blog/app/domain"
+	. "github.com/onsi/ginkgo/v2"
 )
 
-// fakePostsStore is a fake of the store interface declared beside the controller: it
-// records what the controller asked for and answers with what the test chose.
-type fakePostsStore struct {
-	one  domain.Post
-	many []domain.Post
-	err  error
+var _ = Describe("GET /posts", func() {
+	Context("with no posts", func() {
+		It("is an empty list", func() {
+			app.Get("/posts").Do().Status(http.StatusOK).Contains("\"posts\":[]")
+		})
+	})
+})
 
-	gotID string
-	got   domain.Post
-}
+var _ = Describe("GET /posts/:id", func() {
+	Context("when the post does not exist", func() {
+		It("is not found", func() {
+			app.Get("/posts/999999999").Do().Status(http.StatusNotFound)
+		})
+	})
+})
 
-func (f *fakePostsStore) CreatePost(_ context.Context, p domain.Post) (domain.Post, error) {
-	f.got = p
-	return f.one, f.err
-}
+var _ = Describe("POST /posts", func() {
+	Context("with a malformed body", func() {
+		It("is a bad request", func() {
+			app.Post("/posts", "{\"nope\":").Do().Status(http.StatusBadRequest)
+		})
+	})
+})
 
-func (f *fakePostsStore) GetPost(_ context.Context, id string) (domain.Post, error) {
-	f.gotID = id
-	return f.one, f.err
-}
+var _ = Describe("PATCH /posts/:id", func() {
+	Context("when the post does not exist", func() {
+		It("is not found", func() {
+			app.Patch("/posts/999999999", map[string]any{}).Do().Status(http.StatusNotFound)
+		})
+	})
+})
 
-func (f *fakePostsStore) ListPosts(context.Context, int32) ([]domain.Post, error) {
-	return f.many, f.err
-}
+var _ = Describe("DELETE /posts/:id", func() {
+	Context("when the post does not exist", func() {
+		It("is not found", func() {
+			app.Delete("/posts/999999999").Do().Status(http.StatusNotFound)
+		})
+	})
+})
 
-func (f *fakePostsStore) UpdatePost(_ context.Context, p domain.Post) (domain.Post, error) {
-	f.got = p
-	return f.one, f.err
-}
-
-func (f *fakePostsStore) DeletePost(_ context.Context, id string) error {
-	f.gotID = id
-	return f.err
-}
-
-// postsRequest mounts the controller alone on a bare router, so these tests see
-// the controller and nothing else: no middleware, no other routes.
-func postsRequest(t *testing.T, store *fakePostsStore, method, path, body string) *httptest.ResponseRecorder {
-	t.Helper()
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	NewPostsController(store, slog.New(slog.NewTextHandler(io.Discard, nil))).SetupRoutes(&router.RouterGroup)
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(method, path, strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	router.ServeHTTP(rec, req)
-	return rec
-}
-
-func TestPostsIndexLists(t *testing.T) {
-	store := &fakePostsStore{many: []domain.Post{{ID: 1}, {ID: 2}}}
-	rec := postsRequest(t, store, http.MethodGet, "/posts", "")
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
-	}
-	var body struct {
-		Posts []struct{ ID int64 } `json:"posts"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatal(err)
-	}
-	if len(body.Posts) != 2 || body.Posts[1].ID != 2 {
-		t.Errorf("body = %+v", body)
-	}
-}
-
-func TestPostsShowUnknownIs404(t *testing.T) {
-	rec := postsRequest(t, &fakePostsStore{err: domain.ErrNotFound}, http.MethodGet, "/posts/nope", "")
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want 404", rec.Code)
-	}
-}
-
-func TestPostsCreatePassesTheBodyThroughAndAnswers201(t *testing.T) {
-	store := &fakePostsStore{one: domain.Post{ID: 1}}
-	rec := postsRequest(t, store, http.MethodPost, "/posts", `{"title":"Hello","body":"Hello","score":7,"published_at":"2026-10-02T09:30:00Z","author_id":1}`)
-
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
-	}
-	if store.got.Title != "Hello" {
-		t.Errorf("store got Title = %v", store.got.Title)
-	}
-	if !strings.Contains(rec.Body.String(), `"id":1`) {
-		t.Errorf("body = %s", rec.Body)
-	}
-}
-
-// Validation is the domain's and runs in the store. The controller's only
-// job is to say 422.
-func TestPostsCreateInvalidIs422(t *testing.T) {
-	store := &fakePostsStore{err: errors.Join(domain.ErrInvalid, errors.New("not valid"))}
-	rec := postsRequest(t, store, http.MethodPost, "/posts", `{"title":"Hello","body":"Hello","score":7,"published_at":"2026-10-02T09:30:00Z","author_id":1}`)
-	if rec.Code != http.StatusUnprocessableEntity {
-		t.Errorf("status = %d, want 422: %s", rec.Code, rec.Body)
-	}
-}
-
-func TestPostsCreateMalformedJSONIs400(t *testing.T) {
-	rec := postsRequest(t, &fakePostsStore{}, http.MethodPost, "/posts", `{"nope":`)
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want 400", rec.Code)
-	}
-}
-
-// PATCH is partial, as in Rails: a field the body leaves out keeps its
-// stored value rather than being blanked.
-func TestPostsUpdateChangesOnlyTheFieldsSent(t *testing.T) {
-	store := &fakePostsStore{one: domain.Post{ID: 1, Title: "Hello", Body: "Hello", Score: 7, AuthorID: 1}}
-	rec := postsRequest(t, store, http.MethodPatch, "/posts/a", `{"title":"Edited"}`)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
-	}
-	if store.got.Title != "Edited" {
-		t.Errorf("store got Title = %v, want %v", store.got.Title, "Edited")
-	}
-	if store.got.Body != "Hello" {
-		t.Errorf("store got Body = %v, want it kept", store.got.Body)
-	}
-	if store.got.Score != 7 {
-		t.Errorf("store got Score = %v, want it kept", store.got.Score)
-	}
-	if store.got.AuthorID != 1 {
-		t.Errorf("store got AuthorID = %v, want it kept", store.got.AuthorID)
-	}
-}
-
-func TestPostsUpdateUnknownIs404(t *testing.T) {
-	rec := postsRequest(t, &fakePostsStore{err: domain.ErrNotFound}, http.MethodPatch, "/posts/nope", `{}`)
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want 404", rec.Code)
-	}
-}
-
-func TestPostsDestroyAnswers204(t *testing.T) {
-	store := &fakePostsStore{}
-	rec := postsRequest(t, store, http.MethodDelete, "/posts/a", "")
-	if rec.Code != http.StatusNoContent || store.gotID != "a" {
-		t.Errorf("status = %d, id = %q", rec.Code, store.gotID)
-	}
-}
-
-// An unexpected error is a 500 that says nothing about its cause.
-func TestPostsUnexpectedErrorIs500WithoutDetail(t *testing.T) {
-	rec := postsRequest(t, &fakePostsStore{err: errors.New("connection refused to db-1")}, http.MethodGet, "/posts", "")
-	if rec.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want 500", rec.Code)
-	}
-	if strings.Contains(rec.Body.String(), "db-1") {
-		t.Errorf("body leaks the internal error: %s", rec.Body)
-	}
-}
+// The specs that save a post are left out: it belongs to a parent that has to
+// be saved first. Make the parent with its factory, set the reference in the
+// "with" function of factories.Post, and add them.
