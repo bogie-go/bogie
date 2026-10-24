@@ -129,6 +129,30 @@ func TestParseAttrs(t *testing.T) {
 	}
 }
 
+// bogie g config says int and bool, scaffold says integer and boolean; each
+// accepts the other's spelling and means the same column.
+func TestParseAttrsAcceptsIntAndBoolAliases(t *testing.T) {
+	got := attrs(t, "qty:int", "price:integer", "ok:bool", "done:boolean", "n:int:index")
+	for i, want := range []string{"integer", "integer", "boolean", "boolean", "integer"} {
+		if got[i].Type != want {
+			t.Errorf("%s: Type = %q, want %q", got[i].Name, got[i].Type, want)
+		}
+	}
+	if !got[4].Index {
+		t.Errorf("n:int:index lost its modifier: %+v", got[4])
+	}
+}
+
+func TestParseConfigKeysAcceptsIntegerAndBooleanAliases(t *testing.T) {
+	keys, err := ParseConfigKeys([]string{"port:integer=25", "tls:boolean=yes"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if keys[0].Type != "int" || keys[0].Value != "25" || keys[1].Type != "bool" || keys[1].Value != "true" {
+		t.Errorf("keys = %+v", keys)
+	}
+}
+
 func TestParseAttrsDefaultsBareNameToString(t *testing.T) {
 	got := attrs(t, "title", "description")
 	for _, a := range got {
@@ -365,7 +389,7 @@ func TestParseConfigKeys(t *testing.T) {
 	for name, bad := range map[string][]string{
 		"none":                     nil,
 		"upper case":               {"Address"},
-		"unknown suffix":           {"port:integer"},
+		"unknown suffix":           {"port:float"},
 		"twice":                    {"a", "a"},
 		"required bool":            {"tls:bool:req"},
 		"int secret":               {"pin:int:secret"},

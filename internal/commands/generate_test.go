@@ -209,7 +209,7 @@ func (c Config) validate() error {
 		t.Errorf("d config support_email should remove only that key:\n%s", read("config/config.go"))
 	}
 
-	for _, bad := range [][]string{{"config", "server", "x"}, {"config", "smtp"}, {"config", "smtp", "port:integer"}, {"config", "env=x"}, {"config", "lonely"}} {
+	for _, bad := range [][]string{{"config", "server", "x"}, {"config", "smtp"}, {"config", "smtp", "port:float"}, {"config", "env=x"}, {"config", "lonely"}} {
 		if err := generateIn(root, bad, &out); err == nil {
 			t.Errorf("g %v accepted", bad)
 		}

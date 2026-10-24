@@ -132,6 +132,8 @@ func ParseConfigKeys(args []string) ([]ConfigKey, error) {
 			switch p {
 			case "string", "int", "bool", "duration":
 				k.Type = p
+			case "integer", "boolean": // as bogie g scaffold spells them
+				k.Type = map[string]string{"integer": "int", "boolean": "bool"}[p]
 			case "req":
 				k.Req = true
 			case "secret":
