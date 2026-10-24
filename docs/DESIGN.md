@@ -138,10 +138,29 @@ The rules ship in `AGENTS.md` and are enforced where a linter can enforce them
 
 `.golangci.yml` disables ST1003 for the underscore package names, exactly as kchat does.
 
-**No `spec/`.** kchat created `spec/{factories,fixtures,support}` from Rails
-habit and never used it: all 37 of its test files sit beside the code, stdlib
-`testing` only, no mocking library. A vestigial Rails directory teaches the
-wrong lesson about where Go tests go, so the scaffold does not create one.
+**`test/`, not `spec/` (changed 2026-10-24).** This section used to say the
+scaffold creates no test directory, because kchat made `spec/{factories,
+fixtures,support}` from Rails habit and never used it. The book's reference
+shop (and line-connect, which does use its `spec/`) showed what that left out:
+the things tests *share*. Unit and edge-case tests still sit beside the code,
+stdlib `testing` only, no mocking library. Three things that more than one
+package needs live in `test/`, as Rails's `test/` holds `test_helper.rb` and
+`factories`:
+
+- `test/testdb`: a clean, migrated test database per test (`testdb.Store(t)`),
+  and a second connection for raw SQL. One copy, where line-connect had one
+  per package.
+- `test/factories`: valid records with typed overrides, saved through the real
+  store. Hand-written, no library (factory-go would not shrink them and adds
+  reflection and a dependency).
+- `test/testapp`: the real application, router and all, on the test database,
+  with a request helper. `test/requests` holds the request tests built on it.
+
+The order is outside in: a feature starts with a request test, and the store,
+domain and service tests below cover the edge cases. Because the factories
+import `app/models`, the store tests are `package models_test`. `go test`
+runs one package at a time (`-p 1`) because the packages share one test
+database. No fixtures directory: fixed data is seeds.
 
 ---
 

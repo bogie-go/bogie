@@ -105,7 +105,7 @@ func plan(command string, args []string) ([][]string, error) {
 	case "worker":
 		argv = []string{"go", "run", ".", "worker"}
 	case "test":
-		argv = []string{"go", "test", "-race", "-cover"}
+		argv = []string{"go", "test", "-p", "1", "-race", "-cover"}
 		if len(args) == 0 {
 			args = []string{"./..."}
 		}

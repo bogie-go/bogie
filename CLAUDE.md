@@ -51,7 +51,7 @@ generated app's `.golangci.yml`, which bin/ci enforces.
   Bogie renders `go:embed`ded `text/template` templates and shells out.
 - **Rails layout on purpose.** Generated apps use `app/controllers`,
   `app/services`, `app/models`, `db/migrate` etc. Do not "fix" this into
-  idiomatic Go layout. No `spec/` directory: Go tests sit beside the code. The
+  idiomatic Go layout. No `spec/` directory; shared test helpers live in `test/` (DESIGN.md §3). The
   reference implementation is kchat at `/home/mac/developments/klangtech/kchat`,
   pinned to commit 485b80f; extraction order and the findings it fixes are in
   DESIGN.md §9. kchat is reference code, never edited from this repo.

@@ -20,7 +20,7 @@ and nothing else.
     make g_migration_<name>   author a migration (go tool goose)
     make server         run the HTTP server (go run . serve); migrates at boot
     bogie server        the same, with live reload in development (Air)
-    make test           go test -race -cover ./...
+    make test           go test -p 1 -race -cover ./...
     make lint           gofmt check, go vet, golangci-lint
     bin/ci              every check, run locally; green ends with gh signoff
 
@@ -100,8 +100,12 @@ nobody's secrets and can never open the development database.
                                  time `db seed` runs; `bogie g seed` writes one
     public/                      404.html · 500.html, go:embedded; Rails's public/, API mode included
     lib/logger/
+    test/                        what tests share: testdb (a clean test database),
+                                 factories, testapp (the whole app), requests/
 
-Tests live beside the code they test, stdlib `testing` only.
+Tests live beside the code they test, stdlib `testing` only. What they share
+(the test database, factories, the whole app) lives in `test/`, as Rails's
+`test/` does.
 
 ## Deploy
 
@@ -448,14 +452,33 @@ other value baked in, by the same rule that keeps `app/views` JSON-only.
 
 ### Write a test
 
-Tests sit beside the code, stdlib `testing`, no factories and no fixtures.
+Tests sit beside the code, stdlib `testing`. What they share lives in `test/`:
 
+- `test/testdb`: `testdb.Store(t)` opens the TEST database, migrates it and
+  truncates every table, so each test starts from nothing; `testdb.Pool(t)`
+  is a second connection for raw SQL. It needs Postgres up (`make up`) and
+  never touches development data.
+- `test/factories`: one function per model that builds a valid record,
+  overrides only what the test cares about, saves it through the real store
+  and fails the test on error. `factories.Sequence("user")` keeps unique
+  columns unique. Hand-written, no library.
+- `test/testapp`: the whole app for a test. `app := testapp.New(t)`, then
+  `app.Get("/posts").Do().Status(200).JSON(&v)`{{if .Jobs}}, and
+  `app.Jobs("kind")` for what a request queued{{end}}.
+- `test/requests`: the request tests, one file per area of the API.
+
+Test **outside in**: the request test is the one every feature must have;
+the store, domain and service tests below it cover the edge cases the request
+test would make tedious.
+
+- A **request test** (`test/requests`) sends HTTP through the real router to
+  the real application and the test database. Arrange with factories, assert
+  on status and JSON.
 - A **controller test** mounts the controller alone on `gin.New()` with a
-  fake of its interface and asserts on status and body. No database; the
-  scaffolded `*_controller_test.go` is the pattern.
-- A **store test** calls `testStore(t)`, which opens the TEST database,
-  migrates it and truncates every table, so each test starts from nothing.
-  It needs Postgres up (`make up`) and never touches development data.
+  fake of its interface; keep it for failure paths a real database makes
+  hard to reach (the store returning an unexpected error).
+- A **store test**, in `package models_test` so it can use the factories,
+  calls `testdb.Store(t)`.
 - A **domain test** is a plain function call: `Validate` and whatever rules
   live in `app/domain`, nothing to set up.
 - A **service test** fakes the store interface the service declared.

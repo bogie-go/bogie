@@ -483,6 +483,23 @@ func (s *Server) WithUser(r *gin.RouterGroup) *gin.RouterGroup {
 	return r.Group("", middlewares.RequireUser(s.Tokens()))
 }
 `, a.module+"/app/middlewares", a.module+"/app/services/token", a.name, setting.Path(), setting.Env(), setting.Field())},
+		{Path: "test/testapp/authentication_token.go", Content: `package testapp
+
+import "time"
+
+// As signs the request in as that token subject: whatever the app's sessions
+// mint, usually a user's id as a string. Mint tokens for a guest the same way.
+//
+//	app.Get("/posts").As(strconv.FormatInt(user.ID, 10)).Do()
+func (r *Request) As(subject string) *Request {
+	signed, err := r.app.Server.Tokens().Mint(subject, time.Hour)
+	if err != nil {
+		r.app.t.Fatal(err)
+	}
+	r.authorization = "Bearer " + signed
+	return r
+}
+`},
 	}
 	return files, nil, nil
 }

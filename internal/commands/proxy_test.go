@@ -35,8 +35,8 @@ func TestPlanSpellsCommandsAsRailsDoes(t *testing.T) {
 		{"server", []string{"--help"}, "go run . serve --help"},
 		{"worker", nil, "go run . worker"},
 		{"routes", nil, "go run . routes"},
-		{"test", nil, "go test -race -cover ./..."},
-		{"test", []string{"./config/..."}, "go test -race -cover ./config/..."},
+		{"test", nil, "go test -p 1 -race -cover ./..."},
+		{"test", []string{"./config/..."}, "go test -p 1 -race -cover ./config/..."},
 		{"lint", nil, "make lint"},
 		{"ci", nil, "bin/ci"},
 		// the app binary's own form, accepted too

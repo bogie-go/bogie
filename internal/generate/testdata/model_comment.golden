@@ -175,7 +175,7 @@ func commentFromRow(r Comment) domain.Comment {
 	}
 }
 ==> app/models/comments_test.go
-package models
+package models_test
 
 import (
 	"context"
@@ -183,12 +183,13 @@ import (
 	"testing"
 
 	"example.com/blog/app/domain"
+	"example.com/blog/test/testdb"
 )
 
 // Whatever the id looks like, a comment that is not there is ErrNotFound, and a
 // caller cannot tell a malformed id from a well-formed one that names nothing.
 func TestUnknownCommentsAreNotFound(t *testing.T) {
-	store := testStore(t)
+	store := testdb.Store(t)
 	ctx := context.Background()
 
 	for _, id := range []string{"nope", "", "999999999"} {

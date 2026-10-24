@@ -75,7 +75,7 @@ func storeTest(module, name, table string, attrs []Attr, scheme IDScheme) string
 `, typ, scheme.sampleID(), refFields)
 	}
 
-	return fmt.Sprintf(`package models
+	return fmt.Sprintf(`package models_test
 
 import (
 	"context"
@@ -83,12 +83,13 @@ import (
 	"testing"
 
 	%[3]q
+	%[8]q
 )
 
 // Whatever the id looks like, a %[2]s that is not there is ErrNotFound, and a
 // caller cannot tell a malformed id from a well-formed one that names nothing.
 func TestUnknown%[4]sAreNotFound(t *testing.T) {
-	store := testStore(t)
+	store := testdb.Store(t)
 	ctx := context.Background()
 
 	for _, id := range []string{"nope", "", %[7]q} {
@@ -103,7 +104,7 @@ func TestUnknown%[4]sAreNotFound(t *testing.T) {
 
 // TODO: a round trip. Create a %[2]s with real values, Get it, List it,
 // Update it, Delete it; see posts_test.go for the shape.
-`, typ, name, module+"/app/domain", Camel(table), updateInLoop, updateAfterLoop, scheme.sampleID())
+`, typ, name, module+"/app/domain", Camel(table), updateInLoop, updateAfterLoop, scheme.sampleID(), module+"/test/testdb")
 }
 
 func queries(name, table string, attrs []Attr) string {
