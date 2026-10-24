@@ -232,3 +232,37 @@ func TestMissingToolsNamesWhatTidyWouldNotAdd(t *testing.T) {
 		t.Errorf("missingTools = %v, want none", got)
 	}
 }
+
+// An app from before v0.3.0 pins credentials v1.5.0, which lacks the function
+// the new config.go calls; tidy keeps the old pin, so app:update must raise it.
+func TestStaleBogieModulesRaisesOnlyAnOlderCredentials(t *testing.T) {
+	root := t.TempDir()
+	write := func(src string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	template := []byte("module blog\n\nrequire (\n\tgithub.com/bogie-go/credentials v1.6.0\n\tgithub.com/gin-gonic/gin v1.12.0\n)\n")
+
+	write("module blog\n\nrequire (\n\tgithub.com/bogie-go/credentials v1.5.0\n\tgithub.com/gin-gonic/gin v1.9.0\n)\n")
+	got := staleBogieModules(template, root)
+	if len(got) != 1 || got[0] != "github.com/bogie-go/credentials@v1.6.0" {
+		t.Errorf("staleBogieModules = %v, want just credentials@v1.6.0 (gin stays the app's own)", got)
+	}
+
+	write("module blog\n\nrequire github.com/bogie-go/credentials v1.10.0\n")
+	if got := staleBogieModules(template, root); len(got) != 0 {
+		t.Errorf("a newer pin (v1.10.0 > v1.6.0) must be left alone, got %v", got)
+	}
+
+	write("module blog\n\nrequire github.com/bogie-go/credentials v1.6.0\n")
+	if got := staleBogieModules(template, root); len(got) != 0 {
+		t.Errorf("an equal pin must be left alone, got %v", got)
+	}
+
+	write("module blog\n")
+	if got := staleBogieModules(template, root); len(got) != 0 {
+		t.Errorf("no requirement is left to go mod tidy, got %v", got)
+	}
+}
