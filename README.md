@@ -130,6 +130,7 @@ bogie test
       create  app/domain/post.go
       create  app/models/posts.go
       create  app/models/posts_test.go
+      create  test/factories/posts.go
       create  app/views/posts.go
       create  app/controllers/posts_controller.go
       create  app/controllers/posts_controller_test.go
@@ -233,10 +234,13 @@ Go service beside it to look and behave like something they already know.
 
 ## Status
 
-**v0.3.x, single maintainer, MIT.** Working today: `bogie new` (with or
+**v0.4.x, single maintainer, MIT.** Working today: `bogie new` (with or
 without `--jobs`); `g`/`d` for `scaffold`, `model`, `migration`, `controller`,
 `service`, `seed`, `job`, `authentication` and `config`; `doctor`; the `db:*` and `credentials:*` tasks; `server` and
 `worker` (both live-reload under Air in development), `test`, `lint`, `ci`; and `app:update`.
+Generated apps test with Ginkgo v2 and Gomega: a `test/` tree (`testdb`,
+`testapp`, `factories`, `requests`) for what tests share, a suite file per
+package, and specs from every generator (v0.4.0 and v0.4.1).
 
 Known gaps:
 
