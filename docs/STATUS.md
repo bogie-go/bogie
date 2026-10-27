@@ -1,7 +1,7 @@
 # Status
 
 Where Bogie stands, for whoever picks it up next, on whatever machine. Updated
-2026-10-27, at v0.4.2. `docs/DESIGN.md` is the design and the
+2026-10-27, at v0.5.0. `docs/DESIGN.md` is the design and the
 reasoning; this file is the state.
 
 ## Milestones
@@ -20,7 +20,7 @@ reasoning; this file is the state.
 
 Install: `go install github.com/bogie-go/bogie@latest` for the newest tag,
 `@main` for main, `go install .` from a clone. First release: v0.1.0,
-2026-10-03; latest: v0.4.2, 2026-10-27.
+2026-10-03; latest: v0.5.0, 2026-10-27.
 
     bogie new NAME [--module=PATH] [--id=bigint|uuid] [--jobs]
                                                  an empty service, as rails new makes: it
@@ -149,7 +149,7 @@ pushing; on a clean tree a green run signs off the commit.
 - Tasks that destroy pass `--yes` through the tool; the binary in a container
   keeps asking.
 - `models.ErrNotFound` and `ErrInvalid` live in `models.go`, not with a model.
-- **Layout, 2026-10-27 (unreleased).** The types and their `Validate` are
+- **Layout, v0.5.0 (2026-10-27).** The types and their `Validate` are
   `app/models` (they were `app/domain`). sqlc writes only `db/sqlc`
   (`package sqlc`). The Store, `withTx` and the row <-> models conversion are
   `db/adapter` (`package adapter`; they were `app/models`). `withTx` hands its

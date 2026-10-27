@@ -240,7 +240,7 @@ without `--jobs`); `g`/`d` for `scaffold`, `model`, `migration`, `controller`,
 `worker` (both live-reload under Air in development), `test`, `lint`, `ci`; and `app:update`.
 Generated apps test with Ginkgo v2 and Gomega: a `test/` tree (`testdb`,
 `testapp`, `factories`, `requests`) for what tests share, a suite file per
-package, and specs from every generator (v0.4.0 and v0.4.1). v0.4.2 words the generated model specs as one Describe per store method.
+package, and specs from every generator (v0.4.0 and v0.4.1). v0.4.2 words the generated model specs as one Describe per store method; v0.5.0 moves the layers: `app/models` (types), `db/sqlc` (generated), `db/adapter` (the Store).
 
 Known gaps:
 
