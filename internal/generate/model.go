@@ -137,16 +137,20 @@ func storeTest(module, name, table string, attrs []Attr, scheme IDScheme) string
 	fmt.Fprintf(&specs, "var _ = Describe(%q, func() {\n", many)
 
 	// An id the store cannot find is not found, whatever else the model holds.
+	idKind := "a number"
+	if scheme == IDUUID {
+		idKind = "a uuid"
+	}
 	notFound := func(call string) string {
-		return fmt.Sprintf(`		DescribeTable("is not found for",
+		return fmt.Sprintf(`		DescribeTable("returns ErrNotFound",
 			func(id string) {
 %s
 			},
-			Entry("a malformed id", "nope"),
-			Entry("an empty id", ""),
-			Entry("a well-formed id that names nothing", %q),
+			Entry("when the id is not %s", "nope"),
+			Entry("when the id is empty", ""),
+			Entry("when no %s has that id", %q),
 		)
-`, call, scheme.sampleID())
+`, call, idKind, word, scheme.sampleID())
 	}
 	getNotFound := notFound(fmt.Sprintf("\t\t\t\t_, err := store.Get%[1]s(GinkgoT().Context(), id)\n\t\t\t\tExpect(err).To(MatchError(models.ErrNotFound))", typ))
 	deleteNotFound := notFound(fmt.Sprintf("\t\t\t\tExpect(store.Delete%[1]s(GinkgoT().Context(), id)).To(MatchError(models.ErrNotFound))", typ))

@@ -52,7 +52,7 @@ func (%[2]sArgs) Kind() string { return %[3]q }
 //	app.Jobs.Insert(ctx, jobs.%[2]sArgs{}, nil)
 //
 // Dependencies go here as fields, declared as the smallest interface this
-// worker uses (rule 2), and are passed on the registration line in jobs.go.
+// worker uses, next to the worker, and are passed on the registration line in jobs.go.
 type %[2]sWorker struct {
 	river.WorkerDefaults[%[2]sArgs]
 	Log *slog.Logger

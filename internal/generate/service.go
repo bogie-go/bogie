@@ -30,7 +30,7 @@ import (
 )
 
 // store is the slice of persistence this package uses, declared HERE, next to
-// its caller, rather than imported from models (rule 2). List only the
+// its caller, rather than imported from the package that implements it. List only the
 // methods this service calls; *adapter.Store satisfies it without ever
 // mentioning this package, and the fake in the test stays a few lines:
 //

@@ -336,7 +336,8 @@ Context to for each rule, and `db/adapter/comments.go`, the store methods that c
 sqlc's row type to `models.Comment`, run `Validate` before create and update,
 and map no-rows to `models.ErrNotFound`; then it runs sqlc. Types: string, text, integer, bigint, boolean, datetime,
 uuid, jsonb, references; `:index` or `:uniq` after a type. `post:references`
-is the column `post_id` with a foreign key and an index. A `:uniq` column
+is the column `post_id` with a foreign key and an index. Go names follow
+sqlc's: `image_url` is `ImageUrl`, and only `id` is spelled `ID` (`PostID`). A `:uniq` column
 also makes `Create`/`Update` map a duplicate value to `models.ErrInvalid`
 ("email is already taken"), not a raw database error. `Delete` maps a
 foreign-key violation (a row something else still points at) to

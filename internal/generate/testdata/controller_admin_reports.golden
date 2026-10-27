@@ -72,7 +72,7 @@ import (
 
 // ReportsController is the HTTP surface of reports: its dependencies, its routes
 // and its actions, all in one file. Dependencies are small
-// interfaces declared here (rule 2), holding only the methods the actions
+// interfaces declared here, next to their consumer, holding only the methods the actions
 // call, and the real thing is passed in from app/application.go, where this
 // controller is wired:
 //
@@ -101,7 +101,7 @@ func (ctl *ReportsController) SetupRoutes(router *gin.RouterGroup) {
 //
 // A handler converts HTTP into domain values, calls one service function,
 // and converts the result back. Nothing below app/controllers sees
-// *gin.Context (rule 5).
+// *gin.Context.
 func (ctl *ReportsController) Index(c *gin.Context) {
 	c.JSON(http.StatusNotImplemented, views.ErrorMessage("reports#index is not implemented yet"))
 }
@@ -110,7 +110,7 @@ func (ctl *ReportsController) Index(c *gin.Context) {
 //
 // A handler converts HTTP into domain values, calls one service function,
 // and converts the result back. Nothing below app/controllers sees
-// *gin.Context (rule 5).
+// *gin.Context.
 func (ctl *ReportsController) Show(c *gin.Context) {
 	c.JSON(http.StatusNotImplemented, views.ErrorMessage("reports#show is not implemented yet"))
 }

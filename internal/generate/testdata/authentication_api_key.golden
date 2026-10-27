@@ -241,14 +241,14 @@ import (
 
 var _ = Describe("ApiKeys", func() {
 	Describe("GetApiKey", func() {
-		DescribeTable("is not found for",
+		DescribeTable("returns ErrNotFound",
 			func(id string) {
 				_, err := store.GetApiKey(GinkgoT().Context(), id)
 				Expect(err).To(MatchError(models.ErrNotFound))
 			},
-			Entry("a malformed id", "nope"),
-			Entry("an empty id", ""),
-			Entry("a well-formed id that names nothing", "999999999"),
+			Entry("when the id is not a number", "nope"),
+			Entry("when the id is empty", ""),
+			Entry("when no api key has that id", "999999999"),
 		)
 
 		Context("with a saved api key", func() {
@@ -314,13 +314,13 @@ var _ = Describe("ApiKeys", func() {
 	})
 
 	Describe("DeleteApiKey", func() {
-		DescribeTable("is not found for",
+		DescribeTable("returns ErrNotFound",
 			func(id string) {
 				Expect(store.DeleteApiKey(GinkgoT().Context(), id)).To(MatchError(models.ErrNotFound))
 			},
-			Entry("a malformed id", "nope"),
-			Entry("an empty id", ""),
-			Entry("a well-formed id that names nothing", "999999999"),
+			Entry("when the id is not a number", "nope"),
+			Entry("when the id is empty", ""),
+			Entry("when no api key has that id", "999999999"),
 		)
 
 		Context("with a saved api key", func() {
@@ -401,7 +401,7 @@ import (
 // a caller cannot tell the two apart.
 var ErrInvalid = errors.New("api key: invalid")
 
-// store is the slice of the store this service uses (rule 2).
+// store is the slice of the store this service uses, declared here.
 type store interface {
 	CreateApiKey(ctx context.Context, k models.ApiKey) (models.ApiKey, error)
 	GetApiKeyByPrefix(ctx context.Context, prefix string) (models.ApiKey, error)
@@ -592,7 +592,7 @@ import (
 )
 
 // apiKeys is the slice of the api_keys service this middleware uses,
-// declared here (rule 2).
+// declared here, where it is used.
 type apiKeys interface {
 	Verify(ctx context.Context, presented string) (models.ApiKey, error)
 }

@@ -240,7 +240,7 @@ func (c controller) source() string {
 
 	fmt.Fprintf(&b, `// %[1]s is the HTTP surface of %[2]s: its dependencies, its routes
 // and its actions, all in one file. Dependencies are small
-// interfaces declared here (rule 2), holding only the methods the actions
+// interfaces declared here, next to their consumer, holding only the methods the actions
 // call, and the real thing is passed in from app/application.go, where this
 // controller is wired:
 //
@@ -278,7 +278,7 @@ func (ctl *%[1]s) SetupRoutes(router *gin.RouterGroup) {
 //
 // A handler converts HTTP into domain values, calls one service function,
 // and converts the result back. Nothing below app/controllers sees
-// *gin.Context (rule 5).
+// *gin.Context.
 func (ctl *%[5]s) %[1]s(c *gin.Context) {
 	c.JSON(http.StatusNotImplemented, views.ErrorMessage("%[6]s#%[7]s is not implemented yet"))
 }

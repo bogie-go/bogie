@@ -212,14 +212,14 @@ import (
 
 var _ = Describe("Things", func() {
 	Describe("GetThing", func() {
-		DescribeTable("is not found for",
+		DescribeTable("returns ErrNotFound",
 			func(id string) {
 				_, err := store.GetThing(GinkgoT().Context(), id)
 				Expect(err).To(MatchError(models.ErrNotFound))
 			},
-			Entry("a malformed id", "nope"),
-			Entry("an empty id", ""),
-			Entry("a well-formed id that names nothing", "999999999"),
+			Entry("when the id is not a number", "nope"),
+			Entry("when the id is empty", ""),
+			Entry("when no thing has that id", "999999999"),
 		)
 
 		Context("with a saved thing", func() {
@@ -285,13 +285,13 @@ var _ = Describe("Things", func() {
 	})
 
 	Describe("DeleteThing", func() {
-		DescribeTable("is not found for",
+		DescribeTable("returns ErrNotFound",
 			func(id string) {
 				Expect(store.DeleteThing(GinkgoT().Context(), id)).To(MatchError(models.ErrNotFound))
 			},
-			Entry("a malformed id", "nope"),
-			Entry("an empty id", ""),
-			Entry("a well-formed id that names nothing", "999999999"),
+			Entry("when the id is not a number", "nope"),
+			Entry("when the id is empty", ""),
+			Entry("when no thing has that id", "999999999"),
 		)
 
 		Context("with a saved thing", func() {

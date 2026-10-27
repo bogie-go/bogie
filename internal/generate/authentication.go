@@ -455,7 +455,7 @@ import (
 )
 
 // userTokens is the slice of the token service this middleware uses,
-// declared here (rule 2). token.Maker satisfies it.
+// declared here, where it is used. token.Maker satisfies it.
 type userTokens interface {
 	Verify(raw string) (token.Claims, error)
 }
@@ -689,7 +689,7 @@ import (
 // a caller cannot tell the two apart.
 var ErrInvalid = errors.New("api key: invalid")
 
-// store is the slice of the store this service uses (rule 2).
+// store is the slice of the store this service uses, declared here.
 type store interface {
 	CreateApiKey(ctx context.Context, k models.ApiKey) (models.ApiKey, error)
 	GetApiKeyByPrefix(ctx context.Context, prefix string) (models.ApiKey, error)
@@ -867,7 +867,7 @@ import (
 )
 
 // apiKeys is the slice of the api_keys service this middleware uses,
-// declared here (rule 2).
+// declared here, where it is used.
 type apiKeys interface {
 	Verify(ctx context.Context, presented string) (models.ApiKey, error)
 }

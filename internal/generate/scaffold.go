@@ -130,7 +130,7 @@ import (
 )
 
 // %[3]s is the slice of the store this controller uses, declared next to
-// its caller (rule 2) and holding only the methods the actions call.
+// its caller and holding only the methods the actions call.
 // *adapter.Store satisfies it, and app/application.go passes it in.
 type %[3]s interface {
 	Create%[4]s(ctx context.Context, %[5]s models.%[4]s) (models.%[4]s, error)
@@ -148,7 +148,7 @@ const %[7]sListLimit = 100
 // handler converts HTTP into domain values, calls one store method, and
 // converts the result back. Validation is the domain's and runs on save,
 // which is why a bad value is a 422 from the store and not a binding rule
-// here. Nothing below app/controllers sees *gin.Context (rule 5).
+// here. Nothing below app/controllers sees *gin.Context.
 type %[8]s struct {
 	Store %[3]s
 	Log   *slog.Logger

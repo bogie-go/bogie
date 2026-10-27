@@ -88,6 +88,31 @@ func TestModel(t *testing.T) {
 	golden(t, "model_comment", files)
 }
 
+// The not-found tables name what is wrong with the id in the app's own terms,
+// so the spec reads as a sentence: a number under bigint ids, a uuid under uuid.
+func TestModelSpecNamesTheKindOfIDPerScheme(t *testing.T) {
+	for scheme, want := range map[IDScheme]string{
+		IDBigint: `Entry("when the id is not a number", "nope")`,
+		IDUUID:   `Entry("when the id is not a uuid", "nope")`,
+	} {
+		files, err := Model("example.com/blog", "cart_item", nil, scheme, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var spec string
+		for _, f := range files {
+			if f.Path == "db/adapter/cart_items_test.go" {
+				spec = f.Content
+			}
+		}
+		for _, line := range []string{`DescribeTable("returns ErrNotFound"`, want, `Entry("when no cart item has that id"`} {
+			if !strings.Contains(spec, line) {
+				t.Errorf("%s ids: the store spec lacks %s", scheme, line)
+			}
+		}
+	}
+}
+
 func TestModelWithNoAttributes(t *testing.T) {
 	files, err := Model("example.com/blog", "ping", nil, IDBigint, at)
 	if err != nil {
