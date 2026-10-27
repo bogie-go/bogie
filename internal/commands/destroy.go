@@ -180,11 +180,9 @@ func destroyIn(root string, args []string, out io.Writer) error {
 			wires = generate.WirePrefixes("", generate.Plural(name))
 		}
 		// sqlc writes a file per query file and never removes one whose
-		// source is gone, so the generated half goes too; and a test the
-		// model may have been given by hand.
+		// source is gone, so the generated half goes too.
 		files = append(files,
-			generate.File{Path: "db/sqlc/" + generate.Plural(name) + ".sql.go"},
-			generate.File{Path: "app/models/" + name + "_test.go"})
+			generate.File{Path: "db/sqlc/" + generate.Plural(name) + ".sql.go"})
 		runSqlc = true
 	case "migration":
 		var f generate.File

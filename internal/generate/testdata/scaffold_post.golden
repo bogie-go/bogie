@@ -60,6 +60,43 @@ type Post struct {
 func (p Post) Validate() error {
 	return nil
 }
+==> app/models/post_test.go
+package models_test
+
+import (
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"example.com/blog/app/models"
+	"example.com/blog/test/factories"
+)
+
+var _ = Describe("Post.Validate", func() {
+	Context("with the factory's defaults", func() {
+		var post models.Post
+
+		BeforeEach(func() {
+			post = factories.NewPost()
+		})
+
+		It("is valid", func() {
+			Expect(post.Validate()).To(Succeed())
+		})
+	})
+
+	// Add a Context for each rule you put in Validate, for example a
+	// required title:
+	//
+	//	Context("with a blank title", func() {
+	//		BeforeEach(func() {
+	//			post.Title = ""
+	//		})
+	//
+	//		It("is refused", func() {
+	//			Expect(post.Validate()).To(MatchError(models.ErrInvalid))
+	//		})
+	//	})
+})
 ==> db/adapter/posts.go
 package adapter
 

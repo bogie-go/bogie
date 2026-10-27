@@ -331,7 +331,8 @@ service is for logic that is not CRUD; a plain resource needs none.
 
 writes the `create_comments` migration, `db/queries/comments.sql` with get,
 list, create, update and delete, `app/models/comment.go` with the type and an
-empty `Validate`, and `db/adapter/comments.go`, the store methods that convert
+empty `Validate`, `app/models/comment_test.go`, a spec for it that you add a
+Context to for each rule, and `db/adapter/comments.go`, the store methods that convert
 sqlc's row type to `models.Comment`, run `Validate` before create and update,
 and map no-rows to `models.ErrNotFound`; then it runs sqlc. Types: string, text, integer, bigint, boolean, datetime,
 uuid, jsonb, references; `:index` or `:uniq` after a type. `post:references`

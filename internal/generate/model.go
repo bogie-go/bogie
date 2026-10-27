@@ -35,10 +35,72 @@ func Model(module, name string, attrs []Attr, scheme IDScheme, now time.Time) ([
 		migration,
 		{Path: "db/queries/" + table + ".sql", Content: queries(name, table, attrs)},
 		{Path: "app/models/" + name + ".go", Content: domainType(name, attrs, scheme)},
+		{Path: "app/models/" + name + "_test.go", Content: modelTest(module, name, attrs)},
 		{Path: "db/adapter/" + table + ".go", Content: store(module, name, table, attrs, scheme)},
 		{Path: "db/adapter/" + table + "_test.go", Content: storeTest(module, name, table, attrs, scheme)},
 		{Path: "test/factories/" + table + ".go", Content: factory(module, name, attrs, scheme)},
 	}, nil
+}
+
+// modelTest is the model's own spec: a plain function call, no database. It
+// starts from the factory's defaults, which are valid by construction, so a
+// rule added to Validate that the defaults break fails here and says which
+// one, and it shows where the next rule's Context goes. When the model has a
+// text column the example is written for it.
+func modelTest(module, name string, attrs []Attr) string {
+	typ, v := Camel(name), lowerCamel(name)
+	var b strings.Builder
+	fmt.Fprintf(&b, `package models_test
+
+import (
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	%[1]q
+	%[2]q
+)
+
+var _ = Describe("%[3]s.Validate", func() {
+	Context("with the factory's defaults", func() {
+		var %[4]s models.%[3]s
+
+		BeforeEach(func() {
+			%[4]s = factories.New%[3]s()
+		})
+
+		It("is valid", func() {
+			Expect(%[4]s.Validate()).To(Succeed())
+		})
+	})
+`, module+"/app/models", module+"/test/factories", typ, v)
+	var text *Attr
+	for i := range attrs {
+		if attrs[i].Type == "string" || attrs[i].Type == "text" {
+			text = &attrs[i]
+			break
+		}
+	}
+	b.WriteString("\n\t// Add a Context for each rule you put in Validate")
+	if text == nil {
+		b.WriteString(".\n")
+	} else {
+		field := text.goName()
+		fmt.Fprintf(&b, `, for example a
+	// required %[1]s:
+	//
+	//	Context("with a blank %[1]s", func() {
+	//		BeforeEach(func() {
+	//			%[2]s.%[3]s = ""
+	//		})
+	//
+	//		It("is refused", func() {
+	//			Expect(%[2]s.Validate()).To(MatchError(models.ErrInvalid))
+	//		})
+	//	})
+`, strings.ReplaceAll(text.Name, "_", " "), v, field)
+	}
+	b.WriteString("})\n")
+	return b.String()
 }
 
 // storeTest is the model's spec, against the real test database as every

@@ -149,6 +149,7 @@ pushing; on a clean tree a green run signs off the commit.
 - Tasks that destroy pass `--yes` through the tool; the binary in a container
   keeps asking.
 - `models.ErrNotFound` and `ErrInvalid` live in `models.go`, not with a model.
+- `g model` writes a spec for the model too (`app/models/<name>_test.go`): a plain call to `Validate` on the factory's defaults, plus where the next rule's Context goes. The app ships `app/models/models_suite_test.go` so it runs. `destroy` removes it with the model.
 - **Layout, v0.5.0 (2026-10-27).** The types and their `Validate` are
   `app/models` (they were `app/domain`). sqlc writes only `db/sqlc`
   (`package sqlc`). The Store, `withTx` and the row <-> models conversion are

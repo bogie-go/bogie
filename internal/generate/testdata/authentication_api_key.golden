@@ -58,6 +58,43 @@ type ApiKey struct {
 func (a ApiKey) Validate() error {
 	return nil
 }
+==> app/models/api_key_test.go
+package models_test
+
+import (
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"example.com/blog/app/models"
+	"example.com/blog/test/factories"
+)
+
+var _ = Describe("ApiKey.Validate", func() {
+	Context("with the factory's defaults", func() {
+		var apiKey models.ApiKey
+
+		BeforeEach(func() {
+			apiKey = factories.NewApiKey()
+		})
+
+		It("is valid", func() {
+			Expect(apiKey.Validate()).To(Succeed())
+		})
+	})
+
+	// Add a Context for each rule you put in Validate, for example a
+	// required name:
+	//
+	//	Context("with a blank name", func() {
+	//		BeforeEach(func() {
+	//			apiKey.Name = ""
+	//		})
+	//
+	//		It("is refused", func() {
+	//			Expect(apiKey.Validate()).To(MatchError(models.ErrInvalid))
+	//		})
+	//	})
+})
 ==> db/adapter/api_keys.go
 package adapter
 

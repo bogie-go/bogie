@@ -51,6 +51,43 @@ type Thing struct {
 func (t Thing) Validate() error {
 	return nil
 }
+==> app/models/thing_test.go
+package models_test
+
+import (
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"example.com/blog/app/models"
+	"example.com/blog/test/factories"
+)
+
+var _ = Describe("Thing.Validate", func() {
+	Context("with the factory's defaults", func() {
+		var thing models.Thing
+
+		BeforeEach(func() {
+			thing = factories.NewThing()
+		})
+
+		It("is valid", func() {
+			Expect(thing.Validate()).To(Succeed())
+		})
+	})
+
+	// Add a Context for each rule you put in Validate, for example a
+	// required name:
+	//
+	//	Context("with a blank name", func() {
+	//		BeforeEach(func() {
+	//			thing.Name = ""
+	//		})
+	//
+	//		It("is refused", func() {
+	//			Expect(thing.Validate()).To(MatchError(models.ErrInvalid))
+	//		})
+	//	})
+})
 ==> db/adapter/things.go
 package adapter
 

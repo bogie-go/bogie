@@ -61,6 +61,43 @@ type Comment struct {
 func (c Comment) Validate() error {
 	return nil
 }
+==> app/models/comment_test.go
+package models_test
+
+import (
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"example.com/blog/app/models"
+	"example.com/blog/test/factories"
+)
+
+var _ = Describe("Comment.Validate", func() {
+	Context("with the factory's defaults", func() {
+		var comment models.Comment
+
+		BeforeEach(func() {
+			comment = factories.NewComment()
+		})
+
+		It("is valid", func() {
+			Expect(comment.Validate()).To(Succeed())
+		})
+	})
+
+	// Add a Context for each rule you put in Validate, for example a
+	// required body:
+	//
+	//	Context("with a blank body", func() {
+	//		BeforeEach(func() {
+	//			comment.Body = ""
+	//		})
+	//
+	//		It("is refused", func() {
+	//			Expect(comment.Validate()).To(MatchError(models.ErrInvalid))
+	//		})
+	//	})
+})
 ==> db/adapter/comments.go
 package adapter
 

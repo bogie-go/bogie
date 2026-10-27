@@ -53,6 +53,43 @@ type User struct {
 func (u User) Validate() error {
 	return nil
 }
+==> app/models/user_test.go
+package models_test
+
+import (
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"example.com/blog/app/models"
+	"example.com/blog/test/factories"
+)
+
+var _ = Describe("User.Validate", func() {
+	Context("with the factory's defaults", func() {
+		var user models.User
+
+		BeforeEach(func() {
+			user = factories.NewUser()
+		})
+
+		It("is valid", func() {
+			Expect(user.Validate()).To(Succeed())
+		})
+	})
+
+	// Add a Context for each rule you put in Validate, for example a
+	// required email:
+	//
+	//	Context("with a blank email", func() {
+	//		BeforeEach(func() {
+	//			user.Email = ""
+	//		})
+	//
+	//		It("is refused", func() {
+	//			Expect(user.Validate()).To(MatchError(models.ErrInvalid))
+	//		})
+	//	})
+})
 ==> db/adapter/users.go
 package adapter
 

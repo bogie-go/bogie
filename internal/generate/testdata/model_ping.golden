@@ -49,6 +49,32 @@ type Ping struct {
 func (p Ping) Validate() error {
 	return nil
 }
+==> app/models/ping_test.go
+package models_test
+
+import (
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"example.com/blog/app/models"
+	"example.com/blog/test/factories"
+)
+
+var _ = Describe("Ping.Validate", func() {
+	Context("with the factory's defaults", func() {
+		var ping models.Ping
+
+		BeforeEach(func() {
+			ping = factories.NewPing()
+		})
+
+		It("is valid", func() {
+			Expect(ping.Validate()).To(Succeed())
+		})
+	})
+
+	// Add a Context for each rule you put in Validate.
+})
 ==> db/adapter/pings.go
 package adapter
 
