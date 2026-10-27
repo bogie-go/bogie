@@ -169,7 +169,7 @@ func destroyIn(root string, args []string, out io.Writer) error {
 			wires = append(wires, generate.ConfigGroupWirePrefixes(setting.Group)...)
 		}
 		if name == "api_key" {
-			files = append(files, generate.File{Path: "app/models/api_keys.sql.go"})
+			files = append(files, generate.File{Path: "db/sqlc/api_keys.sql.go"})
 			runSqlc = true
 		}
 	case "model", "scaffold":
@@ -183,7 +183,7 @@ func destroyIn(root string, args []string, out io.Writer) error {
 		// source is gone, so the generated half goes too; and a test the
 		// model may have been given by hand.
 		files = append(files,
-			generate.File{Path: "app/models/" + generate.Plural(name) + ".sql.go"},
+			generate.File{Path: "db/sqlc/" + generate.Plural(name) + ".sql.go"},
 			generate.File{Path: "app/domain/" + name + "_test.go"})
 		runSqlc = true
 	case "migration":

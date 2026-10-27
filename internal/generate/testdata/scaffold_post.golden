@@ -73,6 +73,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"example.com/blog/app/domain"
+	"example.com/blog/db/sqlc"
 )
 
 // Posts, as the domain sees them. Each method converts domain.Post to and from
@@ -89,7 +90,7 @@ func (s *Store) CreatePost(ctx context.Context, p domain.Post) (domain.Post, err
 	if err := p.Validate(); err != nil {
 		return domain.Post{}, err
 	}
-	row, err := s.q.CreatePost(ctx, CreatePostParams{Title: p.Title, Body: p.Body, Score: p.Score, PublishedAt: pgtype.Timestamptz{Time: p.PublishedAt, Valid: true}, AuthorID: p.AuthorID})
+	row, err := s.q.CreatePost(ctx, sqlc.CreatePostParams{Title: p.Title, Body: p.Body, Score: p.Score, PublishedAt: pgtype.Timestamptz{Time: p.PublishedAt, Valid: true}, AuthorID: p.AuthorID})
 	if err != nil {
 		return domain.Post{}, fmt.Errorf("models: create post: %w", err)
 	}
@@ -131,7 +132,7 @@ func (s *Store) UpdatePost(ctx context.Context, p domain.Post) (domain.Post, err
 		return domain.Post{}, err
 	}
 	pk := p.ID
-	row, err := s.q.UpdatePost(ctx, UpdatePostParams{ID: pk, Title: p.Title, Body: p.Body, Score: p.Score, PublishedAt: pgtype.Timestamptz{Time: p.PublishedAt, Valid: true}, AuthorID: p.AuthorID})
+	row, err := s.q.UpdatePost(ctx, sqlc.UpdatePostParams{ID: pk, Title: p.Title, Body: p.Body, Score: p.Score, PublishedAt: pgtype.Timestamptz{Time: p.PublishedAt, Valid: true}, AuthorID: p.AuthorID})
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return domain.Post{}, domain.ErrNotFound
@@ -161,7 +162,7 @@ func (s *Store) DeletePost(ctx context.Context, id string) error {
 	return nil
 }
 
-func postFromRow(r Post) domain.Post {
+func postFromRow(r sqlc.Post) domain.Post {
 	return domain.Post{
 		ID:          r.ID,
 		Title:       r.Title,

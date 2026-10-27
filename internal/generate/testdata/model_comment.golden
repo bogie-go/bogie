@@ -74,6 +74,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"example.com/blog/app/domain"
+	"example.com/blog/db/sqlc"
 )
 
 // Comments, as the domain sees them. Each method converts domain.Comment to and from
@@ -90,7 +91,7 @@ func (s *Store) CreateComment(ctx context.Context, c domain.Comment) (domain.Com
 	if err := c.Validate(); err != nil {
 		return domain.Comment{}, err
 	}
-	row, err := s.q.CreateComment(ctx, CreateCommentParams{Body: c.Body, PostID: c.PostID, Score: c.Score, PublishedAt: pgtype.Timestamptz{Time: c.PublishedAt, Valid: true}, Meta: c.Meta})
+	row, err := s.q.CreateComment(ctx, sqlc.CreateCommentParams{Body: c.Body, PostID: c.PostID, Score: c.Score, PublishedAt: pgtype.Timestamptz{Time: c.PublishedAt, Valid: true}, Meta: c.Meta})
 	if err != nil {
 		return domain.Comment{}, fmt.Errorf("models: create comment: %w", err)
 	}
@@ -132,7 +133,7 @@ func (s *Store) UpdateComment(ctx context.Context, c domain.Comment) (domain.Com
 		return domain.Comment{}, err
 	}
 	pk := c.ID
-	row, err := s.q.UpdateComment(ctx, UpdateCommentParams{ID: pk, Body: c.Body, PostID: c.PostID, Score: c.Score, PublishedAt: pgtype.Timestamptz{Time: c.PublishedAt, Valid: true}, Meta: c.Meta})
+	row, err := s.q.UpdateComment(ctx, sqlc.UpdateCommentParams{ID: pk, Body: c.Body, PostID: c.PostID, Score: c.Score, PublishedAt: pgtype.Timestamptz{Time: c.PublishedAt, Valid: true}, Meta: c.Meta})
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return domain.Comment{}, domain.ErrNotFound
@@ -162,7 +163,7 @@ func (s *Store) DeleteComment(ctx context.Context, id string) error {
 	return nil
 }
 
-func commentFromRow(r Comment) domain.Comment {
+func commentFromRow(r sqlc.Comment) domain.Comment {
 	return domain.Comment{
 		ID:          r.ID,
 		Body:        r.Body,

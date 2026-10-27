@@ -70,6 +70,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"example.com/blog/app/domain"
+	"example.com/blog/db/sqlc"
 )
 
 // ApiKeys, as the domain sees them. Each method converts domain.ApiKey to and from
@@ -86,7 +87,7 @@ func (s *Store) CreateApiKey(ctx context.Context, a domain.ApiKey) (domain.ApiKe
 	if err := a.Validate(); err != nil {
 		return domain.ApiKey{}, err
 	}
-	row, err := s.q.CreateApiKey(ctx, CreateApiKeyParams{Name: a.Name, Prefix: a.Prefix, Digest: a.Digest})
+	row, err := s.q.CreateApiKey(ctx, sqlc.CreateApiKeyParams{Name: a.Name, Prefix: a.Prefix, Digest: a.Digest})
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -132,7 +133,7 @@ func (s *Store) UpdateApiKey(ctx context.Context, a domain.ApiKey) (domain.ApiKe
 		return domain.ApiKey{}, err
 	}
 	pk := a.ID
-	row, err := s.q.UpdateApiKey(ctx, UpdateApiKeyParams{ID: pk, Name: a.Name, Prefix: a.Prefix, Digest: a.Digest})
+	row, err := s.q.UpdateApiKey(ctx, sqlc.UpdateApiKeyParams{ID: pk, Name: a.Name, Prefix: a.Prefix, Digest: a.Digest})
 	var pgErr *pgconn.PgError
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
@@ -165,7 +166,7 @@ func (s *Store) DeleteApiKey(ctx context.Context, id string) error {
 	return nil
 }
 
-func api_keyFromRow(r ApiKey) domain.ApiKey {
+func api_keyFromRow(r sqlc.ApiKey) domain.ApiKey {
 	return domain.ApiKey{
 		ID:        r.ID,
 		Name:      r.Name,

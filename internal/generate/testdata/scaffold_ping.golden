@@ -61,6 +61,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"example.com/blog/app/domain"
+	"example.com/blog/db/sqlc"
 )
 
 // Pings, as the domain sees them. Each method converts domain.Ping to and from
@@ -149,7 +150,7 @@ func (s *Store) DeletePing(ctx context.Context, id string) error {
 	return nil
 }
 
-func pingFromRow(r Ping) domain.Ping {
+func pingFromRow(r sqlc.Ping) domain.Ping {
 	return domain.Ping{
 		ID:        r.ID,
 		CreatedAt: r.CreatedAt.Time,

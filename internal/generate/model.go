@@ -403,7 +403,7 @@ func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 	if needsPgtype(attrs) {
 		b.WriteString("\t\"github.com/jackc/pgx/v5/pgtype\"\n")
 	}
-	fmt.Fprintf(&b, "\n\t%q\n)\n\n", module+"/app/domain")
+	fmt.Fprintf(&b, "\n\t%q\n\t%q\n)\n\n", module+"/app/domain", module+"/db/sqlc")
 
 	fmt.Fprintf(&b, "// %s, as the domain sees them. Each method converts domain.%s to and from\n", Camel(table), typ)
 	b.WriteString("// the row type sqlc generated, and maps pgx's \"no rows\" to domain.ErrNotFound\n")
@@ -442,7 +442,7 @@ func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 		// is passed as itself.
 		fmt.Fprintf(&b, "\trow, err := s.q.Create%s(ctx, %s)\n", typ, singleParam(recv, attrs[0], scheme))
 	default:
-		fmt.Fprintf(&b, "\trow, err := s.q.Create%s(ctx, Create%sParams{%s})\n", typ, typ, createParams(recv))
+		fmt.Fprintf(&b, "\trow, err := s.q.Create%s(ctx, sqlc.Create%sParams{%s})\n", typ, typ, createParams(recv))
 	}
 	if len(uniq) > 0 {
 		fmt.Fprintf(&b, "\tif err != nil {\n\t\tvar pgErr *pgconn.PgError\n\t\tif errors.As(err, &pgErr) && pgErr.Code == \"23505\" {\n\t\t\treturn domain.%s{}, fmt.Errorf(\"%%w: %s\", domain.ErrInvalid)\n\t\t}\n\t\treturn domain.%s{}, fmt.Errorf(\"models: create %s: %%w\", err)\n\t}\n", typ, uniqueViolationMessage(uniq), typ, name)
@@ -481,7 +481,7 @@ func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 	if len(attrs) == 0 {
 		fmt.Fprintf(&b, "\trow, err := s.q.Update%s(ctx, pk)\n", typ)
 	} else {
-		fmt.Fprintf(&b, "\trow, err := s.q.Update%s(ctx, Update%sParams{ID: pk, %s})\n", typ, typ, createParams(recv))
+		fmt.Fprintf(&b, "\trow, err := s.q.Update%s(ctx, sqlc.Update%sParams{ID: pk, %s})\n", typ, typ, createParams(recv))
 	}
 	if len(uniq) > 0 {
 		b.WriteString("\tvar pgErr *pgconn.PgError\n")
@@ -501,7 +501,7 @@ func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 	b.WriteString("\tif n == 0 {\n\t\treturn domain.ErrNotFound\n\t}\n\treturn nil\n}\n\n")
 
 	// fromRow
-	fmt.Fprintf(&b, "func %sFromRow(r %s) domain.%s {\n\treturn domain.%s{\n", name, typ, typ, typ)
+	fmt.Fprintf(&b, "func %sFromRow(r sqlc.%s) domain.%s {\n\treturn domain.%s{\n", name, typ, typ, typ)
 	width := len("CreatedAt:")
 	for _, a := range attrs {
 		if n := len(a.goName()) + 1; n > width {

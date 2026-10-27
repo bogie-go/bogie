@@ -63,6 +63,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"example.com/blog/app/domain"
+	"example.com/blog/db/sqlc"
 )
 
 // Things, as the domain sees them. Each method converts domain.Thing to and from
@@ -121,7 +122,7 @@ func (s *Store) UpdateThing(ctx context.Context, t domain.Thing) (domain.Thing, 
 		return domain.Thing{}, err
 	}
 	pk := t.ID
-	row, err := s.q.UpdateThing(ctx, UpdateThingParams{ID: pk, Name: t.Name})
+	row, err := s.q.UpdateThing(ctx, sqlc.UpdateThingParams{ID: pk, Name: t.Name})
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return domain.Thing{}, domain.ErrNotFound
@@ -151,7 +152,7 @@ func (s *Store) DeleteThing(ctx context.Context, id string) error {
 	return nil
 }
 
-func thingFromRow(r Thing) domain.Thing {
+func thingFromRow(r sqlc.Thing) domain.Thing {
 	return domain.Thing{
 		ID:        r.ID,
 		Name:      r.Name,
