@@ -173,18 +173,64 @@ import (
 )
 
 var _ = Describe("Things", func() {
-	DescribeTable("an unknown thing is not found",
-		func(id string) {
-			_, err := store.GetThing(GinkgoT().Context(), id)
-			Expect(err).To(MatchError(domain.ErrNotFound))
-			Expect(store.DeleteThing(GinkgoT().Context(), id)).To(MatchError(domain.ErrNotFound))
-		},
-		Entry("a malformed id", "nope"),
-		Entry("an empty id", ""),
-		Entry("a well-formed id that names nothing", "999999999"),
-	)
+	Describe("GetThing", func() {
+		DescribeTable("is not found for",
+			func(id string) {
+				_, err := store.GetThing(GinkgoT().Context(), id)
+				Expect(err).To(MatchError(domain.ErrNotFound))
+			},
+			Entry("a malformed id", "nope"),
+			Entry("an empty id", ""),
+			Entry("a well-formed id that names nothing", "999999999"),
+		)
+
+		Context("with a saved thing", func() {
+			var record domain.Thing
+
+			BeforeEach(func() {
+				record = factories.Thing(GinkgoT(), store)
+			})
+
+			It("finds the thing by id", func() {
+				Expect(store.GetThing(GinkgoT().Context(), strconv.FormatInt(record.ID, 10))).To(Equal(record))
+			})
+		})
+	})
+
+	Describe("ListThings", func() {
+		Context("with a saved thing", func() {
+			var record domain.Thing
+
+			BeforeEach(func() {
+				record = factories.Thing(GinkgoT(), store)
+			})
+
+			It("includes the saved thing", func() {
+				all, err := store.ListThings(GinkgoT().Context(), 10)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(all).To(HaveLen(1))
+				Expect(all[0].ID).To(Equal(record.ID))
+			})
+		})
+	})
 
 	Describe("UpdateThing", func() {
+		Context("with a saved thing", func() {
+			var record domain.Thing
+
+			BeforeEach(func() {
+				record = factories.Thing(GinkgoT(), store)
+			})
+
+			It("stores the change", func() {
+				record.Name = "Edited"
+				updated, err := store.UpdateThing(GinkgoT().Context(), record)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(updated.ID).To(Equal(record.ID))
+				Expect(updated.Name).To(BeEquivalentTo("Edited"))
+			})
+		})
+
 		Context("when the thing is not there", func() {
 			var missing domain.Thing
 
@@ -200,38 +246,29 @@ var _ = Describe("Things", func() {
 		})
 	})
 
-	Context("with a saved thing", func() {
-		var record domain.Thing
-		var id string
+	Describe("DeleteThing", func() {
+		DescribeTable("is not found for",
+			func(id string) {
+				Expect(store.DeleteThing(GinkgoT().Context(), id)).To(MatchError(domain.ErrNotFound))
+			},
+			Entry("a malformed id", "nope"),
+			Entry("an empty id", ""),
+			Entry("a well-formed id that names nothing", "999999999"),
+		)
 
-		BeforeEach(func() {
-			record = factories.Thing(GinkgoT(), store)
-			id = strconv.FormatInt(record.ID, 10)
-		})
+		Context("with a saved thing", func() {
+			var record domain.Thing
 
-		It("reads it back by id", func() {
-			Expect(store.GetThing(GinkgoT().Context(), id)).To(Equal(record))
-		})
+			BeforeEach(func() {
+				record = factories.Thing(GinkgoT(), store)
+			})
 
-		It("lists it", func() {
-			all, err := store.ListThings(GinkgoT().Context(), 10)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(all).To(HaveLen(1))
-			Expect(all[0].ID).To(Equal(record.ID))
-		})
-
-		It("updates it", func() {
-			record.Name = "Edited"
-			updated, err := store.UpdateThing(GinkgoT().Context(), record)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(updated.ID).To(Equal(record.ID))
-			Expect(updated.Name).To(BeEquivalentTo("Edited"))
-		})
-
-		It("deletes it", func() {
-			Expect(store.DeleteThing(GinkgoT().Context(), id)).To(Succeed())
-			_, err := store.GetThing(GinkgoT().Context(), id)
-			Expect(err).To(MatchError(domain.ErrNotFound))
+			It("removes the thing", func() {
+				id := strconv.FormatInt(record.ID, 10)
+				Expect(store.DeleteThing(GinkgoT().Context(), id)).To(Succeed())
+				_, err := store.GetThing(GinkgoT().Context(), id)
+				Expect(err).To(MatchError(domain.ErrNotFound))
+			})
 		})
 	})
 })

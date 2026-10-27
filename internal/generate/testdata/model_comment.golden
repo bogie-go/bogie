@@ -186,16 +186,28 @@ import (
 )
 
 var _ = Describe("Comments", func() {
-	DescribeTable("an unknown comment is not found",
-		func(id string) {
-			_, err := store.GetComment(GinkgoT().Context(), id)
-			Expect(err).To(MatchError(domain.ErrNotFound))
-			Expect(store.DeleteComment(GinkgoT().Context(), id)).To(MatchError(domain.ErrNotFound))
-		},
-		Entry("a malformed id", "nope"),
-		Entry("an empty id", ""),
-		Entry("a well-formed id that names nothing", "999999999"),
-	)
+	Describe("GetComment", func() {
+		DescribeTable("is not found for",
+			func(id string) {
+				_, err := store.GetComment(GinkgoT().Context(), id)
+				Expect(err).To(MatchError(domain.ErrNotFound))
+			},
+			Entry("a malformed id", "nope"),
+			Entry("an empty id", ""),
+			Entry("a well-formed id that names nothing", "999999999"),
+		)
+	})
+
+	Describe("DeleteComment", func() {
+		DescribeTable("is not found for",
+			func(id string) {
+				Expect(store.DeleteComment(GinkgoT().Context(), id)).To(MatchError(domain.ErrNotFound))
+			},
+			Entry("a malformed id", "nope"),
+			Entry("an empty id", ""),
+			Entry("a well-formed id that names nothing", "999999999"),
+		)
+	})
 
 	Describe("UpdateComment", func() {
 		Context("when the comment is not there", func() {

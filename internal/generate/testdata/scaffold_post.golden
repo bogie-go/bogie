@@ -185,16 +185,28 @@ import (
 )
 
 var _ = Describe("Posts", func() {
-	DescribeTable("an unknown post is not found",
-		func(id string) {
-			_, err := store.GetPost(GinkgoT().Context(), id)
-			Expect(err).To(MatchError(domain.ErrNotFound))
-			Expect(store.DeletePost(GinkgoT().Context(), id)).To(MatchError(domain.ErrNotFound))
-		},
-		Entry("a malformed id", "nope"),
-		Entry("an empty id", ""),
-		Entry("a well-formed id that names nothing", "999999999"),
-	)
+	Describe("GetPost", func() {
+		DescribeTable("is not found for",
+			func(id string) {
+				_, err := store.GetPost(GinkgoT().Context(), id)
+				Expect(err).To(MatchError(domain.ErrNotFound))
+			},
+			Entry("a malformed id", "nope"),
+			Entry("an empty id", ""),
+			Entry("a well-formed id that names nothing", "999999999"),
+		)
+	})
+
+	Describe("DeletePost", func() {
+		DescribeTable("is not found for",
+			func(id string) {
+				Expect(store.DeletePost(GinkgoT().Context(), id)).To(MatchError(domain.ErrNotFound))
+			},
+			Entry("a malformed id", "nope"),
+			Entry("an empty id", ""),
+			Entry("a well-formed id that names nothing", "999999999"),
+		)
+	})
 
 	Describe("UpdatePost", func() {
 		Context("when the post is not there", func() {

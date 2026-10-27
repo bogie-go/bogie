@@ -66,41 +66,58 @@ func storeTest(module, name, table string, attrs []Attr, scheme IDScheme) string
 	imports := []string{"\t. \"github.com/onsi/ginkgo/v2\"", "\t. \"github.com/onsi/gomega\""}
 	var b strings.Builder
 	var specs strings.Builder
-	fmt.Fprintf(&specs, `var _ = Describe(%[1]q, func() {
-	DescribeTable("an unknown %[2]s is not found",
-		func(id string) {
-			_, err := store.Get%[3]s(GinkgoT().Context(), id)
-			Expect(err).To(MatchError(domain.ErrNotFound))
-			Expect(store.Delete%[3]s(GinkgoT().Context(), id)).To(MatchError(domain.ErrNotFound))
-		},
-		Entry("a malformed id", "nope"),
-		Entry("an empty id", ""),
-		Entry("a well-formed id that names nothing", %[4]q),
-	)
+	// The model's name as prose, for the spec sentences: each one names the
+	// model rather than saying "it", so it reads whole under its Describe.
+	word := strings.ReplaceAll(name, "_", " ")
 
-	Describe("Update%[3]s", func() {
-		Context("when the %[2]s is not there", func() {
-			var missing domain.%[3]s
+	// Each store method is a Describe; a Context sets up the situation and
+	// an It states one behavior. What is tested is the Describe's name.
+	fmt.Fprintf(&specs, "var _ = Describe(%q, func() {\n", many)
+
+	// An id the store cannot find is not found, whatever else the model holds.
+	notFound := func(call string) string {
+		return fmt.Sprintf(`		DescribeTable("is not found for",
+			func(id string) {
+%s
+			},
+			Entry("a malformed id", "nope"),
+			Entry("an empty id", ""),
+			Entry("a well-formed id that names nothing", %q),
+		)
+`, call, scheme.sampleID())
+	}
+	getNotFound := notFound(fmt.Sprintf("\t\t\t\t_, err := store.Get%[1]s(GinkgoT().Context(), id)\n\t\t\t\tExpect(err).To(MatchError(domain.ErrNotFound))", typ))
+	deleteNotFound := notFound(fmt.Sprintf("\t\t\t\tExpect(store.Delete%[1]s(GinkgoT().Context(), id)).To(MatchError(domain.ErrNotFound))", typ))
+
+	updateMissing := fmt.Sprintf(`		Context("when the %[1]s is not there", func() {
+			var missing domain.%[2]s
 
 			BeforeEach(func() {
-				missing = factories.New%[3]s()
-				missing.ID = %[5]s
-%[6]s			})
+				missing = factories.New%[2]s()
+				missing.ID = %[3]s
+%[4]s			})
 
 			It("is not found", func() {
-				_, err := store.Update%[3]s(GinkgoT().Context(), missing)
+				_, err := store.Update%[2]s(GinkgoT().Context(), missing)
 				Expect(err).To(MatchError(domain.ErrNotFound))
 			})
 		})
-	})
-`, many, name, typ, scheme.sampleID(), missingID, refFields)
+`, word, typ, missingID, refFields)
 
 	if hasRefs {
-		fmt.Fprintf(&specs, `
-	// No round trip here: a %[1]s belongs to a parent that has to be saved
+		fmt.Fprintf(&specs, `	Describe("Get%[1]s", func() {
+%[2]s	})
+
+	Describe("Delete%[1]s", func() {
+%[3]s	})
+
+	Describe("Update%[1]s", func() {
+%[4]s	})
+
+	// No round trip here: a %[5]s belongs to a parent that has to be saved
 	// first. Make the parent with its factory and add the specs, with the
 	// reference set in the factory's "with" function.
-`, name)
+`, typ, getNotFound, deleteNotFound, updateMissing, word)
 	} else {
 		idExpr := "record.ID"
 		if scheme != IDUUID {
@@ -108,47 +125,82 @@ func storeTest(module, name, table string, attrs []Attr, scheme IDScheme) string
 			imports = append([]string{"\t\"strconv\""}, imports...)
 		}
 		var change, check string
+		saves := "saves the " + word
 		for _, a := range attrs {
 			if _, lit := edited(a, scheme); lit != "" {
-				change = fmt.Sprintf("\t\t\trecord.%s = %s\n", a.goName(), lit)
-				check = fmt.Sprintf("\t\t\tExpect(updated.%s).To(BeEquivalentTo(%s))\n", a.goName(), lit)
+				change = fmt.Sprintf("\t\t\t\trecord.%s = %s\n", a.goName(), lit)
+				check = fmt.Sprintf("\t\t\t\tExpect(updated.%s).To(BeEquivalentTo(%s))\n", a.goName(), lit)
+				saves = "stores the change"
 				break
 			}
 		}
-		fmt.Fprintf(&specs, `
-	Context("with a saved %[1]s", func() {
-		var record domain.%[2]s
-		var id string
+		fmt.Fprintf(&specs, `	Describe("Get%[2]s", func() {
+%[9]s
+		Context("with a saved %[1]s", func() {
+			var record domain.%[2]s
 
-		BeforeEach(func() {
-			record = factories.%[2]s(GinkgoT(), store)
-			id = %[3]s
-		})
+			BeforeEach(func() {
+				record = factories.%[2]s(GinkgoT(), store)
+			})
 
-		It("reads it back by id", func() {
-			Expect(store.Get%[2]s(GinkgoT().Context(), id)).To(Equal(record))
-		})
-
-		It("lists it", func() {
-			all, err := store.List%[4]s(GinkgoT().Context(), 10)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(all).To(HaveLen(1))
-			Expect(all[0].ID).To(Equal(record.ID))
-		})
-
-		It("updates it", func() {
-%[5]s			updated, err := store.Update%[2]s(GinkgoT().Context(), record)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(updated.ID).To(Equal(record.ID))
-%[6]s		})
-
-		It("deletes it", func() {
-			Expect(store.Delete%[2]s(GinkgoT().Context(), id)).To(Succeed())
-			_, err := store.Get%[2]s(GinkgoT().Context(), id)
-			Expect(err).To(MatchError(domain.ErrNotFound))
+			It("finds the %[1]s by id", func() {
+				Expect(store.Get%[2]s(GinkgoT().Context(), %[3]s)).To(Equal(record))
+			})
 		})
 	})
-`, name, typ, idExpr, many, change, check)
+
+	Describe("List%[4]s", func() {
+		Context("with a saved %[1]s", func() {
+			var record domain.%[2]s
+
+			BeforeEach(func() {
+				record = factories.%[2]s(GinkgoT(), store)
+			})
+
+			It("includes the saved %[1]s", func() {
+				all, err := store.List%[4]s(GinkgoT().Context(), 10)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(all).To(HaveLen(1))
+				Expect(all[0].ID).To(Equal(record.ID))
+			})
+		})
+	})
+
+	Describe("Update%[2]s", func() {
+		Context("with a saved %[1]s", func() {
+			var record domain.%[2]s
+
+			BeforeEach(func() {
+				record = factories.%[2]s(GinkgoT(), store)
+			})
+
+			It(%[7]q, func() {
+%[5]s				updated, err := store.Update%[2]s(GinkgoT().Context(), record)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(updated.ID).To(Equal(record.ID))
+%[6]s			})
+		})
+
+%[8]s	})
+
+	Describe("Delete%[2]s", func() {
+%[10]s
+		Context("with a saved %[1]s", func() {
+			var record domain.%[2]s
+
+			BeforeEach(func() {
+				record = factories.%[2]s(GinkgoT(), store)
+			})
+
+			It("removes the %[1]s", func() {
+				id := %[3]s
+				Expect(store.Delete%[2]s(GinkgoT().Context(), id)).To(Succeed())
+				_, err := store.Get%[2]s(GinkgoT().Context(), id)
+				Expect(err).To(MatchError(domain.ErrNotFound))
+			})
+		})
+	})
+`, word, typ, idExpr, many, change, check, saves, updateMissing, getNotFound, deleteNotFound)
 	}
 	specs.WriteString("})\n")
 
