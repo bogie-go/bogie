@@ -26,8 +26,8 @@ UPDATE pings SET updated_at = now() WHERE id = $1 RETURNING *;
 
 -- name: DeletePing :execrows
 DELETE FROM pings WHERE id = $1;
-==> app/domain/ping.go
-package domain
+==> app/models/ping.go
+package models
 
 import (
 	"time"
@@ -49,8 +49,8 @@ type Ping struct {
 func (p Ping) Validate() error {
 	return nil
 }
-==> app/models/pings.go
-package models
+==> db/adapter/pings.go
+package adapter
 
 import (
 	"context"
@@ -60,12 +60,12 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"example.com/blog/app/domain"
+	"example.com/blog/app/models"
 	"example.com/blog/db/sqlc"
 )
 
-// Pings, as the domain sees them. Each method converts domain.Ping to and from
-// the row type sqlc generated, and maps pgx's "no rows" to domain.ErrNotFound
+// Pings, as the models see them. Each method converts models.Ping to and from
+// the row type sqlc generated, and maps pgx's "no rows" to models.ErrNotFound
 // so callers never import pgx to ask a question.
 //
 // Written by `bogie g model`: overwritten whole on the next run. A
@@ -74,40 +74,40 @@ import (
 // CreatePing validates a ping, inserts it, and returns it with its id and
 // timestamps. Validation runs on save, as Rails's does, so every caller
 // gets it and none can forget it.
-func (s *Store) CreatePing(ctx context.Context, p domain.Ping) (domain.Ping, error) {
+func (s *Store) CreatePing(ctx context.Context, p models.Ping) (models.Ping, error) {
 	if err := p.Validate(); err != nil {
-		return domain.Ping{}, err
+		return models.Ping{}, err
 	}
 	row, err := s.q.CreatePing(ctx)
 	if err != nil {
-		return domain.Ping{}, fmt.Errorf("models: create ping: %w", err)
+		return models.Ping{}, fmt.Errorf("store: create ping: %w", err)
 	}
 	return pingFromRow(row), nil
 }
 
 // GetPing finds one ping. An id that is not a valid id is simply not found.
-func (s *Store) GetPing(ctx context.Context, id string) (domain.Ping, error) {
+func (s *Store) GetPing(ctx context.Context, id string) (models.Ping, error) {
 	pk, err := parseID(id)
 	if err != nil {
-		return domain.Ping{}, domain.ErrNotFound
+		return models.Ping{}, models.ErrNotFound
 	}
 	row, err := s.q.GetPing(ctx, pk)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		return domain.Ping{}, domain.ErrNotFound
+		return models.Ping{}, models.ErrNotFound
 	case err != nil:
-		return domain.Ping{}, fmt.Errorf("models: get ping %s: %w", id, err)
+		return models.Ping{}, fmt.Errorf("store: get ping %s: %w", id, err)
 	}
 	return pingFromRow(row), nil
 }
 
 // ListPings returns the newest pings first, at most limit of them.
-func (s *Store) ListPings(ctx context.Context, limit int32) ([]domain.Ping, error) {
+func (s *Store) ListPings(ctx context.Context, limit int32) ([]models.Ping, error) {
 	rows, err := s.q.ListPings(ctx, limit)
 	if err != nil {
-		return nil, fmt.Errorf("models: list pings: %w", err)
+		return nil, fmt.Errorf("store: list pings: %w", err)
 	}
-	out := make([]domain.Ping, 0, len(rows))
+	out := make([]models.Ping, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, pingFromRow(r))
 	}
@@ -115,17 +115,17 @@ func (s *Store) ListPings(ctx context.Context, limit int32) ([]domain.Ping, erro
 }
 
 // UpdatePing validates a ping, writes its columns, and returns the stored row.
-func (s *Store) UpdatePing(ctx context.Context, p domain.Ping) (domain.Ping, error) {
+func (s *Store) UpdatePing(ctx context.Context, p models.Ping) (models.Ping, error) {
 	if err := p.Validate(); err != nil {
-		return domain.Ping{}, err
+		return models.Ping{}, err
 	}
 	pk := p.ID
 	row, err := s.q.UpdatePing(ctx, pk)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		return domain.Ping{}, domain.ErrNotFound
+		return models.Ping{}, models.ErrNotFound
 	case err != nil:
-		return domain.Ping{}, fmt.Errorf("models: update ping %v: %w", p.ID, err)
+		return models.Ping{}, fmt.Errorf("store: update ping %v: %w", p.ID, err)
 	}
 	return pingFromRow(row), nil
 }
@@ -134,31 +134,31 @@ func (s *Store) UpdatePing(ctx context.Context, p domain.Ping) (domain.Ping, err
 func (s *Store) DeletePing(ctx context.Context, id string) error {
 	pk, err := parseID(id)
 	if err != nil {
-		return domain.ErrNotFound
+		return models.ErrNotFound
 	}
 	n, err := s.q.DeletePing(ctx, pk)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
-			return fmt.Errorf("%w: ping is still in use", domain.ErrInvalid)
+			return fmt.Errorf("%w: ping is still in use", models.ErrInvalid)
 		}
-		return fmt.Errorf("models: delete ping %s: %w", id, err)
+		return fmt.Errorf("store: delete ping %s: %w", id, err)
 	}
 	if n == 0 {
-		return domain.ErrNotFound
+		return models.ErrNotFound
 	}
 	return nil
 }
 
-func pingFromRow(r sqlc.Ping) domain.Ping {
-	return domain.Ping{
+func pingFromRow(r sqlc.Ping) models.Ping {
+	return models.Ping{
 		ID:        r.ID,
 		CreatedAt: r.CreatedAt.Time,
 		UpdatedAt: r.UpdatedAt.Time,
 	}
 }
-==> app/models/pings_test.go
-package models_test
+==> db/adapter/pings_test.go
+package adapter_test
 
 import (
 	"strconv"
@@ -166,7 +166,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"example.com/blog/app/domain"
+	"example.com/blog/app/models"
 	"example.com/blog/test/factories"
 )
 
@@ -175,7 +175,7 @@ var _ = Describe("Pings", func() {
 		DescribeTable("is not found for",
 			func(id string) {
 				_, err := store.GetPing(GinkgoT().Context(), id)
-				Expect(err).To(MatchError(domain.ErrNotFound))
+				Expect(err).To(MatchError(models.ErrNotFound))
 			},
 			Entry("a malformed id", "nope"),
 			Entry("an empty id", ""),
@@ -183,7 +183,7 @@ var _ = Describe("Pings", func() {
 		)
 
 		Context("with a saved ping", func() {
-			var record domain.Ping
+			var record models.Ping
 
 			BeforeEach(func() {
 				record = factories.Ping(GinkgoT(), store)
@@ -197,7 +197,7 @@ var _ = Describe("Pings", func() {
 
 	Describe("ListPings", func() {
 		Context("with a saved ping", func() {
-			var record domain.Ping
+			var record models.Ping
 
 			BeforeEach(func() {
 				record = factories.Ping(GinkgoT(), store)
@@ -214,7 +214,7 @@ var _ = Describe("Pings", func() {
 
 	Describe("UpdatePing", func() {
 		Context("with a saved ping", func() {
-			var record domain.Ping
+			var record models.Ping
 
 			BeforeEach(func() {
 				record = factories.Ping(GinkgoT(), store)
@@ -228,7 +228,7 @@ var _ = Describe("Pings", func() {
 		})
 
 		Context("when the ping is not there", func() {
-			var missing domain.Ping
+			var missing models.Ping
 
 			BeforeEach(func() {
 				missing = factories.NewPing()
@@ -237,7 +237,7 @@ var _ = Describe("Pings", func() {
 
 			It("is not found", func() {
 				_, err := store.UpdatePing(GinkgoT().Context(), missing)
-				Expect(err).To(MatchError(domain.ErrNotFound))
+				Expect(err).To(MatchError(models.ErrNotFound))
 			})
 		})
 	})
@@ -245,7 +245,7 @@ var _ = Describe("Pings", func() {
 	Describe("DeletePing", func() {
 		DescribeTable("is not found for",
 			func(id string) {
-				Expect(store.DeletePing(GinkgoT().Context(), id)).To(MatchError(domain.ErrNotFound))
+				Expect(store.DeletePing(GinkgoT().Context(), id)).To(MatchError(models.ErrNotFound))
 			},
 			Entry("a malformed id", "nope"),
 			Entry("an empty id", ""),
@@ -253,7 +253,7 @@ var _ = Describe("Pings", func() {
 		)
 
 		Context("with a saved ping", func() {
-			var record domain.Ping
+			var record models.Ping
 
 			BeforeEach(func() {
 				record = factories.Ping(GinkgoT(), store)
@@ -263,7 +263,7 @@ var _ = Describe("Pings", func() {
 				id := strconv.FormatInt(record.ID, 10)
 				Expect(store.DeletePing(GinkgoT().Context(), id)).To(Succeed())
 				_, err := store.GetPing(GinkgoT().Context(), id)
-				Expect(err).To(MatchError(domain.ErrNotFound))
+				Expect(err).To(MatchError(models.ErrNotFound))
 			})
 		})
 	})
@@ -274,8 +274,8 @@ package factories
 import (
 	"context"
 
-	"example.com/blog/app/domain"
 	"example.com/blog/app/models"
+	"example.com/blog/db/adapter"
 )
 
 // NewPing is a valid ping that is not saved: every attribute has a default,
@@ -284,8 +284,8 @@ import (
 // Written once by `bogie g model` and yours to edit: add an attribute's
 // default here when you add the column. Running the generator again leaves a
 // changed file alone unless --force.
-func NewPing(with ...func(*domain.Ping)) domain.Ping {
-	record := domain.Ping{}
+func NewPing(with ...func(*models.Ping)) models.Ping {
+	record := models.Ping{}
 	for _, f := range with {
 		f(&record)
 	}
@@ -294,7 +294,7 @@ func NewPing(with ...func(*domain.Ping)) domain.Ping {
 
 // Ping saves a NewPing through the real store and fails the spec if it
 // cannot, so a spec reads as its arrangement and nothing else.
-func Ping(t T, s *models.Store, with ...func(*domain.Ping)) domain.Ping {
+func Ping(t T, s *adapter.Store, with ...func(*models.Ping)) models.Ping {
 	t.Helper()
 	created, err := s.CreatePing(context.Background(), NewPing(with...))
 	if err != nil {

@@ -28,7 +28,7 @@ type Vars struct {
 	// Jobs adds River: the worker role, app/jobs, the schema at boot.
 	Jobs bool
 	// IDScheme is "bigint" or "uuid" (generate.IDScheme as a plain string,
-	// so this package need not import generate): which app/models/*.go id
+	// so this package need not import generate): which db/adapter/*.go id
 	// helper gets written, uuid.go or id.go.
 	IDScheme string
 	// Mascot is the welcome page's image as a data URI (templates.MascotDataURI).

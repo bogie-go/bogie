@@ -32,8 +32,8 @@ UPDATE comments SET body = $2, post_id = $3, score = $4, published_at = $5, meta
 
 -- name: DeleteComment :execrows
 DELETE FROM comments WHERE id = $1;
-==> app/domain/comment.go
-package domain
+==> app/models/comment.go
+package models
 
 import (
 	"encoding/json"
@@ -61,8 +61,8 @@ type Comment struct {
 func (c Comment) Validate() error {
 	return nil
 }
-==> app/models/comments.go
-package models
+==> db/adapter/comments.go
+package adapter
 
 import (
 	"context"
@@ -73,12 +73,12 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"example.com/blog/app/domain"
+	"example.com/blog/app/models"
 	"example.com/blog/db/sqlc"
 )
 
-// Comments, as the domain sees them. Each method converts domain.Comment to and from
-// the row type sqlc generated, and maps pgx's "no rows" to domain.ErrNotFound
+// Comments, as the models see them. Each method converts models.Comment to and from
+// the row type sqlc generated, and maps pgx's "no rows" to models.ErrNotFound
 // so callers never import pgx to ask a question.
 //
 // Written by `bogie g model`: overwritten whole on the next run. A
@@ -87,40 +87,40 @@ import (
 // CreateComment validates a comment, inserts it, and returns it with its id and
 // timestamps. Validation runs on save, as Rails's does, so every caller
 // gets it and none can forget it.
-func (s *Store) CreateComment(ctx context.Context, c domain.Comment) (domain.Comment, error) {
+func (s *Store) CreateComment(ctx context.Context, c models.Comment) (models.Comment, error) {
 	if err := c.Validate(); err != nil {
-		return domain.Comment{}, err
+		return models.Comment{}, err
 	}
 	row, err := s.q.CreateComment(ctx, sqlc.CreateCommentParams{Body: c.Body, PostID: c.PostID, Score: c.Score, PublishedAt: pgtype.Timestamptz{Time: c.PublishedAt, Valid: true}, Meta: c.Meta})
 	if err != nil {
-		return domain.Comment{}, fmt.Errorf("models: create comment: %w", err)
+		return models.Comment{}, fmt.Errorf("store: create comment: %w", err)
 	}
 	return commentFromRow(row), nil
 }
 
 // GetComment finds one comment. An id that is not a valid id is simply not found.
-func (s *Store) GetComment(ctx context.Context, id string) (domain.Comment, error) {
+func (s *Store) GetComment(ctx context.Context, id string) (models.Comment, error) {
 	pk, err := parseID(id)
 	if err != nil {
-		return domain.Comment{}, domain.ErrNotFound
+		return models.Comment{}, models.ErrNotFound
 	}
 	row, err := s.q.GetComment(ctx, pk)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		return domain.Comment{}, domain.ErrNotFound
+		return models.Comment{}, models.ErrNotFound
 	case err != nil:
-		return domain.Comment{}, fmt.Errorf("models: get comment %s: %w", id, err)
+		return models.Comment{}, fmt.Errorf("store: get comment %s: %w", id, err)
 	}
 	return commentFromRow(row), nil
 }
 
 // ListComments returns the newest comments first, at most limit of them.
-func (s *Store) ListComments(ctx context.Context, limit int32) ([]domain.Comment, error) {
+func (s *Store) ListComments(ctx context.Context, limit int32) ([]models.Comment, error) {
 	rows, err := s.q.ListComments(ctx, limit)
 	if err != nil {
-		return nil, fmt.Errorf("models: list comments: %w", err)
+		return nil, fmt.Errorf("store: list comments: %w", err)
 	}
-	out := make([]domain.Comment, 0, len(rows))
+	out := make([]models.Comment, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, commentFromRow(r))
 	}
@@ -128,17 +128,17 @@ func (s *Store) ListComments(ctx context.Context, limit int32) ([]domain.Comment
 }
 
 // UpdateComment validates a comment, writes its columns, and returns the stored row.
-func (s *Store) UpdateComment(ctx context.Context, c domain.Comment) (domain.Comment, error) {
+func (s *Store) UpdateComment(ctx context.Context, c models.Comment) (models.Comment, error) {
 	if err := c.Validate(); err != nil {
-		return domain.Comment{}, err
+		return models.Comment{}, err
 	}
 	pk := c.ID
 	row, err := s.q.UpdateComment(ctx, sqlc.UpdateCommentParams{ID: pk, Body: c.Body, PostID: c.PostID, Score: c.Score, PublishedAt: pgtype.Timestamptz{Time: c.PublishedAt, Valid: true}, Meta: c.Meta})
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		return domain.Comment{}, domain.ErrNotFound
+		return models.Comment{}, models.ErrNotFound
 	case err != nil:
-		return domain.Comment{}, fmt.Errorf("models: update comment %v: %w", c.ID, err)
+		return models.Comment{}, fmt.Errorf("store: update comment %v: %w", c.ID, err)
 	}
 	return commentFromRow(row), nil
 }
@@ -147,24 +147,24 @@ func (s *Store) UpdateComment(ctx context.Context, c domain.Comment) (domain.Com
 func (s *Store) DeleteComment(ctx context.Context, id string) error {
 	pk, err := parseID(id)
 	if err != nil {
-		return domain.ErrNotFound
+		return models.ErrNotFound
 	}
 	n, err := s.q.DeleteComment(ctx, pk)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
-			return fmt.Errorf("%w: comment is still in use", domain.ErrInvalid)
+			return fmt.Errorf("%w: comment is still in use", models.ErrInvalid)
 		}
-		return fmt.Errorf("models: delete comment %s: %w", id, err)
+		return fmt.Errorf("store: delete comment %s: %w", id, err)
 	}
 	if n == 0 {
-		return domain.ErrNotFound
+		return models.ErrNotFound
 	}
 	return nil
 }
 
-func commentFromRow(r sqlc.Comment) domain.Comment {
-	return domain.Comment{
+func commentFromRow(r sqlc.Comment) models.Comment {
+	return models.Comment{
 		ID:          r.ID,
 		Body:        r.Body,
 		PostID:      r.PostID,
@@ -175,14 +175,14 @@ func commentFromRow(r sqlc.Comment) domain.Comment {
 		UpdatedAt:   r.UpdatedAt.Time,
 	}
 }
-==> app/models/comments_test.go
-package models_test
+==> db/adapter/comments_test.go
+package adapter_test
 
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"example.com/blog/app/domain"
+	"example.com/blog/app/models"
 	"example.com/blog/test/factories"
 )
 
@@ -191,7 +191,7 @@ var _ = Describe("Comments", func() {
 		DescribeTable("is not found for",
 			func(id string) {
 				_, err := store.GetComment(GinkgoT().Context(), id)
-				Expect(err).To(MatchError(domain.ErrNotFound))
+				Expect(err).To(MatchError(models.ErrNotFound))
 			},
 			Entry("a malformed id", "nope"),
 			Entry("an empty id", ""),
@@ -202,7 +202,7 @@ var _ = Describe("Comments", func() {
 	Describe("DeleteComment", func() {
 		DescribeTable("is not found for",
 			func(id string) {
-				Expect(store.DeleteComment(GinkgoT().Context(), id)).To(MatchError(domain.ErrNotFound))
+				Expect(store.DeleteComment(GinkgoT().Context(), id)).To(MatchError(models.ErrNotFound))
 			},
 			Entry("a malformed id", "nope"),
 			Entry("an empty id", ""),
@@ -212,7 +212,7 @@ var _ = Describe("Comments", func() {
 
 	Describe("UpdateComment", func() {
 		Context("when the comment is not there", func() {
-			var missing domain.Comment
+			var missing models.Comment
 
 			BeforeEach(func() {
 				missing = factories.NewComment()
@@ -221,7 +221,7 @@ var _ = Describe("Comments", func() {
 
 			It("is not found", func() {
 				_, err := store.UpdateComment(GinkgoT().Context(), missing)
-				Expect(err).To(MatchError(domain.ErrNotFound))
+				Expect(err).To(MatchError(models.ErrNotFound))
 			})
 		})
 	})
@@ -237,8 +237,8 @@ import (
 	"context"
 	"time"
 
-	"example.com/blog/app/domain"
 	"example.com/blog/app/models"
+	"example.com/blog/db/adapter"
 )
 
 // NewComment is a valid comment that is not saved: every attribute has a default,
@@ -251,9 +251,9 @@ import (
 // Left at zero: PostID. The parent has to exist first, so set it from the
 // parent's own factory:
 //
-//	factories.Comment(t, s, func(v *domain.Comment) { v.PostID = parent.ID })
-func NewComment(with ...func(*domain.Comment)) domain.Comment {
-	record := domain.Comment{
+//	factories.Comment(t, s, func(v *models.Comment) { v.PostID = parent.ID })
+func NewComment(with ...func(*models.Comment)) models.Comment {
+	record := models.Comment{
 		Body:        Sequence("body "),
 		Score:       1,
 		PublishedAt: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
@@ -267,7 +267,7 @@ func NewComment(with ...func(*domain.Comment)) domain.Comment {
 
 // Comment saves a NewComment through the real store and fails the spec if it
 // cannot, so a spec reads as its arrangement and nothing else.
-func Comment(t T, s *models.Store, with ...func(*domain.Comment)) domain.Comment {
+func Comment(t T, s *adapter.Store, with ...func(*models.Comment)) models.Comment {
 	t.Helper()
 	created, err := s.CreateComment(context.Background(), NewComment(with...))
 	if err != nil {

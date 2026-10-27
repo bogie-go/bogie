@@ -14,7 +14,7 @@ import (
 // controller is wired:
 //
 //	type healthService interface {
-//		Get(ctx context.Context, id string) (domain.Thing, error)
+//		Get(ctx context.Context, id string) (models.Thing, error)
 //	}
 type HealthController struct {
 	Log *slog.Logger

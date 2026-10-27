@@ -649,17 +649,17 @@ func (a auth) apiKey(now time.Time) ([]File, []Wire, error) {
 		switch files[i].Path {
 		case "db/queries/api_keys.sql":
 			files[i].Content += "\n-- name: GetApiKeyByPrefix :one\nSELECT * FROM api_keys WHERE prefix = $1;\n"
-		case "app/models/api_keys.go":
+		case "db/adapter/api_keys.go":
 			files[i].Content += `
 // GetApiKeyByPrefix finds the key a presented "<prefix>.<secret>" names, by
 // its prefix; the service compares the secret against the digest.
-func (s *Store) GetApiKeyByPrefix(ctx context.Context, prefix string) (domain.ApiKey, error) {
+func (s *Store) GetApiKeyByPrefix(ctx context.Context, prefix string) (models.ApiKey, error) {
 	row, err := s.q.GetApiKeyByPrefix(ctx, prefix)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		return domain.ApiKey{}, domain.ErrNotFound
+		return models.ApiKey{}, models.ErrNotFound
 	case err != nil:
-		return domain.ApiKey{}, fmt.Errorf("models: get api key by prefix: %w", err)
+		return models.ApiKey{}, fmt.Errorf("store: get api key by prefix: %w", err)
 	}
 	return api_keyFromRow(row), nil
 }
@@ -693,8 +693,8 @@ var ErrInvalid = errors.New("api key: invalid")
 
 // store is the slice of the store this service uses (rule 2).
 type store interface {
-	CreateApiKey(ctx context.Context, k domain.ApiKey) (domain.ApiKey, error)
-	GetApiKeyByPrefix(ctx context.Context, prefix string) (domain.ApiKey, error)
+	CreateApiKey(ctx context.Context, k models.ApiKey) (models.ApiKey, error)
+	GetApiKeyByPrefix(ctx context.Context, prefix string) (models.ApiKey, error)
 }
 
 // Service makes and verifies keys.
@@ -707,38 +707,38 @@ func New(s store) *Service { return &Service{Store: s} }
 
 // Create makes a key for name and returns it in full, "<prefix>.<secret>",
 // the only time the secret is ever seen; and the row that was stored.
-func (s *Service) Create(ctx context.Context, name string) (string, domain.ApiKey, error) {
+func (s *Service) Create(ctx context.Context, name string) (string, models.ApiKey, error) {
 	prefix, err := random(6)
 	if err != nil {
-		return "", domain.ApiKey{}, err
+		return "", models.ApiKey{}, err
 	}
 	secret, err := random(24)
 	if err != nil {
-		return "", domain.ApiKey{}, err
+		return "", models.ApiKey{}, err
 	}
 	digest, err := bcrypt.GenerateFromPassword([]byte(secret), bcrypt.DefaultCost)
 	if err != nil {
-		return "", domain.ApiKey{}, fmt.Errorf("api keys: digest: %%w", err)
+		return "", models.ApiKey{}, fmt.Errorf("api keys: digest: %%w", err)
 	}
-	key, err := s.Store.CreateApiKey(ctx, domain.ApiKey{Name: name, Prefix: prefix, Digest: string(digest)})
+	key, err := s.Store.CreateApiKey(ctx, models.ApiKey{Name: name, Prefix: prefix, Digest: string(digest)})
 	if err != nil {
-		return "", domain.ApiKey{}, err
+		return "", models.ApiKey{}, err
 	}
 	return prefix + "." + secret, key, nil
 }
 
 // Verify checks a presented key and returns the row it names.
-func (s *Service) Verify(ctx context.Context, presented string) (domain.ApiKey, error) {
+func (s *Service) Verify(ctx context.Context, presented string) (models.ApiKey, error) {
 	prefix, secret, ok := strings.Cut(presented, ".")
 	if !ok || prefix == "" || secret == "" {
-		return domain.ApiKey{}, ErrInvalid
+		return models.ApiKey{}, ErrInvalid
 	}
 	key, err := s.Store.GetApiKeyByPrefix(ctx, prefix)
 	if err != nil {
-		return domain.ApiKey{}, ErrInvalid
+		return models.ApiKey{}, ErrInvalid
 	}
 	if bcrypt.CompareHashAndPassword([]byte(key.Digest), []byte(secret)) != nil {
-		return domain.ApiKey{}, ErrInvalid
+		return models.ApiKey{}, ErrInvalid
 	}
 	return key, nil
 }
@@ -750,7 +750,7 @@ func random(n int) (string, error) {
 	}
 	return hex.EncodeToString(b), nil
 }
-`, a.module+"/app/domain")},
+`, a.module+"/app/models")},
 		File{Path: "app/services/api_keys/api_keys_suite_test.go", Content: suiteFile("api_keys", "APIKeys")},
 		File{Path: "app/services/api_keys/api_keys_test.go", Content: fmt.Sprintf(`package api_keys_test
 
@@ -765,18 +765,18 @@ import (
 )
 
 // fakeStore keeps keys in memory, by prefix.
-type fakeStore struct{ keys map[string]domain.ApiKey }
+type fakeStore struct{ keys map[string]models.ApiKey }
 
-func (f *fakeStore) CreateApiKey(_ context.Context, k domain.ApiKey) (domain.ApiKey, error) {
+func (f *fakeStore) CreateApiKey(_ context.Context, k models.ApiKey) (models.ApiKey, error) {
 	k.ID = %[2]s
 	f.keys[k.Prefix] = k
 	return k, nil
 }
 
-func (f *fakeStore) GetApiKeyByPrefix(_ context.Context, prefix string) (domain.ApiKey, error) {
+func (f *fakeStore) GetApiKeyByPrefix(_ context.Context, prefix string) (models.ApiKey, error) {
 	k, ok := f.keys[prefix]
 	if !ok {
-		return domain.ApiKey{}, domain.ErrNotFound
+		return models.ApiKey{}, models.ErrNotFound
 	}
 	return k, nil
 }
@@ -786,11 +786,11 @@ var _ = Describe("Service", func() {
 		svc       *api_keys.Service
 		ctx       context.Context
 		presented string
-		made      domain.ApiKey
+		made      models.ApiKey
 	)
 
 	BeforeEach(func() {
-		svc = api_keys.New(&fakeStore{keys: map[string]domain.ApiKey{}})
+		svc = api_keys.New(&fakeStore{keys: map[string]models.ApiKey{}})
 		ctx = context.Background()
 	})
 
@@ -854,7 +854,7 @@ var _ = Describe("Service", func() {
 		})
 	})
 })
-`, a.module+"/app/domain", fakeIDAssign(a.scheme), a.module+"/app/services/api_keys")},
+`, a.module+"/app/models", fakeIDAssign(a.scheme), a.module+"/app/services/api_keys")},
 		File{Path: "app/middlewares/require_api_key.go", Content: fmt.Sprintf(`package middlewares
 
 import (
@@ -871,7 +871,7 @@ import (
 // apiKeys is the slice of the api_keys service this middleware uses,
 // declared here (rule 2).
 type apiKeys interface {
-	Verify(ctx context.Context, presented string) (domain.ApiKey, error)
+	Verify(ctx context.Context, presented string) (models.ApiKey, error)
 }
 
 const apiKeyNameKey = "api_key"
@@ -900,7 +900,7 @@ func RequireAPIKey(keys apiKeys) gin.HandlerFunc {
 // APIKeyName is the name of the key the request presented, or "" on a route
 // that RequireAPIKey does not guard.
 func APIKeyName(c *gin.Context) string { return c.GetString(apiKeyNameKey) }
-`, a.module+"/app/domain", a.module+"/app/views", a.name, a.name)},
+`, a.module+"/app/models", a.module+"/app/views", a.name, a.name)},
 		File{Path: "app/middlewares/require_api_key_test.go", Content: fmt.Sprintf(`package middlewares_test
 
 import (
@@ -920,11 +920,11 @@ import (
 // fakeAPIKeys accepts one key, "good.key".
 type fakeAPIKeys struct{}
 
-func (fakeAPIKeys) Verify(_ context.Context, presented string) (domain.ApiKey, error) {
+func (fakeAPIKeys) Verify(_ context.Context, presented string) (models.ApiKey, error) {
 	if presented == "good.key" {
-		return domain.ApiKey{Name: "billing"}, nil
+		return models.ApiKey{Name: "billing"}, nil
 	}
-	return domain.ApiKey{}, errors.New("invalid")
+	return models.ApiKey{}, errors.New("invalid")
 }
 
 func apiKeyRequest(authorization string) *httptest.ResponseRecorder {
@@ -968,7 +968,7 @@ var _ = Describe("RequireAPIKey", func() {
 		It("answers 401", func() { Expect(rec.Code).To(Equal(http.StatusUnauthorized)) })
 	})
 })
-`, a.module+"/app/middlewares", a.module+"/app/domain")},
+`, a.module+"/app/middlewares", a.module+"/app/models")},
 		File{Path: "app/controllers/authentication_api_key.go", Content: fmt.Sprintf(`package controllers
 
 import (
@@ -1019,7 +1019,7 @@ func runAPIKeys(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	store, err := models.Open(ctx, cfg.Database.URL)
+	store, err := adapter.Open(ctx, cfg.Database.URL)
 	if err != nil {
 		return err
 	}
@@ -1032,7 +1032,7 @@ func runAPIKeys(ctx context.Context, args []string) error {
 	fmt.Println(key)
 	return nil
 }
-`, a.module+"/app/models", a.module+"/app/services/api_keys", a.module+"/config", a.name)},
+`, a.module+"/db/adapter", a.module+"/app/services/api_keys", a.module+"/config", a.name)},
 	)
 
 	wires := []Wire{

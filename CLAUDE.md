@@ -121,7 +121,7 @@ These come from DESIGN.md §3 and are baked into templates and `.golangci.yml`:
 
 1. `ctx context.Context` first for anything doing I/O.
 2. Interfaces are declared by the consumer.
-3. `app/domain` imports nothing third-party.
+3. `app/models` imports nothing third-party.
 4. Constructors return `(T, error)`; only `main` exits.
 5. `*gin.Context` never travels below `app/controllers`.
 6. No `util/`, `helpers/`, `common/`.
@@ -136,7 +136,7 @@ tests that assert a named error and no partial write.
 ## Open questions (DESIGN.md §12)
 
 Whether migrate-at-boot stays the default (§12.11). Views, jobs, credentials,
-live reload (§12.12) and the domain package name (`app/domain/`, fixed) are
+live reload (§12.12) and the models package name (`app/models/`, fixed; it was `app/domain/` until 2026-10-27) are
 decided. Still open: `bin/dev` (§12.13, tried and withdrawn), plus
 `bin/setup` and an actionable hint when Postgres is unreachable, which are
 the rest of issue #11.

@@ -184,7 +184,7 @@ func destroyIn(root string, args []string, out io.Writer) error {
 		// model may have been given by hand.
 		files = append(files,
 			generate.File{Path: "db/sqlc/" + generate.Plural(name) + ".sql.go"},
-			generate.File{Path: "app/domain/" + name + "_test.go"})
+			generate.File{Path: "app/models/" + name + "_test.go"})
 		runSqlc = true
 	case "migration":
 		var f generate.File
@@ -217,7 +217,7 @@ func destroyIn(root string, args []string, out io.Writer) error {
 			return err
 		}
 		// A controller or service package directory goes once it is empty.
-		// The layout's own directories (db/migrate, app/domain, ...) stay.
+		// The layout's own directories (db/migrate, app/models, ...) stay.
 		if generator == "controller" || generator == "service" {
 			_ = os.Remove(filepath.Dir(abs))
 		}

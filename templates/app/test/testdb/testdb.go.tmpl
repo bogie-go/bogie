@@ -14,9 +14,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"{{.Module}}/app/models"
 	"{{.Module}}/app/services/migrate"
 	"{{.Module}}/config"
+	"{{.Module}}/db/adapter"
 )
 
 // T is the part of *testing.T the helpers need, so they also work with
@@ -38,7 +38,7 @@ var hint = "Is the database up, and the test database created? Run: make up && "
 // each test starts from nothing. The environment is forced to test here so
 // that `go test` run by hand in a development shell can never truncate
 // development data.
-func Store(t T) *models.Store {
+func Store(t T) *adapter.Store {
 	t.Helper()
 	url := testURL(t)
 	ctx := context.Background()
@@ -46,7 +46,7 @@ func Store(t T) *models.Store {
 	if err := migrate.Run(ctx, url, quiet); err != nil {
 		t.Fatalf("migrate: %v\n%s", err, hint)
 	}
-	store, err := models.Open(ctx, url)
+	store, err := adapter.Open(ctx, url)
 	if err != nil {
 		t.Fatalf("%v\n%s", err, hint)
 	}

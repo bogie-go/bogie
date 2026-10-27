@@ -110,8 +110,8 @@ func lowerCamel(s string) string {
 // model's first letter, as Go prefers, but the method it lands in already has
 // a variable of its own: s for a *Store receiver, c for the *gin.Context an
 // action handles, f for a test's fake store. A model whose first letter is
-// that one takes its name in full instead — session domain.Session, comment
-// domain.Comment — which reads no worse and cannot collide. The generated
+// that one takes its name in full instead — session models.Session, comment
+// models.Comment — which reads no worse and cannot collide. The generated
 // files parse either way, so only the compiler catches this; see the golden
 // tests for one model per taken letter.
 func paramName(name, taken string) string {

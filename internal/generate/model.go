@@ -34,15 +34,15 @@ func Model(module, name string, attrs []Attr, scheme IDScheme, now time.Time) ([
 	return []File{
 		migration,
 		{Path: "db/queries/" + table + ".sql", Content: queries(name, table, attrs)},
-		{Path: "app/domain/" + name + ".go", Content: domainType(name, attrs, scheme)},
-		{Path: "app/models/" + table + ".go", Content: store(module, name, table, attrs, scheme)},
-		{Path: "app/models/" + table + "_test.go", Content: storeTest(module, name, table, attrs, scheme)},
+		{Path: "app/models/" + name + ".go", Content: domainType(name, attrs, scheme)},
+		{Path: "db/adapter/" + table + ".go", Content: store(module, name, table, attrs, scheme)},
+		{Path: "db/adapter/" + table + "_test.go", Content: storeTest(module, name, table, attrs, scheme)},
 		{Path: "test/factories/" + table + ".go", Content: factory(module, name, attrs, scheme)},
 	}, nil
 }
 
 // storeTest is the model's spec, against the real test database as every
-// store spec is, in package models_test where the suite's store is already
+// store spec is, in package adapter_test where the suite's store is already
 // built: the not-found cases, which hold for any set of attributes, and a
 // round trip through the model's factory when the model can be saved on its
 // own. A model with a references column cannot: its parent has to exist
@@ -86,11 +86,11 @@ func storeTest(module, name, table string, attrs []Attr, scheme IDScheme) string
 		)
 `, call, scheme.sampleID())
 	}
-	getNotFound := notFound(fmt.Sprintf("\t\t\t\t_, err := store.Get%[1]s(GinkgoT().Context(), id)\n\t\t\t\tExpect(err).To(MatchError(domain.ErrNotFound))", typ))
-	deleteNotFound := notFound(fmt.Sprintf("\t\t\t\tExpect(store.Delete%[1]s(GinkgoT().Context(), id)).To(MatchError(domain.ErrNotFound))", typ))
+	getNotFound := notFound(fmt.Sprintf("\t\t\t\t_, err := store.Get%[1]s(GinkgoT().Context(), id)\n\t\t\t\tExpect(err).To(MatchError(models.ErrNotFound))", typ))
+	deleteNotFound := notFound(fmt.Sprintf("\t\t\t\tExpect(store.Delete%[1]s(GinkgoT().Context(), id)).To(MatchError(models.ErrNotFound))", typ))
 
 	updateMissing := fmt.Sprintf(`		Context("when the %[1]s is not there", func() {
-			var missing domain.%[2]s
+			var missing models.%[2]s
 
 			BeforeEach(func() {
 				missing = factories.New%[2]s()
@@ -99,7 +99,7 @@ func storeTest(module, name, table string, attrs []Attr, scheme IDScheme) string
 
 			It("is not found", func() {
 				_, err := store.Update%[2]s(GinkgoT().Context(), missing)
-				Expect(err).To(MatchError(domain.ErrNotFound))
+				Expect(err).To(MatchError(models.ErrNotFound))
 			})
 		})
 `, word, typ, missingID, refFields)
@@ -137,7 +137,7 @@ func storeTest(module, name, table string, attrs []Attr, scheme IDScheme) string
 		fmt.Fprintf(&specs, `	Describe("Get%[2]s", func() {
 %[9]s
 		Context("with a saved %[1]s", func() {
-			var record domain.%[2]s
+			var record models.%[2]s
 
 			BeforeEach(func() {
 				record = factories.%[2]s(GinkgoT(), store)
@@ -151,7 +151,7 @@ func storeTest(module, name, table string, attrs []Attr, scheme IDScheme) string
 
 	Describe("List%[4]s", func() {
 		Context("with a saved %[1]s", func() {
-			var record domain.%[2]s
+			var record models.%[2]s
 
 			BeforeEach(func() {
 				record = factories.%[2]s(GinkgoT(), store)
@@ -168,7 +168,7 @@ func storeTest(module, name, table string, attrs []Attr, scheme IDScheme) string
 
 	Describe("Update%[2]s", func() {
 		Context("with a saved %[1]s", func() {
-			var record domain.%[2]s
+			var record models.%[2]s
 
 			BeforeEach(func() {
 				record = factories.%[2]s(GinkgoT(), store)
@@ -186,7 +186,7 @@ func storeTest(module, name, table string, attrs []Attr, scheme IDScheme) string
 	Describe("Delete%[2]s", func() {
 %[10]s
 		Context("with a saved %[1]s", func() {
-			var record domain.%[2]s
+			var record models.%[2]s
 
 			BeforeEach(func() {
 				record = factories.%[2]s(GinkgoT(), store)
@@ -196,7 +196,7 @@ func storeTest(module, name, table string, attrs []Attr, scheme IDScheme) string
 				id := %[3]s
 				Expect(store.Delete%[2]s(GinkgoT().Context(), id)).To(Succeed())
 				_, err := store.Get%[2]s(GinkgoT().Context(), id)
-				Expect(err).To(MatchError(domain.ErrNotFound))
+				Expect(err).To(MatchError(models.ErrNotFound))
 			})
 		})
 	})
@@ -204,7 +204,7 @@ func storeTest(module, name, table string, attrs []Attr, scheme IDScheme) string
 	}
 	specs.WriteString("})\n")
 
-	fmt.Fprintf(&b, "package models_test\n\nimport (\n")
+	fmt.Fprintf(&b, "package adapter_test\n\nimport (\n")
 	for _, imp := range imports[:len(imports)-2] {
 		b.WriteString(imp + "\n")
 	}
@@ -212,7 +212,7 @@ func storeTest(module, name, table string, attrs []Attr, scheme IDScheme) string
 		b.WriteString("\n")
 	}
 	b.WriteString(imports[len(imports)-2] + "\n" + imports[len(imports)-1] + "\n\n")
-	fmt.Fprintf(&b, "\t%q\n\t%q\n)\n\n", module+"/app/domain", module+"/test/factories")
+	fmt.Fprintf(&b, "\t%q\n\t%q\n)\n\n", module+"/app/models", module+"/test/factories")
 	b.WriteString(specs.String())
 	return formatted(b.String())
 }
@@ -292,11 +292,11 @@ func factory(module, name string, attrs []Attr, scheme IDScheme) string {
 	if len(third) > 0 {
 		b.WriteString("\n")
 	}
-	fmt.Fprintf(&b, "\t%q\n\t%q\n)\n\n", module+"/app/domain", module+"/app/models")
+	fmt.Fprintf(&b, "\t%q\n\t%q\n)\n\n", module+"/app/models", module+"/db/adapter")
 
 	note := ""
 	if len(refs) > 0 {
-		note = fmt.Sprintf("//\n// Left at zero: %s. The parent has to exist first, so set it from the\n// parent's own factory:\n//\n//\tfactories.%s(t, s, func(v *domain.%s) { v.%s = parent.ID })\n", strings.Join(refs, ", "), typ, typ, refs[0])
+		note = fmt.Sprintf("//\n// Left at zero: %s. The parent has to exist first, so set it from the\n// parent's own factory:\n//\n//\tfactories.%s(t, s, func(v *models.%s) { v.%s = parent.ID })\n", strings.Join(refs, ", "), typ, typ, refs[0])
 	}
 	fmt.Fprintf(&b, `// New%[1]s is a valid %[2]s that is not saved: every attribute has a default,
 // and "with" overrides what the spec cares about.
@@ -304,8 +304,8 @@ func factory(module, name string, attrs []Attr, scheme IDScheme) string {
 // Written once by `+"`bogie g model`"+` and yours to edit: add an attribute's
 // default here when you add the column. Running the generator again leaves a
 // changed file alone unless --force.
-%[4]sfunc New%[1]s(with ...func(*domain.%[1]s)) domain.%[1]s {
-	record := domain.%[1]s{
+%[4]sfunc New%[1]s(with ...func(*models.%[1]s)) models.%[1]s {
+	record := models.%[1]s{
 %[3]s	}
 	for _, f := range with {
 		f(&record)
@@ -315,7 +315,7 @@ func factory(module, name string, attrs []Attr, scheme IDScheme) string {
 
 // %[1]s saves a New%[1]s through the real store and fails the spec if it
 // cannot, so a spec reads as its arrangement and nothing else.
-func %[1]s(t T, s *models.Store, with ...func(*domain.%[1]s)) domain.%[1]s {
+func %[1]s(t T, s *adapter.Store, with ...func(*models.%[1]s)) models.%[1]s {
 	t.Helper()
 	created, err := s.Create%[1]s(context.Background(), New%[1]s(with...))
 	if err != nil {
@@ -363,7 +363,7 @@ func domainType(name string, attrs []Attr, scheme IDScheme) string {
 		}
 	}
 	var b strings.Builder
-	b.WriteString("package domain\n\nimport (\n")
+	b.WriteString("package models\n\nimport (\n")
 	for _, imp := range sortedKeys(imports) {
 		fmt.Fprintf(&b, "\t%q\n", imp)
 	}
@@ -396,17 +396,17 @@ func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 	recv := paramName(name, "s")
 	uniq := uniqueAttrs(attrs)
 	var b strings.Builder
-	b.WriteString("package models\n\n")
+	b.WriteString("package adapter\n\n")
 	// pgconn is always needed now: every Delete classifies a foreign-key
 	// violation. gofmt sorts imports, so pgconn goes before pgtype.
 	b.WriteString("import (\n\t\"context\"\n\t\"errors\"\n\t\"fmt\"\n\n\t\"github.com/jackc/pgx/v5\"\n\t\"github.com/jackc/pgx/v5/pgconn\"\n")
 	if needsPgtype(attrs) {
 		b.WriteString("\t\"github.com/jackc/pgx/v5/pgtype\"\n")
 	}
-	fmt.Fprintf(&b, "\n\t%q\n\t%q\n)\n\n", module+"/app/domain", module+"/db/sqlc")
+	fmt.Fprintf(&b, "\n\t%q\n\t%q\n)\n\n", module+"/app/models", module+"/db/sqlc")
 
-	fmt.Fprintf(&b, "// %s, as the domain sees them. Each method converts domain.%s to and from\n", Camel(table), typ)
-	b.WriteString("// the row type sqlc generated, and maps pgx's \"no rows\" to domain.ErrNotFound\n")
+	fmt.Fprintf(&b, "// %s, as the models see them. Each method converts models.%s to and from\n", Camel(table), typ)
+	b.WriteString("// the row type sqlc generated, and maps pgx's \"no rows\" to models.ErrNotFound\n")
 	b.WriteString("// so callers never import pgx to ask a question.\n")
 	fmt.Fprintf(&b, "//\n// Written by `bogie g model`: overwritten whole on the next run. A\n// hand-written addition goes in %s_extra.go, not here.\n\n", table)
 
@@ -431,8 +431,8 @@ func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 	fmt.Fprintf(&b, "// Create%s validates a %s, inserts it, and returns it with its id and\n", typ, name)
 	b.WriteString("// timestamps. Validation runs on save, as Rails's does, so every caller\n")
 	b.WriteString("// gets it and none can forget it.\n")
-	fmt.Fprintf(&b, "func (s *Store) Create%s(ctx context.Context, %s domain.%s) (domain.%s, error) {\n", typ, recv, typ, typ)
-	fmt.Fprintf(&b, "\tif err := %s.Validate(); err != nil {\n\t\treturn domain.%s{}, err\n\t}\n", recv, typ)
+	fmt.Fprintf(&b, "func (s *Store) Create%s(ctx context.Context, %s models.%s) (models.%s, error) {\n", typ, recv, typ, typ)
+	fmt.Fprintf(&b, "\tif err := %s.Validate(); err != nil {\n\t\treturn models.%s{}, err\n\t}\n", recv, typ)
 	b.WriteString(referenceChecks(recv, typ, attrs, scheme))
 	switch len(attrs) {
 	case 0:
@@ -445,34 +445,34 @@ func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 		fmt.Fprintf(&b, "\trow, err := s.q.Create%s(ctx, sqlc.Create%sParams{%s})\n", typ, typ, createParams(recv))
 	}
 	if len(uniq) > 0 {
-		fmt.Fprintf(&b, "\tif err != nil {\n\t\tvar pgErr *pgconn.PgError\n\t\tif errors.As(err, &pgErr) && pgErr.Code == \"23505\" {\n\t\t\treturn domain.%s{}, fmt.Errorf(\"%%w: %s\", domain.ErrInvalid)\n\t\t}\n\t\treturn domain.%s{}, fmt.Errorf(\"models: create %s: %%w\", err)\n\t}\n", typ, uniqueViolationMessage(uniq), typ, name)
+		fmt.Fprintf(&b, "\tif err != nil {\n\t\tvar pgErr *pgconn.PgError\n\t\tif errors.As(err, &pgErr) && pgErr.Code == \"23505\" {\n\t\t\treturn models.%s{}, fmt.Errorf(\"%%w: %s\", models.ErrInvalid)\n\t\t}\n\t\treturn models.%s{}, fmt.Errorf(\"store: create %s: %%w\", err)\n\t}\n", typ, uniqueViolationMessage(uniq), typ, name)
 	} else {
-		fmt.Fprintf(&b, "\tif err != nil {\n\t\treturn domain.%s{}, fmt.Errorf(\"models: create %s: %%w\", err)\n\t}\n", typ, name)
+		fmt.Fprintf(&b, "\tif err != nil {\n\t\treturn models.%s{}, fmt.Errorf(\"store: create %s: %%w\", err)\n\t}\n", typ, name)
 	}
 	fmt.Fprintf(&b, "\treturn %sFromRow(row), nil\n}\n\n", name)
 
 	// Get
 	fmt.Fprintf(&b, "// Get%s finds one %s. An id that is not a %s is simply not found.\n", typ, name, scheme.notFoundWord())
-	fmt.Fprintf(&b, "func (s *Store) Get%s(ctx context.Context, id string) (domain.%s, error) {\n", typ, typ)
-	fmt.Fprintf(&b, "\tpk, err := %s(id)\n\tif err != nil {\n\t\treturn domain.%s{}, domain.ErrNotFound\n\t}\n", scheme.parseFunc(), typ)
-	fmt.Fprintf(&b, "\trow, err := s.q.Get%s(ctx, pk)\n\tswitch {\n\tcase errors.Is(err, pgx.ErrNoRows):\n\t\treturn domain.%s{}, domain.ErrNotFound\n", typ, typ)
-	fmt.Fprintf(&b, "\tcase err != nil:\n\t\treturn domain.%s{}, fmt.Errorf(\"models: get %s %%s: %%w\", id, err)\n\t}\n", typ, name)
+	fmt.Fprintf(&b, "func (s *Store) Get%s(ctx context.Context, id string) (models.%s, error) {\n", typ, typ)
+	fmt.Fprintf(&b, "\tpk, err := %s(id)\n\tif err != nil {\n\t\treturn models.%s{}, models.ErrNotFound\n\t}\n", scheme.parseFunc(), typ)
+	fmt.Fprintf(&b, "\trow, err := s.q.Get%s(ctx, pk)\n\tswitch {\n\tcase errors.Is(err, pgx.ErrNoRows):\n\t\treturn models.%s{}, models.ErrNotFound\n", typ, typ)
+	fmt.Fprintf(&b, "\tcase err != nil:\n\t\treturn models.%s{}, fmt.Errorf(\"store: get %s %%s: %%w\", id, err)\n\t}\n", typ, name)
 	fmt.Fprintf(&b, "\treturn %sFromRow(row), nil\n}\n\n", name)
 
 	// List
 	fmt.Fprintf(&b, "// List%s returns the newest %s first, at most limit of them.\n", Camel(table), table)
-	fmt.Fprintf(&b, "func (s *Store) List%s(ctx context.Context, limit int32) ([]domain.%s, error) {\n", Camel(table), typ)
-	fmt.Fprintf(&b, "\trows, err := s.q.List%s(ctx, limit)\n\tif err != nil {\n\t\treturn nil, fmt.Errorf(\"models: list %s: %%w\", err)\n\t}\n", Camel(table), table)
-	fmt.Fprintf(&b, "\tout := make([]domain.%s, 0, len(rows))\n\tfor _, r := range rows {\n\t\tout = append(out, %sFromRow(r))\n\t}\n\treturn out, nil\n}\n\n", typ, name)
+	fmt.Fprintf(&b, "func (s *Store) List%s(ctx context.Context, limit int32) ([]models.%s, error) {\n", Camel(table), typ)
+	fmt.Fprintf(&b, "\trows, err := s.q.List%s(ctx, limit)\n\tif err != nil {\n\t\treturn nil, fmt.Errorf(\"store: list %s: %%w\", err)\n\t}\n", Camel(table), table)
+	fmt.Fprintf(&b, "\tout := make([]models.%s, 0, len(rows))\n\tfor _, r := range rows {\n\t\tout = append(out, %sFromRow(r))\n\t}\n\treturn out, nil\n}\n\n", typ, name)
 
 	// Update
 	fmt.Fprintf(&b, "// Update%s validates a %s, writes its columns, and returns the stored row.\n", typ, name)
-	fmt.Fprintf(&b, "func (s *Store) Update%s(ctx context.Context, %s domain.%s) (domain.%s, error) {\n", typ, recv, typ, typ)
-	fmt.Fprintf(&b, "\tif err := %s.Validate(); err != nil {\n\t\treturn domain.%s{}, err\n\t}\n", recv, typ)
+	fmt.Fprintf(&b, "func (s *Store) Update%s(ctx context.Context, %s models.%s) (models.%s, error) {\n", typ, recv, typ, typ)
+	fmt.Fprintf(&b, "\tif err := %s.Validate(); err != nil {\n\t\treturn models.%s{}, err\n\t}\n", recv, typ)
 	if scheme == IDUUID {
 		// The domain's id is a string here too, so it gets the same
 		// malformed-id-is-not-found treatment a URL-sourced id gets.
-		fmt.Fprintf(&b, "\tpk, err := parseUUID(%s.ID)\n\tif err != nil {\n\t\treturn domain.%s{}, domain.ErrNotFound\n\t}\n", recv, typ)
+		fmt.Fprintf(&b, "\tpk, err := parseUUID(%s.ID)\n\tif err != nil {\n\t\treturn models.%s{}, models.ErrNotFound\n\t}\n", recv, typ)
 	} else {
 		// Nothing to parse: the domain's id is already this scheme's type.
 		fmt.Fprintf(&b, "\tpk := %s.ID\n", recv)
@@ -486,22 +486,22 @@ func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 	if len(uniq) > 0 {
 		b.WriteString("\tvar pgErr *pgconn.PgError\n")
 	}
-	fmt.Fprintf(&b, "\tswitch {\n\tcase errors.Is(err, pgx.ErrNoRows):\n\t\treturn domain.%s{}, domain.ErrNotFound\n", typ)
+	fmt.Fprintf(&b, "\tswitch {\n\tcase errors.Is(err, pgx.ErrNoRows):\n\t\treturn models.%s{}, models.ErrNotFound\n", typ)
 	if len(uniq) > 0 {
-		fmt.Fprintf(&b, "\tcase errors.As(err, &pgErr) && pgErr.Code == \"23505\":\n\t\treturn domain.%s{}, fmt.Errorf(\"%%w: %s\", domain.ErrInvalid)\n", typ, uniqueViolationMessage(uniq))
+		fmt.Fprintf(&b, "\tcase errors.As(err, &pgErr) && pgErr.Code == \"23505\":\n\t\treturn models.%s{}, fmt.Errorf(\"%%w: %s\", models.ErrInvalid)\n", typ, uniqueViolationMessage(uniq))
 	}
-	fmt.Fprintf(&b, "\tcase err != nil:\n\t\treturn domain.%s{}, fmt.Errorf(\"models: update %s %%v: %%w\", %s.ID, err)\n\t}\n", typ, name, recv)
+	fmt.Fprintf(&b, "\tcase err != nil:\n\t\treturn models.%s{}, fmt.Errorf(\"store: update %s %%v: %%w\", %s.ID, err)\n\t}\n", typ, name, recv)
 	fmt.Fprintf(&b, "\treturn %sFromRow(row), nil\n}\n\n", name)
 
 	// Delete
 	fmt.Fprintf(&b, "// Delete%s removes a %s, and says so if there was none.\n", typ, name)
 	fmt.Fprintf(&b, "func (s *Store) Delete%s(ctx context.Context, id string) error {\n", typ)
-	fmt.Fprintf(&b, "\tpk, err := %s(id)\n\tif err != nil {\n\t\treturn domain.ErrNotFound\n\t}\n", scheme.parseFunc())
-	fmt.Fprintf(&b, "\tn, err := s.q.Delete%s(ctx, pk)\n\tif err != nil {\n\t\tvar pgErr *pgconn.PgError\n\t\tif errors.As(err, &pgErr) && pgErr.Code == \"23503\" {\n\t\t\treturn fmt.Errorf(\"%%w: %s is still in use\", domain.ErrInvalid)\n\t\t}\n\t\treturn fmt.Errorf(\"models: delete %s %%s: %%w\", id, err)\n\t}\n", typ, name, name)
-	b.WriteString("\tif n == 0 {\n\t\treturn domain.ErrNotFound\n\t}\n\treturn nil\n}\n\n")
+	fmt.Fprintf(&b, "\tpk, err := %s(id)\n\tif err != nil {\n\t\treturn models.ErrNotFound\n\t}\n", scheme.parseFunc())
+	fmt.Fprintf(&b, "\tn, err := s.q.Delete%s(ctx, pk)\n\tif err != nil {\n\t\tvar pgErr *pgconn.PgError\n\t\tif errors.As(err, &pgErr) && pgErr.Code == \"23503\" {\n\t\t\treturn fmt.Errorf(\"%%w: %s is still in use\", models.ErrInvalid)\n\t\t}\n\t\treturn fmt.Errorf(\"store: delete %s %%s: %%w\", id, err)\n\t}\n", typ, name, name)
+	b.WriteString("\tif n == 0 {\n\t\treturn models.ErrNotFound\n\t}\n\treturn nil\n}\n\n")
 
 	// fromRow
-	fmt.Fprintf(&b, "func %sFromRow(r sqlc.%s) domain.%s {\n\treturn domain.%s{\n", name, typ, typ, typ)
+	fmt.Fprintf(&b, "func %sFromRow(r sqlc.%s) models.%s {\n\treturn models.%s{\n", name, typ, typ, typ)
 	width := len("CreatedAt:")
 	for _, a := range attrs {
 		if n := len(a.goName()) + 1; n > width {
@@ -538,7 +538,7 @@ func referenceChecks(recv, typ string, attrs []Attr, scheme IDScheme) string {
 		}
 		v := lowerCamel(a.Name)
 		fmt.Fprintf(&b, "\t%s, err := parseUUID(%s.%s)\n\tif err != nil {\n", v, recv, a.goName())
-		fmt.Fprintf(&b, "\t\treturn domain.%s{}, fmt.Errorf(\"%%w: %s is not a uuid\", domain.ErrInvalid)\n\t}\n", typ, a.Name)
+		fmt.Fprintf(&b, "\t\treturn models.%s{}, fmt.Errorf(\"%%w: %s is not a uuid\", models.ErrInvalid)\n\t}\n", typ, a.Name)
 	}
 	return b.String()
 }

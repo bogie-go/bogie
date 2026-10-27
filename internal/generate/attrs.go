@@ -18,7 +18,7 @@ type Attr struct {
 type kind struct {
 	sql       string // the Postgres column type
 	sqlDef    string // NOT NULL and a default, so sqlc emits a plain Go type
-	domain    string // the Go type in app/domain, stdlib only
+	domain    string // the Go type in app/models, stdlib only
 	sqlcType  string // the Go type sqlc emits for the column
 	toRow     string // expression converting a domain value %s to the row type
 	fromRow   string // expression converting a row value %s to the domain type
@@ -84,7 +84,7 @@ func (s IDScheme) referencesKind() kind {
 	return kind{sql: "bigint", sqlDef: "NOT NULL", domain: "int64", sqlcType: "int64", toRow: "%s", fromRow: "%s", reference: true}
 }
 
-// idDomain is the model's own ID field's type in app/domain.
+// idDomain is the model's own ID field's type in app/models.
 func (s IDScheme) idDomain() string {
 	if s == IDUUID {
 		return "string"
@@ -92,7 +92,7 @@ func (s IDScheme) idDomain() string {
 	return "int64"
 }
 
-// parseFunc is the store helper, from app/models/uuid.go or id.go, that
+// parseFunc is the store helper, from db/adapter/uuid.go or id.go, that
 // turns a URL path string into this scheme's id type.
 func (s IDScheme) parseFunc() string {
 	if s == IDUUID {

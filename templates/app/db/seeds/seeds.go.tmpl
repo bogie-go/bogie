@@ -12,12 +12,12 @@ package seeds
 import (
 	"context"
 
-	"{{.Module}}/app/models"
+	"{{.Module}}/db/adapter"
 )
 
 // Run applies every seed below, in order. The first failure stops the rest:
 // a later seed may depend on rows an earlier one inserted.
-func Run(ctx context.Context, s *models.Store) error {
+func Run(ctx context.Context, s *adapter.Store) error {
 	for _, seed := range []func() error{
 		// bogie:seeds
 	} {

@@ -554,11 +554,11 @@ func TestGeneratedParamDoesNotShadow(t *testing.T) {
 		generator, name, file, shadowed string
 	}{
 		// The Store's methods all have receiver s.
-		{"model", "session", "app/models/sessions.go", ", s domain.Session)"},
+		{"model", "session", "db/adapter/sessions.go", ", s models.Session)"},
 		// An action's own variable is c *gin.Context.
 		{"scaffold", "comment", "app/controllers/comments_controller.go", "c, err := ctl.Store."},
 		// The fake store a controller test builds has receiver f.
-		{"scaffold", "form", "app/controllers/forms_controller_test.go", ", f domain.Form)"},
+		{"scaffold", "form", "app/controllers/forms_controller_test.go", ", f models.Form)"},
 	} {
 		t.Run(c.generator+" "+c.name, func(t *testing.T) {
 			var files []File

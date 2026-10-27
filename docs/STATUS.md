@@ -148,8 +148,17 @@ pushing; on a clean tree a green run signs off the commit.
   as long as River's SQLite driver is a preview (DESIGN.md §12.4).
 - Tasks that destroy pass `--yes` through the tool; the binary in a container
   keeps asking.
-- `domain.ErrNotFound` and `ErrInvalid` live in `domain.go`, not with a model.
-- A hand-written store method goes in a sibling file (`app/models/<table>_extra.go`),
+- `models.ErrNotFound` and `ErrInvalid` live in `models.go`, not with a model.
+- **Layout, 2026-10-27 (unreleased).** The types and their `Validate` are
+  `app/models` (they were `app/domain`). sqlc writes only `db/sqlc`
+  (`package sqlc`). The Store, `withTx` and the row <-> models conversion are
+  `db/adapter` (`package adapter`; they were `app/models`). `withTx` hands its
+  closure the `pgx.Tx` as well as the bound `*sqlc.Queries`. `bogie app:update`
+  cannot make this move for an existing app, because it renames two packages:
+  do it by hand (point `db/sqlc.yaml` at `package: "sqlc"`, `out: "sqlc"`,
+  regenerate, move the hand-written files to `db/adapter`, then rename the
+  imports) or keep the old layout.
+- A hand-written store method goes in a sibling file (`db/adapter/<table>_extra.go`),
   not inside the generated `<table>.go`: that file is regenerated whole on
   the next `g model`, and a hand-written addition inside it is reported
   `conflict` instead of kept.

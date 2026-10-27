@@ -22,6 +22,6 @@ linters:
       # requireSecret for the settings g authentication adds; an app
       # between models, before its first job or without authentication
       # would otherwise be told they are unused.
-      - path: (app/models/uuid|app/jobs/jobs|config/config)\.go
+      - path: (db/adapter/uuid|app/jobs/jobs|config/config)\.go
         linters:
           - unused

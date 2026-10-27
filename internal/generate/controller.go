@@ -245,7 +245,7 @@ func (c controller) source() string {
 // controller is wired:
 //
 //	type %[3]sService interface {
-//		Get(ctx context.Context, id string) (domain.Thing, error)
+//		Get(ctx context.Context, id string) (models.Thing, error)
 //	}
 type %[1]s struct {
 	Log *slog.Logger

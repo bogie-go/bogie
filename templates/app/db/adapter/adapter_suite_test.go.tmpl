@@ -1,4 +1,4 @@
-package models_test
+package adapter_test
 
 import (
 	"testing"
@@ -6,13 +6,13 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"{{.Module}}/app/models"
+	"{{.Module}}/db/adapter"
 	"{{.Module}}/test/testdb"
 )
 
 // store is a migrated test database with every table empty, reset before
 // every spec: the specs in this package use it as RSpec specs use a `let`.
-var store *models.Store
+var store *adapter.Store
 
 var _ = BeforeEach(func() {
 	store = testdb.Store(GinkgoT())

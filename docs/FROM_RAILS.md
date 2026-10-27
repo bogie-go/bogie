@@ -49,7 +49,7 @@ autoloads.
 | `config/routes.rb` | `app/controllers/routes.go` | The table; each controller's `SetupRoutes` adds its own routes under a group. |
 | `app/controllers/posts_controller.rb` | `app/controllers/posts_controller.go` | A `PostsController` type: its dependencies, routes and actions. |
 | `app/controllers/admin/reports_controller.rb` | `app/controllers/admin_controller/reports_controller.go` | The package holds a `Server` with one field per controller and a `routes.go` for the group's middleware. |
-| `app/models/post.rb` | `app/domain/post.go` + `app/models/posts.go` + `db/queries/posts.sql` | Split in three: the type and its validations; the store methods; the SQL. See below. |
+| `db/adapter/post.rb` | `app/models/post.go` + `db/adapter/posts.go` + `db/queries/posts.sql` | Split in three: the type and its validations; the store methods; the SQL. See below. |
 | `app/views/posts/*.json.jbuilder` | `app/views/posts.go` | Request and response structs. A domain type never doubles as a wire type. |
 | `app/jobs/send_welcome_job.rb` | `app/jobs/send_welcome.go` | An `Args` struct and a `Worker`, registered in `app/jobs/jobs.go`. |
 | `app/services/` | `app/services/<name>/` | One package per service, `ctx` first, knows nothing about HTTP. |
@@ -74,21 +74,21 @@ autoloads.
 Rails's `Post` is one class that is a table, a type and a query builder.
 Here that is three files, each with one job:
 
-- **`app/domain/post.go`** is the type and its `Validate`. It imports nothing
+- **`app/models/post.go`** is the type and its `Validate`. It imports nothing
   third-party (rule 3). Ids are whatever the app's scheme is at the store
   boundary: `int64` under the default bigint (`bogie new`'s own id, auto-
   incrementing, the way Rails's own default is), or a string under uuid
   (`bogie new NAME --id=uuid`).
 - **`db/queries/posts.sql`** is the SQL, by name: `GetPost`, `ListPosts`,
-  `CreatePost`. sqlc compiles it into `app/models/posts.sql.go`, and a
+  `CreatePost`. sqlc compiles it into `db/sqlc/posts.sql.go`, and a
   query that names a column that does not exist fails at `make sqlc`, not
   in production.
-- **`app/models/posts.go`** is the store: `CreatePost`, `GetPost` and so on,
+- **`db/adapter/posts.go`** is the store: `CreatePost`, `GetPost` and so on,
   converting between the domain type and sqlc's row type, mapping "no rows"
-  to `domain.ErrNotFound`, and running `Validate` before create and update.
+  to `models.ErrNotFound`, and running `Validate` before create and update.
 
 So `Post.find(id)` is `store.GetPost(ctx, id)`, `Post.create(attrs)` is
-`store.CreatePost(ctx, domain.Post{...})`, and a new query is a new named
+`store.CreatePost(ctx, models.Post{...})`, and a new query is a new named
 statement in the `.sql` file plus a store method that calls it. There is no
 `where` builder; the SQL is written out, which is the point.
 
@@ -104,7 +104,7 @@ writes the column, the constraint and the index; `has_many :comments` is
 | `params.require(:post).permit(:title)` | `var req views.PostRequest; c.ShouldBindJSON(&req)`; only the struct's fields come through |
 | `render json: post` | `c.JSON(http.StatusOK, postView(post))` |
 | `head :no_content` | `c.Status(http.StatusNoContent)` |
-| `validates :title, presence: true` | `func (p Post) Validate() error { ... return fmt.Errorf("%w: title is required", ErrInvalid) }` in `app/domain`; runs on save |
+| `validates :title, presence: true` | `func (p Post) Validate() error { ... return fmt.Errorf("%w: title is required", ErrInvalid) }` in `app/models`; runs on save |
 | `rescue_from ActiveRecord::RecordNotFound` | `ctl.fail(c, err)`: `ErrNotFound` is 404, `ErrInvalid` is 422, anything else is a logged 500 |
 | `before_action :authenticate` | middleware on the group, in `routes.go`, so the exposure boundary is visible in one place; `bogie g authentication` writes it and a `WithUser` group helper |
 | `Current.user` | `middlewares.Subject(c)`, the verified token's subject; load the record if you need it |

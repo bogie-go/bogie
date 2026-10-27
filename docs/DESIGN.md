@@ -131,7 +131,7 @@ The rules ship in `AGENTS.md` and are enforced where a linter can enforce them
 
 1. `ctx context.Context` first for anything doing I/O.
 2. Interfaces are declared by the consumer.
-3. `app/domain` imports nothing third-party.
+3. `app/models` imports nothing third-party.
 4. Constructors return `(T, error)`; only `main` exits.
 5. `*gin.Context` never travels below `app/controllers`.
 6. No `util/`, `helpers/`, `common/`.
@@ -160,13 +160,13 @@ package needs live in `test/`, as Rails's `test/` holds `test_helper.rb` and
 ones the scaffold ships, is a Ginkgo v2 spec with Gomega matchers: RSpec's
 `Describe`/`Context`/`It`/`BeforeEach` and `Expect`, which is what a Rails
 developer reads without translation. Tests are in external `_test` packages
-(`package models_test`), so they use a package the way its callers do; the
+(`package adapter_test`), so they use a package the way its callers do; the
 rare unexported thing they need is exported for tests only by an
 `export_test.go` in the package. Each package with tests has one
 `<pkg>_suite_test.go` that runs the specs and owns the shared setup as a
 package variable rebuilt in a `BeforeEach`, as RSpec uses `let`: `app` (the
 whole application, `testapp.New(GinkgoT())`) in `app/controllers` and
-`test/requests`, `store` (`testdb.Store(GinkgoT())`) in `app/models`. The
+`test/requests`, `store` (`testdb.Store(GinkgoT())`) in `db/adapter`. The
 helpers in `test/` take a small `T` interface (what `GinkgoT()` and
 `*testing.T` both satisfy) rather than `*testing.T`. A controller's request
 tests sit beside the controller and go through the wired `Server`; there is no
@@ -175,7 +175,7 @@ controller is constructed and mounted.
 
 The order is outside in: a feature starts with a request test, and the store,
 domain and service tests below cover the edge cases. Because the factories
-import `app/models`, the store tests are `package models_test`. `go test`
+import `db/adapter`, the store tests are `package adapter_test`. `go test`
 runs one package at a time (`-p 1`) because the packages share one test
 database. No fixtures directory: fixed data is seeds.
 
@@ -459,14 +459,14 @@ generators in one second would make them. Output is pinned by golden files,
 and `bin/ci` runs every generator into a fresh app and that app's pipeline.
 
 **Hand-written store additions, decided 2026-10-17.** The store file `g
-model` writes (`app/models/<table>.go`) is meant to be regenerated: adding a
+model` writes (`db/adapter/<table>.go`) is meant to be regenerated: adding a
 column and rerunning `g model` rewrites it whole. A hand-written method
 added straight into that file is byte-compared on the next run like any
 other generated file (§4, `create`/`identical`/`conflict`/`force`) and
 reported `conflict`, forcing a choice between losing the generator's new
 column handling or the hand-written method. The fix needs no new mechanism:
 Go merges every file in a package, so the convention is simply to put a
-hand-written addition in a sibling file (`app/models/<table>_extra.go`, any
+hand-written addition in a sibling file (`db/adapter/<table>_extra.go`, any
 name not ending the generator's own suffixes), never inside the generated
 one. `g model`'s conflict check then never has reason to touch it. Written
 into `AGENTS.md`'s "Add a model" and "Add a query" recipes.
@@ -497,11 +497,11 @@ as uuid, not the new default, since uuid is what it was always generated
 with. `IDScheme` (`internal/generate/attrs.go`) centralizes everything that
 differs: the id column's own SQL, what a `references` attribute becomes
 (`kindFor`, replacing the old hardcoded `kinds["references"]`), the domain
-type (`int64` vs `string`), the store's parse helper (`app/models/id.go`'s
+type (`int64` vs `string`), the store's parse helper (`db/adapter/id.go`'s
 `parseID` vs `uuid.go`'s `parseUUID`, each written only under its own
 scheme via a `{{if eq .IDScheme "..."}}` guard), and the golden tests' id
 literals (`IDScheme.testIDs`). One real bug surfaced building this: a
-scaffolded `Update` action built `domain.Post{ID: c.Param("id"), ...}`
+scaffolded `Update` action built `models.Post{ID: c.Param("id"), ...}`
 directly from the URL string, which only ever compiled because `ID` had
 always been exactly `string`. Under bigint it is not, so `Update` now loads
 the record first (`GetX`, which already resolves the id correctly) and
@@ -944,6 +944,10 @@ best metaphor for a scaffold, but a common word), **Ballast**, **Turnout**,
     fixed.** kchat calls it `app/omnichat`, a product name no generated app
     would share. A fixed name is greppable, the templates never need the app
     name, and the generators always know where the domain lives.
+    **Renamed 2026-10-27: `app/models/`, still fixed.** It is what Rails calls
+    the same thing: the types and their `Validate`. The layer that used to be
+    `app/models` (the Store, between those types and sqlc) is now
+    `db/adapter`, and sqlc writes only `db/sqlc`.
 11. **Migrate at boot.** ~~Open~~ **Decided 2026-10-02: on by default,
     `<NAME>_MIGRATE_AT_BOOT=false` to disable.** kchat applies migrations
     before opening the pool. goose holds a Postgres advisory lock for the

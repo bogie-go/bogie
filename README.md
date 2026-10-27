@@ -127,9 +127,9 @@ bogie test
 ```
       create  db/migrate/20261003054047_create_posts.sql
       create  db/queries/posts.sql
-      create  app/domain/post.go
-      create  app/models/posts.go
-      create  app/models/posts_test.go
+      create  app/models/post.go
+      create  db/adapter/posts.go
+      create  db/adapter/posts_test.go
       create  test/factories/posts.go
       create  app/views/posts.go
       create  app/controllers/posts_controller.go

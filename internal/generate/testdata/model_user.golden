@@ -28,8 +28,8 @@ UPDATE users SET email = $2, password_digest = $3, updated_at = now() WHERE id =
 
 -- name: DeleteUser :execrows
 DELETE FROM users WHERE id = $1;
-==> app/domain/user.go
-package domain
+==> app/models/user.go
+package models
 
 import (
 	"time"
@@ -53,8 +53,8 @@ type User struct {
 func (u User) Validate() error {
 	return nil
 }
-==> app/models/users.go
-package models
+==> db/adapter/users.go
+package adapter
 
 import (
 	"context"
@@ -64,12 +64,12 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"example.com/blog/app/domain"
+	"example.com/blog/app/models"
 	"example.com/blog/db/sqlc"
 )
 
-// Users, as the domain sees them. Each method converts domain.User to and from
-// the row type sqlc generated, and maps pgx's "no rows" to domain.ErrNotFound
+// Users, as the models see them. Each method converts models.User to and from
+// the row type sqlc generated, and maps pgx's "no rows" to models.ErrNotFound
 // so callers never import pgx to ask a question.
 //
 // Written by `bogie g model`: overwritten whole on the next run. A
@@ -78,44 +78,44 @@ import (
 // CreateUser validates a user, inserts it, and returns it with its id and
 // timestamps. Validation runs on save, as Rails's does, so every caller
 // gets it and none can forget it.
-func (s *Store) CreateUser(ctx context.Context, u domain.User) (domain.User, error) {
+func (s *Store) CreateUser(ctx context.Context, u models.User) (models.User, error) {
 	if err := u.Validate(); err != nil {
-		return domain.User{}, err
+		return models.User{}, err
 	}
 	row, err := s.q.CreateUser(ctx, sqlc.CreateUserParams{Email: u.Email, PasswordDigest: u.PasswordDigest})
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return domain.User{}, fmt.Errorf("%w: email is already taken", domain.ErrInvalid)
+			return models.User{}, fmt.Errorf("%w: email is already taken", models.ErrInvalid)
 		}
-		return domain.User{}, fmt.Errorf("models: create user: %w", err)
+		return models.User{}, fmt.Errorf("store: create user: %w", err)
 	}
 	return userFromRow(row), nil
 }
 
 // GetUser finds one user. An id that is not a valid id is simply not found.
-func (s *Store) GetUser(ctx context.Context, id string) (domain.User, error) {
+func (s *Store) GetUser(ctx context.Context, id string) (models.User, error) {
 	pk, err := parseID(id)
 	if err != nil {
-		return domain.User{}, domain.ErrNotFound
+		return models.User{}, models.ErrNotFound
 	}
 	row, err := s.q.GetUser(ctx, pk)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		return domain.User{}, domain.ErrNotFound
+		return models.User{}, models.ErrNotFound
 	case err != nil:
-		return domain.User{}, fmt.Errorf("models: get user %s: %w", id, err)
+		return models.User{}, fmt.Errorf("store: get user %s: %w", id, err)
 	}
 	return userFromRow(row), nil
 }
 
 // ListUsers returns the newest users first, at most limit of them.
-func (s *Store) ListUsers(ctx context.Context, limit int32) ([]domain.User, error) {
+func (s *Store) ListUsers(ctx context.Context, limit int32) ([]models.User, error) {
 	rows, err := s.q.ListUsers(ctx, limit)
 	if err != nil {
-		return nil, fmt.Errorf("models: list users: %w", err)
+		return nil, fmt.Errorf("store: list users: %w", err)
 	}
-	out := make([]domain.User, 0, len(rows))
+	out := make([]models.User, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, userFromRow(r))
 	}
@@ -123,20 +123,20 @@ func (s *Store) ListUsers(ctx context.Context, limit int32) ([]domain.User, erro
 }
 
 // UpdateUser validates a user, writes its columns, and returns the stored row.
-func (s *Store) UpdateUser(ctx context.Context, u domain.User) (domain.User, error) {
+func (s *Store) UpdateUser(ctx context.Context, u models.User) (models.User, error) {
 	if err := u.Validate(); err != nil {
-		return domain.User{}, err
+		return models.User{}, err
 	}
 	pk := u.ID
 	row, err := s.q.UpdateUser(ctx, sqlc.UpdateUserParams{ID: pk, Email: u.Email, PasswordDigest: u.PasswordDigest})
 	var pgErr *pgconn.PgError
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		return domain.User{}, domain.ErrNotFound
+		return models.User{}, models.ErrNotFound
 	case errors.As(err, &pgErr) && pgErr.Code == "23505":
-		return domain.User{}, fmt.Errorf("%w: email is already taken", domain.ErrInvalid)
+		return models.User{}, fmt.Errorf("%w: email is already taken", models.ErrInvalid)
 	case err != nil:
-		return domain.User{}, fmt.Errorf("models: update user %v: %w", u.ID, err)
+		return models.User{}, fmt.Errorf("store: update user %v: %w", u.ID, err)
 	}
 	return userFromRow(row), nil
 }
@@ -145,24 +145,24 @@ func (s *Store) UpdateUser(ctx context.Context, u domain.User) (domain.User, err
 func (s *Store) DeleteUser(ctx context.Context, id string) error {
 	pk, err := parseID(id)
 	if err != nil {
-		return domain.ErrNotFound
+		return models.ErrNotFound
 	}
 	n, err := s.q.DeleteUser(ctx, pk)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
-			return fmt.Errorf("%w: user is still in use", domain.ErrInvalid)
+			return fmt.Errorf("%w: user is still in use", models.ErrInvalid)
 		}
-		return fmt.Errorf("models: delete user %s: %w", id, err)
+		return fmt.Errorf("store: delete user %s: %w", id, err)
 	}
 	if n == 0 {
-		return domain.ErrNotFound
+		return models.ErrNotFound
 	}
 	return nil
 }
 
-func userFromRow(r sqlc.User) domain.User {
-	return domain.User{
+func userFromRow(r sqlc.User) models.User {
+	return models.User{
 		ID:             r.ID,
 		Email:          r.Email,
 		PasswordDigest: r.PasswordDigest,
@@ -170,8 +170,8 @@ func userFromRow(r sqlc.User) domain.User {
 		UpdatedAt:      r.UpdatedAt.Time,
 	}
 }
-==> app/models/users_test.go
-package models_test
+==> db/adapter/users_test.go
+package adapter_test
 
 import (
 	"strconv"
@@ -179,7 +179,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"example.com/blog/app/domain"
+	"example.com/blog/app/models"
 	"example.com/blog/test/factories"
 )
 
@@ -188,7 +188,7 @@ var _ = Describe("Users", func() {
 		DescribeTable("is not found for",
 			func(id string) {
 				_, err := store.GetUser(GinkgoT().Context(), id)
-				Expect(err).To(MatchError(domain.ErrNotFound))
+				Expect(err).To(MatchError(models.ErrNotFound))
 			},
 			Entry("a malformed id", "nope"),
 			Entry("an empty id", ""),
@@ -196,7 +196,7 @@ var _ = Describe("Users", func() {
 		)
 
 		Context("with a saved user", func() {
-			var record domain.User
+			var record models.User
 
 			BeforeEach(func() {
 				record = factories.User(GinkgoT(), store)
@@ -210,7 +210,7 @@ var _ = Describe("Users", func() {
 
 	Describe("ListUsers", func() {
 		Context("with a saved user", func() {
-			var record domain.User
+			var record models.User
 
 			BeforeEach(func() {
 				record = factories.User(GinkgoT(), store)
@@ -227,7 +227,7 @@ var _ = Describe("Users", func() {
 
 	Describe("UpdateUser", func() {
 		Context("with a saved user", func() {
-			var record domain.User
+			var record models.User
 
 			BeforeEach(func() {
 				record = factories.User(GinkgoT(), store)
@@ -243,7 +243,7 @@ var _ = Describe("Users", func() {
 		})
 
 		Context("when the user is not there", func() {
-			var missing domain.User
+			var missing models.User
 
 			BeforeEach(func() {
 				missing = factories.NewUser()
@@ -252,7 +252,7 @@ var _ = Describe("Users", func() {
 
 			It("is not found", func() {
 				_, err := store.UpdateUser(GinkgoT().Context(), missing)
-				Expect(err).To(MatchError(domain.ErrNotFound))
+				Expect(err).To(MatchError(models.ErrNotFound))
 			})
 		})
 	})
@@ -260,7 +260,7 @@ var _ = Describe("Users", func() {
 	Describe("DeleteUser", func() {
 		DescribeTable("is not found for",
 			func(id string) {
-				Expect(store.DeleteUser(GinkgoT().Context(), id)).To(MatchError(domain.ErrNotFound))
+				Expect(store.DeleteUser(GinkgoT().Context(), id)).To(MatchError(models.ErrNotFound))
 			},
 			Entry("a malformed id", "nope"),
 			Entry("an empty id", ""),
@@ -268,7 +268,7 @@ var _ = Describe("Users", func() {
 		)
 
 		Context("with a saved user", func() {
-			var record domain.User
+			var record models.User
 
 			BeforeEach(func() {
 				record = factories.User(GinkgoT(), store)
@@ -278,7 +278,7 @@ var _ = Describe("Users", func() {
 				id := strconv.FormatInt(record.ID, 10)
 				Expect(store.DeleteUser(GinkgoT().Context(), id)).To(Succeed())
 				_, err := store.GetUser(GinkgoT().Context(), id)
-				Expect(err).To(MatchError(domain.ErrNotFound))
+				Expect(err).To(MatchError(models.ErrNotFound))
 			})
 		})
 	})
@@ -289,8 +289,8 @@ package factories
 import (
 	"context"
 
-	"example.com/blog/app/domain"
 	"example.com/blog/app/models"
+	"example.com/blog/db/adapter"
 )
 
 // NewUser is a valid user that is not saved: every attribute has a default,
@@ -299,8 +299,8 @@ import (
 // Written once by `bogie g model` and yours to edit: add an attribute's
 // default here when you add the column. Running the generator again leaves a
 // changed file alone unless --force.
-func NewUser(with ...func(*domain.User)) domain.User {
-	record := domain.User{
+func NewUser(with ...func(*models.User)) models.User {
+	record := models.User{
 		Email:          Sequence("email "),
 		PasswordDigest: Sequence("password digest "),
 	}
@@ -312,7 +312,7 @@ func NewUser(with ...func(*domain.User)) domain.User {
 
 // User saves a NewUser through the real store and fails the spec if it
 // cannot, so a spec reads as its arrangement and nothing else.
-func User(t T, s *models.Store, with ...func(*domain.User)) domain.User {
+func User(t T, s *adapter.Store, with ...func(*models.User)) models.User {
 	t.Helper()
 	created, err := s.CreateUser(context.Background(), NewUser(with...))
 	if err != nil {

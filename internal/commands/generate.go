@@ -23,8 +23,8 @@ Generators:
                                     create_<table>, add_<x>_to_<table> and
                                     remove_<x>_from_<table> write their SQL
   model NAME [field[:type] ...]     the migration, db/queries/<table>.sql,
-                                    app/domain/<name>.go and the store's
-                                    app/models/<table>.go; then runs sqlc
+                                    app/models/<name>.go and the store's
+                                    db/adapter/<table>.go; then runs sqlc
   scaffold NAME [field[:type] ...]  the model, plus app/views/<table>.go and
                                     a <Table>Controller with real handlers
                                     over the store, REGISTERED. As Rails:

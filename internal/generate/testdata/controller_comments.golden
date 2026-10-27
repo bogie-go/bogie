@@ -17,7 +17,7 @@ import (
 // controller is wired:
 //
 //	type commentsService interface {
-//		Get(ctx context.Context, id string) (domain.Thing, error)
+//		Get(ctx context.Context, id string) (models.Thing, error)
 //	}
 type CommentsController struct {
 	Log *slog.Logger

@@ -77,7 +77,7 @@ import (
 // controller is wired:
 //
 //	type reportsService interface {
-//		Get(ctx context.Context, id string) (domain.Thing, error)
+//		Get(ctx context.Context, id string) (models.Thing, error)
 //	}
 type ReportsController struct {
 	Log *slog.Logger

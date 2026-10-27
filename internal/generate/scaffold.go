@@ -132,12 +132,12 @@ import (
 
 // %[3]s is the slice of the store this controller uses, declared next to
 // its caller (rule 2) and holding only the methods the actions call.
-// *models.Store satisfies it, and app/application.go passes it in.
+// *adapter.Store satisfies it, and app/application.go passes it in.
 type %[3]s interface {
-	Create%[4]s(ctx context.Context, %[5]s domain.%[4]s) (domain.%[4]s, error)
-	Get%[4]s(ctx context.Context, id string) (domain.%[4]s, error)
-	List%[6]s(ctx context.Context, limit int32) ([]domain.%[4]s, error)
-	Update%[4]s(ctx context.Context, %[5]s domain.%[4]s) (domain.%[4]s, error)
+	Create%[4]s(ctx context.Context, %[5]s models.%[4]s) (models.%[4]s, error)
+	Get%[4]s(ctx context.Context, id string) (models.%[4]s, error)
+	List%[6]s(ctx context.Context, limit int32) ([]models.%[4]s, error)
+	Update%[4]s(ctx context.Context, %[5]s models.%[4]s) (models.%[4]s, error)
 	Delete%[4]s(ctx context.Context, id string) error
 }
 
@@ -192,7 +192,7 @@ func (ctl *%[8]s) Show(c *gin.Context) {
 	c.JSON(http.StatusOK, %[10]sView(%[5]s))
 }
 
-`, s.module+"/app/domain", s.module+"/app/views", iface, typ, recv, many, lowerCamel(s.table), ctl, s.table, lowerCamel(s.name))
+`, s.module+"/app/models", s.module+"/app/views", iface, typ, recv, many, lowerCamel(s.table), ctl, s.table, lowerCamel(s.name))
 
 	// Create and Update bind the request body, when there is one to bind.
 	fmt.Fprintf(&b, "// Create handles POST /%s.\n", s.table)
@@ -242,9 +242,9 @@ func (ctl *%[2]s) Destroy(c *gin.Context) {
 // else is logged and answered 500 without leaking its text.
 func (ctl *%[2]s) fail(c *gin.Context, err error) {
 	switch {
-	case errors.Is(err, domain.ErrNotFound):
+	case errors.Is(err, models.ErrNotFound):
 		c.JSON(http.StatusNotFound, views.ErrorMessage("no such %[4]s"))
-	case errors.Is(err, domain.ErrInvalid):
+	case errors.Is(err, models.ErrInvalid):
 		c.JSON(http.StatusUnprocessableEntity, views.Error(err))
 	default:
 		ctl.Log.ErrorContext(c.Request.Context(), "%[1]s: request failed",
@@ -258,7 +258,7 @@ func (ctl *%[2]s) fail(c *gin.Context, err error) {
 
 `, s.table, ctl, typ, s.name)
 
-	fmt.Fprintf(&b, "func %sView(%s domain.%s) views.%sResponse {\n\treturn views.%sResponse{\n", lowerCamel(s.name), recv, typ, typ, typ)
+	fmt.Fprintf(&b, "func %sView(%s models.%s) views.%sResponse {\n\treturn views.%sResponse{\n", lowerCamel(s.name), recv, typ, typ, typ)
 	width := len("CreatedAt:")
 	for _, a := range s.attrs {
 		if n := len(a.goName()) + 1; n > width {
@@ -271,7 +271,7 @@ func (ctl *%[2]s) fail(c *gin.Context, err error) {
 	}
 	fmt.Fprintf(&b, "\t\t%-*s %s.CreatedAt,\n\t\t%-*s %s.UpdatedAt,\n\t}\n}\n\n", width, "CreatedAt:", recv, width, "UpdatedAt:", recv)
 
-	fmt.Fprintf(&b, "func %sView(%s []domain.%s) views.%sResponse {\n", lowerCamel(s.table), s.table, typ, many)
+	fmt.Fprintf(&b, "func %sView(%s []models.%s) views.%sResponse {\n", lowerCamel(s.table), s.table, typ, many)
 	fmt.Fprintf(&b, "\tout := views.%sResponse{%s: make([]views.%sResponse, 0, len(%s))}\n", many, many, typ, s.table)
 	fmt.Fprintf(&b, "\tfor _, %s := range %s {\n\t\tout.%s = append(out.%s, %sView(%s))\n\t}\n\treturn out\n}\n", recv, s.table, many, many, lowerCamel(s.name), recv)
 	return b.String()
@@ -296,7 +296,7 @@ func (s scaffold) fromRequest(id string) string {
 	for _, a := range s.attrs {
 		parts = append(parts, fmt.Sprintf("%s: req.%s", a.goName(), a.goName()))
 	}
-	return fmt.Sprintf("domain.%s{%s}", s.typ(), strings.Join(parts, ", "))
+	return fmt.Sprintf("models.%s{%s}", s.typ(), strings.Join(parts, ", "))
 }
 
 // toRequest is the request body prefilled with a stored value's fields, for
@@ -353,7 +353,7 @@ func (s scaffold) controllerTest() string {
 	if !hasRefs {
 		w(`
 	Context("with %[1]s", func() {
-		var first, second domain.%[2]s
+		var first, second models.%[2]s
 
 		BeforeEach(func() {
 			first = %[4]s
@@ -377,7 +377,7 @@ func (s scaffold) controllerTest() string {
 	w("var _ = Describe(\"GET /%s/:id\", func() {\n", table)
 	if !hasRefs {
 		w(`	Context("when the %[1]s exists", func() {
-		var record domain.%[2]s
+		var record models.%[2]s
 
 		BeforeEach(func() {
 			record = %[3]s
@@ -469,7 +469,7 @@ func (s scaffold) controllerTest() string {
 	w("var _ = Describe(\"PATCH /%s/:id\", func() {\n", table)
 	if !hasRefs {
 		w(`	Context("when the %[1]s exists", func() {
-		var record domain.%[2]s
+		var record models.%[2]s
 
 		BeforeEach(func() {
 			record = %[3]s
@@ -526,7 +526,7 @@ func (s scaffold) controllerTest() string {
 	w("var _ = Describe(\"DELETE /%s/:id\", func() {\n", table)
 	if !hasRefs {
 		w(`	Context("when the %[1]s exists", func() {
-		var record domain.%[2]s
+		var record models.%[2]s
 
 		BeforeEach(func() {
 			record = %[3]s
@@ -556,7 +556,7 @@ func (s scaffold) controllerTest() string {
 // "with" function of factories.%[2]s, and add them.
 `, s.name, typ)
 	} else if len(s.attrs) > 0 {
-		w("\n// %[1]sRequest is the body that creates a record like this one.\nfunc %[1]sRequest(record domain.%[2]s) views.%[2]sRequest {\n\treturn views.%[2]sRequest{", lowerCamel(s.name), typ)
+		w("\n// %[1]sRequest is the body that creates a record like this one.\nfunc %[1]sRequest(record models.%[2]s) views.%[2]sRequest {\n\treturn views.%[2]sRequest{", lowerCamel(s.name), typ)
 		for i, a := range s.attrs {
 			if i > 0 {
 				w(", ")
@@ -575,7 +575,7 @@ func (s scaffold) controllerTest() string {
 	if !hasRefs {
 		// Only the specs that save a record assert with Expect.
 		head.WriteString("\t. \"github.com/onsi/gomega\"\n")
-		fmt.Fprintf(&head, "\n\t%q\n\t%q\n\t%q\n", s.module+"/app/domain", s.module+"/app/views", s.module+"/test/factories")
+		fmt.Fprintf(&head, "\n\t%q\n\t%q\n\t%q\n", s.module+"/app/models", s.module+"/app/views", s.module+"/test/factories")
 	}
 	head.WriteString(")\n\n")
 	return head.String() + b.String()

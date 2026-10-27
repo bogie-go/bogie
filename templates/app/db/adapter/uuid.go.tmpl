@@ -1,4 +1,4 @@
-{{if eq .IDScheme "uuid"}}package models
+{{if eq .IDScheme "uuid"}}package adapter
 
 import (
 	"fmt"
@@ -7,12 +7,12 @@ import (
 )
 
 // The domain speaks strings; Postgres speaks uuid. Converting here rather than
-// in app/domain is what lets the domain package import nothing third-party.
+// in db/adapter is what lets app/models import nothing third-party.
 
 func parseUUID(s string) (pgtype.UUID, error) {
 	var id pgtype.UUID
 	if err := id.Scan(s); err != nil {
-		return pgtype.UUID{}, fmt.Errorf("models: %q is not a uuid: %w", s, err)
+		return pgtype.UUID{}, fmt.Errorf("store: %q is not a uuid: %w", s, err)
 	}
 	return id, nil
 }

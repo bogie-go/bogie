@@ -73,7 +73,7 @@ var _ = Describe("Hint", func() {
 	// A syntax error in a query is not a connection problem; adding "start
 	// Postgres" to it would send the reader the wrong way.
 	It("leaves an unrelated error alone", func() {
-		other := errors.New("models: create widget: syntax error at or near \"slect\"")
+		other := errors.New("store: create widget: syntax error at or near \"slect\"")
 
 		Expect(database.Hint(other, "postgres://localhost:5440/x")).To(MatchError(other.Error()))
 	})
