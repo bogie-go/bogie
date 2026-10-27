@@ -1,6 +1,6 @@
 ==> app/controllers/admin_controller/server.go
 // Package admin_controller is the admin namespace: the controllers mounted under
-// /admin, as Rails's "namespace :admin" and the Admin:: module. One file per
+// /admin. One file per
 // controller; the group and its shared middleware in routes.go.
 package admin_controller
 
@@ -47,7 +47,7 @@ import (
 )
 
 // app is the whole application on a clean test database, rebuilt before
-// every spec: the specs in this package use it as RSpec specs use a `let`.
+// every spec, so each spec starts from nothing.
 var app *testapp.App
 
 var _ = BeforeEach(func() {
@@ -71,7 +71,7 @@ import (
 )
 
 // ReportsController is the HTTP surface of reports: its dependencies, its routes
-// and its actions, one Rails controller in one file. Dependencies are small
+// and its actions, all in one file. Dependencies are small
 // interfaces declared here (rule 2), holding only the methods the actions
 // call, and the real thing is passed in from app/application.go, where this
 // controller is wired:

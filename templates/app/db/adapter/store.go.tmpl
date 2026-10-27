@@ -49,9 +49,8 @@ func (s *Store) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }
 // through the queries happens on the same connection and the
 // same not-yet-committed transaction, however many tables it touches. If fn
 // returns an error, everything it did is rolled back as if none of it had
-// happened; only a nil return commits. This is Go's version of Rails'
-// `ActiveRecord::Base.transaction do ... end` — explicit about the
-// boundary (the closure) rather than implicit about which calls join it.
+// happened; only a nil return commits. The boundary is explicit (the closure)
+// rather than implicit about which calls join it.
 //
 // Unexported: a hand-written *Store method that needs a real transaction —
 // a checkout, a transfer, anything that writes to more than one table and

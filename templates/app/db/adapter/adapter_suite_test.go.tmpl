@@ -11,7 +11,7 @@ import (
 )
 
 // store is a migrated test database with every table empty, reset before
-// every spec: the specs in this package use it as RSpec specs use a `let`.
+// every spec, so each spec starts from nothing.
 var store *adapter.Store
 
 var _ = BeforeEach(func() {

@@ -212,12 +212,12 @@ func (ctl *%[8]s) Show(c *gin.Context) {
 		b.WriteString("\tif err != nil {\n\t\tctl.fail(c, err)\n\t\treturn\n\t}\n")
 		fmt.Fprintf(&b, "\t%s, err = ctl.Store.Update%s(c.Request.Context(), %s)\n", recv, typ, recv)
 	} else {
-		// As in Rails's find-then-update: load the record, decode the body
+		// Find, then update: load the record, decode the body
 		// over its current values so a key left out keeps its value, then
 		// save, so validation sees the whole record. The id comes from the
 		// loaded record, not the URL, so it is already the domain's id type.
-		fmt.Fprintf(&b, " Only the fields in the body change, as\n")
-		fmt.Fprintf(&b, "// in Rails: the %s is loaded, the body is decoded over its current values,\n", s.name)
+		fmt.Fprintf(&b, " Only the fields in the body change: the %s is loaded,\n", s.name)
+		b.WriteString("// the body is decoded over its current values,\n")
 		b.WriteString("// so a key left out keeps its value, and the result is saved and validated\n// whole.\n")
 		fmt.Fprintf(&b, "func (ctl *%s) Update(c *gin.Context) {\n", ctl)
 		fmt.Fprintf(&b, "\t%s, err := ctl.Store.Get%s(c.Request.Context(), c.Param(\"id\"))\n", recv, typ)
@@ -238,7 +238,7 @@ func (ctl *%[2]s) Destroy(c *gin.Context) {
 }
 
 // fail maps a domain error to a status, the one place that mapping lives:
-// not found is 404, a validation failure is 422 as in Rails, and anything
+// not found is 404, a validation failure is 422, and anything
 // else is logged and answered 500 without leaking its text.
 func (ctl *%[2]s) fail(c *gin.Context, err error) {
 	switch {
@@ -477,7 +477,7 @@ func (s scaffold) controllerTest() string {
 
 `, s.name, typ, factory)
 		if sent != nil {
-			// PATCH is partial, as in Rails: a field the body leaves out keeps
+			// PATCH is partial: a field the body leaves out keeps
 			// its stored value rather than being blanked.
 			w("\t\tIt(\"changes only the fields sent\", func() {\n\t\t\tvar updated views.%sResponse\n", typ)
 			w("\t\t\tapp.Patch(%s, map[string]any{%q: %s}).Do().Status(http.StatusOK).JSON(&updated)\n\n", pathOf, sent.Name, sentLit)

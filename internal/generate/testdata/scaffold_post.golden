@@ -52,7 +52,7 @@ type Post struct {
 	UpdatedAt   time.Time
 }
 
-// Validate is the model's validations, as Rails would put them. Wrap every
+// Validate is the model's validations. Wrap every
 // failure in ErrInvalid so a controller can answer 422 without knowing the
 // rule:
 //
@@ -84,7 +84,7 @@ import (
 // hand-written addition goes in posts_extra.go, not here.
 
 // CreatePost validates a post, inserts it, and returns it with its id and
-// timestamps. Validation runs on save, as Rails's does, so every caller
+// timestamps. Validation runs on save, so every caller
 // gets it and none can forget it.
 func (s *Store) CreatePost(ctx context.Context, p models.Post) (models.Post, error) {
 	if err := p.Validate(); err != nil {
@@ -398,8 +398,8 @@ func (ctl *PostsController) Create(c *gin.Context) {
 	c.JSON(http.StatusCreated, postView(p))
 }
 
-// Update handles PATCH /posts/:id. Only the fields in the body change, as
-// in Rails: the post is loaded, the body is decoded over its current values,
+// Update handles PATCH /posts/:id. Only the fields in the body change: the post is loaded,
+// the body is decoded over its current values,
 // so a key left out keeps its value, and the result is saved and validated
 // whole.
 func (ctl *PostsController) Update(c *gin.Context) {
@@ -431,7 +431,7 @@ func (ctl *PostsController) Destroy(c *gin.Context) {
 }
 
 // fail maps a domain error to a status, the one place that mapping lives:
-// not found is 404, a validation failure is 422 as in Rails, and anything
+// not found is 404, a validation failure is 422, and anything
 // else is logged and answered 500 without leaking its text.
 func (ctl *PostsController) fail(c *gin.Context, err error) {
 	switch {

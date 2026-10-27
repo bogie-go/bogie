@@ -10,8 +10,8 @@ import (
 	"{{.Module}}/config"
 )
 
-// welcome is the page you see at / before the app has one of its own, the
-// way a new Rails app greets you. Served only in development, and only
+// welcome is the page you see at / before the app has one of its own.
+// Served only in development, and only
 // while no route claims /: it is the second of three no-route handlers
 // mounted in routes.go (`r.NoRoute(s.staticFile, s.welcome, s.notFound)`),
 // after public/ and before the final 404, so the first controller to mount

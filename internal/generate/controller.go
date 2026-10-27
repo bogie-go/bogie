@@ -239,7 +239,7 @@ func (c controller) source() string {
 	}
 
 	fmt.Fprintf(&b, `// %[1]s is the HTTP surface of %[2]s: its dependencies, its routes
-// and its actions, one Rails controller in one file. Dependencies are small
+// and its actions, all in one file. Dependencies are small
 // interfaces declared here (rule 2), holding only the methods the actions
 // call, and the real thing is passed in from app/application.go, where this
 // controller is wired:
@@ -342,7 +342,7 @@ import (
 )
 
 // app is the whole application on a clean test database, rebuilt before
-// every spec: the specs in this package use it as RSpec specs use a `+"`let`"+`.
+// every spec, so each spec starts from nothing.
 var app *testapp.App
 
 var _ = BeforeEach(func() {
@@ -364,7 +364,7 @@ func NamespaceSuitePath(ns string) string {
 
 func namespaceServer(pkg, ns string) string {
 	return fmt.Sprintf(`// Package %[1]s is the %[2]s namespace: the controllers mounted under
-// /%[2]s, as Rails's "namespace :%[2]s" and the %[3]s:: module. One file per
+// /%[2]s. One file per
 // controller; the group and its shared middleware in routes.go.
 package %[1]s
 

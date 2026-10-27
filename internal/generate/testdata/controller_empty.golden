@@ -8,7 +8,7 @@ import (
 )
 
 // HealthController is the HTTP surface of health: its dependencies, its routes
-// and its actions, one Rails controller in one file. Dependencies are small
+// and its actions, all in one file. Dependencies are small
 // interfaces declared here (rule 2), holding only the methods the actions
 // call, and the real thing is passed in from app/application.go, where this
 // controller is wired:

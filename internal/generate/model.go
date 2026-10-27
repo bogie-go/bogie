@@ -384,7 +384,7 @@ func domainType(name string, attrs []Attr, scheme IDScheme) string {
 	fmt.Fprintf(&b, "\t%-*s time.Time\n", width, "CreatedAt")
 	fmt.Fprintf(&b, "\t%-*s time.Time\n", width, "UpdatedAt")
 	b.WriteString("}\n\n")
-	fmt.Fprintf(&b, "// Validate is the model's validations, as Rails would put them. Wrap every\n")
+	fmt.Fprintf(&b, "// Validate is the model's validations. Wrap every\n")
 	fmt.Fprintf(&b, "// failure in ErrInvalid so a controller can answer 422 without knowing the\n")
 	fmt.Fprintf(&b, "// rule:\n//\n//\treturn fmt.Errorf(\"%%w: title is required\", ErrInvalid)\n")
 	fmt.Fprintf(&b, "func (%s %s) Validate() error {\n\treturn nil\n}\n", name[:1], typ)
@@ -429,7 +429,7 @@ func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 
 	// Create
 	fmt.Fprintf(&b, "// Create%s validates a %s, inserts it, and returns it with its id and\n", typ, name)
-	b.WriteString("// timestamps. Validation runs on save, as Rails's does, so every caller\n")
+	b.WriteString("// timestamps. Validation runs on save, so every caller\n")
 	b.WriteString("// gets it and none can forget it.\n")
 	fmt.Fprintf(&b, "func (s *Store) Create%s(ctx context.Context, %s models.%s) (models.%s, error) {\n", typ, recv, typ, typ)
 	fmt.Fprintf(&b, "\tif err := %s.Validate(); err != nil {\n\t\treturn models.%s{}, err\n\t}\n", recv, typ)

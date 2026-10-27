@@ -1,6 +1,6 @@
 // Package database creates and drops the database the migrations run against.
 //
-// Rails has db:create and db:drop. Go projects usually leave that to createdb
+// Go projects usually leave creating and dropping the database to createdb
 // and dropdb, but those are libpq binaries and nothing else here needs libpq
 // installed; Postgres is a container. So these live in the binary next to
 // migrate, for the same reason migrate does: one artifact, and the command a
@@ -145,7 +145,7 @@ func connect(adminURL string) (*sql.DB, error) {
 // Create creates the database, and says so if it was already there.
 //
 // Existing is not an error, so this is safe to put in front of a migration,
-// which is what `db prepare` does and what `rails db:prepare` does.
+// which is what `db prepare` does.
 func Create(ctx context.Context, databaseURL string, log *slog.Logger) error {
 	name, adminURL, err := maintenance(databaseURL)
 	if err != nil {

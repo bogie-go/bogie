@@ -126,7 +126,7 @@ undo: this is not a rollback of one migration, it is every table at once.
 //
 // Separate from `{{.Name}} migrate` because it is a different object: migrate
 // changes a schema inside a database, this creates and destroys the database
-// holding it. Rails draws the same line between db:create and db:migrate.
+// holding it.
 func runDB(ctx context.Context, args []string) (err error) {
 	if len(args) == 0 {
 		fmt.Fprint(os.Stderr, dbUsage)

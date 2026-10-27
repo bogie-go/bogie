@@ -3,8 +3,7 @@
 //
 // Unlike a migration, nothing here is tracked in a version table: `db seed`
 // runs every seed below every time it is called. That makes each one's own
-// job to be safe to run twice — an upsert, or ON CONFLICT DO NOTHING — the
-// same discipline Rails developers already carry in db/seeds.rb.
+// job to be safe to run twice — an upsert, or ON CONFLICT DO NOTHING.
 //
 // `bogie g seed NAME` writes a seed and registers it below.
 package seeds

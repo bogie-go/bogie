@@ -10,7 +10,7 @@ import (
 )
 
 // app is the whole application on a clean test database, rebuilt before
-// every spec: the specs in this package use it as RSpec specs use a `let`.
+// every spec, so each spec starts from nothing.
 var app *testapp.App
 
 var _ = BeforeEach(func() {

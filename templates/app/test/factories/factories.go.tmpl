@@ -1,5 +1,4 @@
-// Package factories builds records for tests: Rails' factory_bot, written the
-// Go way. Each function fills in valid defaults, lets the test override only
+// Package factories builds records for tests. Each function fills in valid defaults, lets the test override only
 // what it cares about, saves through the real store, and fails the test on
 // any error, so a test reads as its arrangement and nothing else.
 //

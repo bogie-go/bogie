@@ -88,8 +88,8 @@ func runServe(ctx context.Context, _ []string) error {
 	return application.Start(ctx)
 }
 
-// runRoutes prints every mounted route, as `rails routes` does, by pointing
-// gin's own debug route print at the format Rails uses rather than fetching
+// runRoutes prints every mounted route by pointing gin's own debug route
+// print at a one-line-per-route format rather than fetching
 // Router.Routes() and writing a second lister: this fires from inside the
 // same SetupRoutes serve runs, so the list is what is actually wired, in the
 // order it was wired, not a guess read off the templates. Like gin's own

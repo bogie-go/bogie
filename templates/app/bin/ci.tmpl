@@ -72,7 +72,7 @@ signoff() {
 
 # Everything below the setup runs in the test environment, against the
 # compose stack's {{.Name}}_test. It is dropped and rebuilt from the migration
-# files every run, as Rails's test preparation does, so the database can never
+# files every run, so the database can never
 # drift from the files on disk; then it is rolled all the way back and forward
 # again, so a migration with a broken Down is caught before it reaches anyone.
 export {{.EnvPrefix}}_ENV=test
