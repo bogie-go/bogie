@@ -3,7 +3,7 @@
 #
 # Every check that must pass before a commit is merged or deployed, in one
 # file, run on the machine you already have rather than a slower one you rent.
-# This is Rails 8.1's bin/ci, ported. Every step runs even when an earlier one
+# Every step runs even when an earlier one
 # failed, so one run reports everything; the run as a whole fails if any step
 # did. A green run on a clean tree ends with `gh signoff`, which records a
 # "signoff" status on the commit for branch protection to require.

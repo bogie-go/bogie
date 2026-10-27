@@ -1,8 +1,7 @@
 #!/bin/sh
 # bin/ci: continuous integration for the bogie tool, run here.
 #
-# Rails 8.1's bin/ci, ported: every check in one file, run on the machine you
-# already have. Every step runs even when an earlier one failed; the run fails
+# Every check in one file, run on the machine you already have. Every step runs even when an earlier one failed; the run fails
 # if any step did; a green run on a clean tree ends with `gh signoff`.
 #
 # The last steps are what stops the templates rotting: generate an app into a

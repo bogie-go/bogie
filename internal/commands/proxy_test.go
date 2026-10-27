@@ -15,13 +15,13 @@ func joined(steps [][]string) string {
 	return strings.Join(parts, " && ")
 }
 
-func TestPlanSpellsCommandsAsRailsDoes(t *testing.T) {
+func TestPlanSpellsTasksWithColonsAndCommandsWithSpaces(t *testing.T) {
 	cases := []struct {
 		command string
 		args    []string
 		want    string
 	}{
-		// Rails tasks, colon-spelled
+		// tasks, colon-spelled
 		{"db:prepare", nil, "go run . db prepare"},
 		{"db:migrate", nil, "go run . migrate up"},
 		{"db:migrate:status", nil, "go run . migrate status"},
@@ -30,7 +30,7 @@ func TestPlanSpellsCommandsAsRailsDoes(t *testing.T) {
 		{"db:migrate:redo", nil, "go run . migrate down --yes && go run . migrate up"},
 		{"db:seed", nil, "go run . db seed"},
 		{"credentials:edit", []string{"-e", "production"}, "go tool credentials edit -e production"},
-		// Rails commands, space-spelled
+		// commands, space-spelled
 		{"server", nil, "go run . serve"},
 		{"server", []string{"--help"}, "go run . serve --help"},
 		{"worker", nil, "go run . worker"},

@@ -1,7 +1,7 @@
 # {{.Name}}
 
-The Go service next to the Rails app. Generated with
-[Bogie](https://github.com/bogie-go/bogie); the layout is Rails-shaped on
+A Go API service. Generated with
+[Bogie](https://github.com/bogie-go/bogie); the layout is by role on
 purpose and `AGENTS.md` says how to work in it.
 
     make up                   # postgres on :5440, via docker compose
@@ -12,7 +12,7 @@ purpose and `AGENTS.md` says how to work in it.
     bogie test                # or: make test
     bin/ci                    # every check, locally; green signs off the commit
 
-`make help` lists the rest. `bogie` spells every command the way Rails does,
+`make help` lists the rest. `bogie` spells tasks with a colon,
 `db:migrate`, `db:rollback`, `credentials:edit`, and works from any
 subdirectory; every command runs the app's own code.
 

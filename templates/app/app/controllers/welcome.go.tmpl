@@ -95,14 +95,14 @@ var welcomePage = template.Must(template.New("welcome").Delims("[[", "]]").Parse
     <main>
       <div class="art">
         <figure>
-          <img src="[[.Mascot]]" alt="Bogie's mascot: a gopher and a ruby riding a mine cart on rails">
+          <img src="[[.Mascot]]" alt="Bogie's mascot: a gopher and a red gem riding a mine cart along a track">
         </figure>
       </div>
 
       <section>
         <p class="eyebrow">Bogie</p>
         <h1><code>[[.Name]]</code> is running</h1>
-        <p class="lead">The Go service next to your Rails app.</p>
+        <p class="lead">A Go API service, from zero to production.</p>
 
         <dl>
           <dt>Environment</dt><dd>[[.Env]]</dd>
@@ -115,7 +115,7 @@ var welcomePage = template.Must(template.New("welcome").Delims("[[", "]]").Parse
         <ol>
           <li>Add a resource: <code>bogie g scaffold post title:string body:text</code> writes the model, the views and a controller, and registers it above the <code>bogie:</code> markers.</li>
           <li>Run <code>bin/ci</code> before you push. Green signs off the commit.</li>
-          <li>Read the six rules in <code>AGENTS.md</code>. Rule two is the one with no Rails equivalent.</li>
+          <li>Read the six rules in <code>AGENTS.md</code>. Rule two (interfaces are declared by the consumer) is the one most worth reading.</li>
         </ol>
       </section>
 

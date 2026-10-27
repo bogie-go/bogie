@@ -21,7 +21,7 @@ There's no hosted CI. `bin/ci` is the check of record.
 - [ ] Rendered Go stays gofmt-clean and passes the generated app's `.golangci.yml`,
       in both the plain and the `--jobs` app (`bin/ci` covers both).
 - [ ] `destroy` still undoes what `generate` does, and `bogie doctor` passes after both.
-- [ ] Docs updated where behaviour changed (`docs/STATUS.md`, `docs/FROM_RAILS.md`,
+- [ ] Docs updated where behaviour changed (`docs/STATUS.md`,
       the generated `AGENTS.md`).
 - [ ] An agent wrote substantial parts of this. If so, the commits carry a
       `Co-Authored-By` trailer and I've reviewed every line.

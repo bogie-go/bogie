@@ -108,11 +108,11 @@ const dbUsage = `Usage: {{.Name}} db <command>
 Commands:
   create              create the database this environment points at
   drop --yes          DROP that database, and everything in it
-  prepare             create if needed, migrate, seed (rails db:prepare)
-  seed                apply every seed in db/seeds (rails db:seed); each one
+  prepare             create if needed, migrate, seed
+  seed                apply every seed in db/seeds; each one
                       runs again every time, so it must be safe to run twice
 
-Rails' db:create and db:drop. Both connect to the server's "postgres" database
+create and drop connect to the server's "postgres" database
 rather than the target, so they work before it exists and after it is gone,
 and, like migrate, they need no psql on the host.
 

@@ -1,4 +1,4 @@
-// Command {{.Name}} is the Go service next to the Rails app.
+// Command {{.Name}} is the Go API service.
 //
 // ONE BINARY, several roles, selected by the first argument: serving,
 // migrating the schema, creating the database. They share a module and
@@ -26,7 +26,7 @@ Commands:
   worker              work the job queue{{end}}
   migrate <command>   inspect or move the embedded schema
   db <command>        create, drop or prepare the database itself
-  routes              every mounted route, method and path (rails routes)
+  routes              every mounted route, method and path
 
 With no command this serves, which is what the container does. Every command
 reads the same {{.EnvPrefix}}_ENV, so they all act on the same database.

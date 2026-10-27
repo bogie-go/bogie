@@ -10,11 +10,11 @@ import (
 // AuthenticationShapes are what `bogie g authentication SHAPE` writes, each
 // a middleware on a route group, as the reference services guard theirs:
 //
-//	secret   a shared secret in a header, for the Rails app calling this
+//	secret   a shared secret in a header, for a trusted service calling this
 //	         service over the private network (kchat's control secret)
 //	token    bearer tokens, JWT HS256 with a shared secret, for a service
-//	         that faces users or devices; the Rails app can mint them with
-//	         the jwt gem and this service verifies (line-connect's sessions)
+//	         that faces users or devices; another service can mint them
+//	         with any JWT library and this service verifies (line-connect's sessions)
 //	api_key  keys with a bcrypt digest in an api_keys table, for machine
 //	         clients (line-connect's applications)
 var AuthenticationShapes = []string{"secret", "token", "api_key"}
@@ -124,13 +124,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// SecretHeader carries the shared secret on the routes the Rails app calls.
+// SecretHeader carries the shared secret on the routes a trusted service calls.
 const SecretHeader = %[1]q
 
-// RequireSecret guards routes for a trusted caller: the Rails app next door,
+// RequireSecret guards routes for a trusted caller: another service next door,
 // over the private network. This is a shared secret, not a user credential.
 // Anything that needs to know WHICH person is acting carries that in the
-// request body, because the permission check already happened in Rails.
+// request body, because the permission check already happened in the caller.
 //
 // The secret comes from config (%[3]s in the credentials file,
 // %[4]s in the environment); an empty one opens nothing.
@@ -249,16 +249,16 @@ import (
 	%[1]q
 )
 
-// WithSecret is the route group the Rails app calls. Every route mounted in
+// WithSecret is the route group a trusted service calls. Every route mounted in
 // it needs the shared secret from config (%[3]s in the credentials
 // file, %[4]s in the environment) in the %[5]s header. Mount a
 // controller here instead of on the router, in routes.go:
 //
 //	s.Reports.SetupRoutes(s.WithSecret(&r.RouterGroup))
 //
-// On the Rails side, one header on the client:
+// The caller sends one header on every request:
 //
-//	Faraday.new(url: ENV["%[6]s_URL"], headers: { "%[5]s" => Rails.application.credentials.%[2]s_secret })
+//	%[5]s: <the secret>
 func (s *Server) WithSecret(r *gin.RouterGroup) *gin.RouterGroup {
 	return r.Group("", middlewares.RequireSecret(s.Config.%[7]s))
 }
@@ -271,9 +271,9 @@ func (a auth) token() ([]File, []Wire, error) {
 	setting, _ := AuthenticationSetting("token")
 	files := []File{
 		{Path: "app/services/token/token.go", Content: fmt.Sprintf(`// Package token mints and verifies the bearer tokens a signed-in user
-// presents. JWT, HS256, one shared secret: the Rails app next door can mint
-// a token for its user with the jwt gem and this service verifies it, so
-// users keep living in Rails, or this service mints its own from a sessions
+// presents. JWT, HS256, one shared secret: another service can mint
+// a token for its user with any JWT library and this service verifies it, so
+// users keep living there, or this service mints its own from a sessions
 // controller. Nothing here knows about HTTP.
 package token
 
@@ -304,7 +304,7 @@ type Maker struct {
 
 // Claims is what a verified token says.
 type Claims struct {
-	// Subject is who the token was minted for: the Rails user's id, usually.
+	// Subject is who the token was minted for: the caller's user id, usually.
 	Subject   string
 	ExpiresAt time.Time
 	// ID is the token's own id, for a revocation list if you keep one.
@@ -465,7 +465,7 @@ const subjectKey = "subject"
 // RequireUser guards routes for a signed-in user: a bearer token in the
 // Authorization header that the token service verifies. The token's subject
 // is then on the context for handlers, through Subject. Who the subject is,
-// a Rails user id usually, is for the caller and the handler to agree on;
+// a user id usually, is for the caller and the handler to agree on;
 // nothing is loaded here.
 func RequireUser(tokens userTokens) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -579,11 +579,9 @@ import (
 // Tokens is the token maker for this app: the secret from config
 // (%[4]s in the credentials file, %[5]s in the environment) and the
 // app's name as issuer. A sessions controller that signs users in here mints
-// with it; a Rails app that signs them in mints the same token with the jwt
-// gem and the same secret:
-//
-//	JWT.encode({ iss: %[3]q, sub: user.id.to_s, iat: Time.now.to_i, exp: 15.minutes.from_now.to_i, jti: SecureRandom.uuid },
-//	           Rails.application.credentials.%[3]s_token_secret, "HS256")
+// with it; another service that signs users in mints the same token with any JWT
+// library: HS256, the same secret, and the claims iss (%[3]q), sub, iat, exp
+// and jti.
 func (s *Server) Tokens() token.Maker {
 	return token.Maker{Secret: []byte(s.Config.%[6]s), Issuer: %[3]q}
 }
@@ -1006,7 +1004,7 @@ const apiKeysUsage = `+"`"+`Usage: %[4]s api_keys create NAME
 Makes an api key for a machine client and prints it, the only time it is
 shown in full. The client presents it as a bearer token on the routes
 mounted under WithAPIKey. The table keeps a bcrypt digest, never the key.
-Spelled the Rails way through the tool: bogie api_keys:create NAME
+Through the tool: bogie api_keys:create NAME
 `+"`"+`
 
 // runAPIKeys handles `+"`%[4]s api_keys ...`"+`.

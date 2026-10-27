@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Bogie's scope is deliberately narrow: **the Go service next to your Rails app**.
+        Bogie's scope is deliberately narrow: **a Go API service, from zero to production**.
         API-only, Postgres-only, one choice per concern, never a runtime dependency of
         the app it generates. Its decisions and their reasoning are in
         [docs/DESIGN.md](https://github.com/bogie-go/bogie/blob/main/docs/DESIGN.md).
@@ -20,18 +20,11 @@ body:
     validations:
       required: true
 
-  - type: input
-    id: rails
-    attributes:
-      label: The Rails equivalent, if there is one
-      description: Bogie spells things the way Rails does. What would you type in Rails?
-      placeholder: "rails g mailer UserMailer welcome"
-
   - type: textarea
     id: proposal
     attributes:
       label: What you propose
-      description: Commands, generated files, and behaviour. Show the Rails-style output (`create` / `insert`) if it's a generator.
+      description: Commands, generated files, and behaviour. Show the output (`create` / `insert`) if it's a generator.
     validations:
       required: true
 

@@ -5,8 +5,8 @@ import (
 	"strings"
 )
 
-// Rails's resourceful actions and the routes they take. Anything else is a
-// GET under its own name, as `rails g controller posts search` gives
+// the resourceful actions and the routes they take. Anything else is a
+// GET under its own name, so `g controller posts search` gives
 // `get "posts/search"`. new and edit render forms and have no place in an
 // API-only service, so they are refused.
 var resourceful = map[string]struct{ method, path string }{
@@ -29,7 +29,7 @@ type Wire struct {
 	Sorted bool
 }
 
-// ParseControllerName splits what `rails g controller` accepts, posts,
+// ParseControllerName splits what `g controller` accepts, posts,
 // admin/posts or Admin::Posts, into a namespace (empty for none) and a name,
 // both snake_case. One level of namespace, as docs/DESIGN.md §5 decides.
 func ParseControllerName(spec string) (ns, name string, err error) {
@@ -54,7 +54,7 @@ func ParseControllerName(spec string) (ns, name string, err error) {
 	return ns, name, nil
 }
 
-// Controller writes one Rails controller as one Go file: a <Name>Controller
+// Controller writes one controller as one Go file: a <Name>Controller
 // type holding its dependencies, SetupRoutes, one method per action, and a
 // test that every route is mounted. With no namespace it goes in the
 // controllers package as app/controllers/<name>_controller.go; with one, in
@@ -100,7 +100,7 @@ func checkNamespace(ns string) error {
 }
 
 // Namespace writes the package a namespaced controller lives in:
-// app/controllers/<ns>_controller/ (Rails's app/controllers/admin/, with the
+// app/controllers/<ns>_controller/ (the namespace admin, with the
 // suffix Go needs so that admin never collides with another import in
 // app/application.go, and internal is not Go's internal) with server.go
 // (the namespace Server, one named field per controller above its own
@@ -161,7 +161,7 @@ func NamespaceWirePrefixes(ns string) []Wire {
 
 // LooksLikeASingularResource reports whether a controller name is singular
 // while its actions address a member by id (show, update, destroy): the
-// shape of a resource, which Rails names in the plural. index alone does
+// shape of a resource, which is named in the plural. index alone does
 // not count, since welcome or search are whole controllers of their own.
 func LooksLikeASingularResource(name string, actions []string) bool {
 	if Singular(name) != name {
@@ -175,7 +175,7 @@ func LooksLikeASingularResource(name string, actions []string) bool {
 	return false
 }
 
-// controller is one Rails controller: the names every file and line derive
+// controller is one controller: the names every file and line derive
 // from, computed once.
 type controller struct {
 	module, ns, name string

@@ -1,9 +1,9 @@
-<p align="center"><img src="docs/bogie.png" width="260" alt="Bogie's mascot: a gopher and a ruby riding a mine cart on rails"></p>
+<p align="center"><img src="docs/bogie.png" width="260" alt="Bogie's mascot: a gopher and a red gem riding a mine cart along a track"></p>
 
 <h1 align="center">Bogie</h1>
 
-<p align="center"><strong>The Go service next to your Rails app.</strong><br>
-A <code>rails new</code>-style CLI that scaffolds an API-only, Postgres-only Go service
+<p align="center"><strong>A Go API service, from zero to production.</strong><br>
+A CLI that scaffolds an API-only, Postgres-only Go service
 out of Gin, sqlc, goose, River and Kamal, with generators that also wire the code in.</p>
 
 <p align="center">
@@ -18,24 +18,17 @@ out of Gin, sqlc, goose, River and Kamal, with generators that also wire the cod
 
 ---
 
-Every Rails shop eventually needs one service that Rails is the wrong tool
-for: a webhook receiver that has to answer in under a second while a platform
-retries at it, a socket gateway holding thousands of idle connections, a
-worker draining a queue against a rate-limited API. The web app stays in
-Rails. That one thing goes to Go. The first attempt usually goes badly, not
-because of Go, but because everything Rails decided for you is now yours to
-decide.
+Go gives you freedom, and with it a long list of decisions before the first
+endpoint works: which router, how to talk to the database, where migrations
+live, how jobs run, how secrets are stored, how it ships. Getting those right
+is the hard part of a Go service, and every team makes them again from
+scratch.
 
-**Why Bogie exists.** We needed parts of our system to handle what Rails
-doesn't do well, like heavy concurrency and high load, so we moved those
-parts to Go. But Go gives you so much freedom and so many choices that
-building the app itself was the hard part. Bogie brings Rails's convention
-over configuration to Go, so the Go side starts from decisions already made.
-
-Bogie makes those decisions the way Rails would, out of tools the Go
-ecosystem already ships, and builds only what has no equivalent: the
-`rails new`-style generator, and `rails g`-style generators that also
-**register** what they write, because Go has no autoload.
+**Why Bogie exists.** Bogie makes those decisions once, out of tools the Go
+ecosystem already ships, so a service starts from a layout and a pipeline that
+already work. It builds only what has no equivalent: the generator that creates
+a new service, and generators that also **register** what they write, because
+Go has no autoload.
 
 The generated app **never imports Bogie**. Delete the tool tomorrow and the
 app does not notice.
@@ -52,7 +45,7 @@ You need **Docker with Compose v2** (or your own Postgres, see
 [below](#your-own-postgres-without-docker)) and **Go 1.26+**. The tool itself builds
 with Go 1.25, but the app it generates needs 1.26, because the pinned sqlc
 requires it. The generated app runs its Postgres in Compose on port 5440, so it
-stays clear of the Rails app's 5432.
+stays clear of a Postgres already running on 5432.
 sqlc and goose are pinned in the generated app's `go.mod` under `tool`, so
 there is nothing else to install globally.
 
@@ -68,7 +61,7 @@ clone, `go install .`.
 ## Quickstart
 
 ```sh
-bogie new blog                                  # an empty API service, like rails new
+bogie new blog                                  # an empty API service
 cd blog
 make up                                         # Postgres on :5440 via docker compose
 bogie g scaffold post title:string body:text    # migration, SQL, domain type, store, controller, wired
@@ -122,7 +115,7 @@ bogie test
 `make up`, `make down`, `make psql` and `bin/ci`'s database step
 (`docker compose up`) still use Docker.
 
-`bogie g scaffold` prints what it did, the way Rails does:
+`bogie g scaffold` prints what it did:
 
 ```
       create  db/migrate/20261003054047_create_posts.sql
@@ -146,24 +139,21 @@ every controller is constructed and mounted.
 
 ## What you get
 
-Rails spelling, Rails layout, Go underneath:
+One command surface, spelled the same everywhere:
 
-| Rails | Bogie |
+| Command | What it does |
 | --- | --- |
-| `rails new blog` | `bogie new blog` (`--jobs` adds River, `--id=uuid` swaps the default bigint id scheme for uuid) |
-| `rails g model post title:string` | `bogie g model post title:string`: migration, queries, domain type, store, then sqlc |
-| `rails g scaffold post …` | `bogie g scaffold post …`: model + JSON views + a wired controller |
-| `rails g controller posts index show` | `bogie g controller posts index show`, registered as it is written |
-| `namespace :admin` | `bogie g controller admin/reports`, a package per namespace |
-| `rails g job send_welcome` | `bogie g job send_welcome`, a River worker on the same Postgres |
-| `credentials.yml.enc` groups | `bogie g config smtp address:req port:int=1025 password:secret`: a typed group of the credentials file, registered, with development values; `smtp.address` is `SMTP_ADDRESS` |
-| `rails g authentication` | `bogie g authentication secret\|token\|api_key`: a middleware for a route group (shared secret, JWT bearer token, or hashed API key), its config and credentials entry, and a `WithSecret` / `WithUser` / `WithAPIKey` helper; you mount the routes it guards |
-| `rails db:migrate`, `db:rollback`, `db:seed` | the same words, run by the app's own binary |
-| `rails credentials:edit` | `bogie credentials:edit`: encrypted file, key never committed |
-| `rails s`, `rails t`, `bin/ci` | `bogie s`, `bogie t`, `bin/ci` |
-
-The full dictionary, including what has no equivalent (no console, no
-`schema.rb`, no autoload), is in [`docs/FROM_RAILS.md`](docs/FROM_RAILS.md).
+| `bogie new blog` | an empty API service (`--jobs` adds River, `--id=uuid` swaps the default bigint id scheme for uuid) |
+| `bogie g model post title:string` | migration, queries, model type, store, then sqlc |
+| `bogie g scaffold post …` | the model, JSON views and a wired controller |
+| `bogie g controller posts index show` | a controller, registered as it is written |
+| `bogie g controller admin/reports` | a namespace is a package |
+| `bogie g job send_welcome` | a River worker on the same Postgres |
+| `bogie g config smtp address:req port:int=1025 password:secret` | a typed group of the credentials file, registered, with development values; `smtp.address` is `SMTP_ADDRESS` |
+| `bogie g authentication secret\|token\|api_key` | a middleware for a route group (shared secret, JWT bearer token, or hashed API key), its config and credentials entry, and a `WithSecret` / `WithUser` / `WithAPIKey` helper; you mount the routes it guards |
+| `bogie db:migrate`, `db:rollback`, `db:seed` | run by the app's own binary |
+| `bogie credentials:edit` | an encrypted file, key never committed |
+| `bogie s`, `bogie t`, `bin/ci` | serve with live reload, test, and the whole pipeline |
 
 Every new app also ships:
 
@@ -171,7 +161,7 @@ Every new app also ships:
   recipe per task, each starting with `bogie g …`. An agent that runs the
   generator gets the registration right. One that writes it by hand has to
   work it out again.
-- **`bin/ci`**: the whole pipeline, run locally as in Rails 8.1. It rebuilds the
+- **`bin/ci`**: the whole pipeline, run locally. It rebuilds the
   test database, migrates down to zero and back up, runs `sqlc diff`, gofmt, vet,
   golangci-lint, the build and the tests. A green run ends with `gh signoff`.
   There is no hosted runner.
@@ -185,8 +175,8 @@ Every new app also ships:
 
 ## Why Bogie
 
-**Glue, then gaps.** For each thing Rails gives you, Bogie picks one
-ecosystem tool and wires it once:
+**Glue, then gaps.** For each concern, Bogie picks one ecosystem tool and
+wires it once:
 
 | Concern | Choice |
 | --- | --- |
@@ -195,46 +185,44 @@ ecosystem tool and wires it once:
 | Migrations | goose, SQL files embedded in the binary |
 | Seeds | plain Go in `db/seeds`, one function per file; `db seed` re-runs every one, so each is written to be safe to run twice |
 | Background jobs | River, opt-in with `--jobs`: Postgres-backed, no Redis, enqueue in the same transaction |
-| Credentials | [`bogie-go/credentials`](https://github.com/bogie-go/credentials), the Rails `credentials.yml.enc` pattern |
+| Credentials | [`bogie-go/credentials`](https://github.com/bogie-go/credentials), an encrypted file committed as ciphertext, with a key that is never committed |
 | Deploy | Kamal 2 |
 | Logging | `log/slog` |
 
 Bogie only builds what has no Go equivalent: `new`, generators that wire,
-`destroy`, `doctor`, and the Rails-spelled command surface.
+`destroy`, `doctor`, and the command surface.
 
 ### Compared with
-
-Be honest with yourself first: if the job fits in Rails (Sidekiq/Solid Queue,
-Action Cable), keep it in Rails. Bogie is for when it doesn't.
 
 | | Bogie | [Andurel](https://github.com/mbvlabs/andurel) | [go-blueprint](https://github.com/Melkeydev/go-blueprint) | [Buffalo](https://github.com/gobuffalo/buffalo) | Hand-rolled |
 | --- | --- | --- | --- | --- | --- |
 | Shape | scaffolder, then gone | scaffolder | project starter | framework with its own runtime | — |
 | Scope | API-only, Postgres-only | full-stack: views, frontend, DI | choose-your-stack starter | full-stack | anything |
 | Generators after `new` | yes, and they wire (`g`, `d`, `doctor`) | yes | no, `create` only | yes | — |
-| Audience | a Rails shop adding one Go service | a Rails-like Go app on its own | anyone starting a Go project | Go web apps | — |
+| Audience | a team that wants a Go API service with the decisions made | a full-stack Go app | anyone starting a Go project | Go web apps | — |
 
-The short version: **if you want a Rails-like framework in Go, with views,
+The short version: **if you want a full-stack framework in Go, with views,
 use Andurel**, which does that well. If you want a blank Go project with your
 pick of router and database, go-blueprint is quicker. Bogie is for the
-narrower case: a Rails team that already has the Rails app and wants the one
-Go service beside it to look and behave like something they already know.
+narrower case: an API-only service on Postgres, where you would rather start
+from decisions already made than make them again.
 
 ### What it is not
 
 - **Not a framework.** No `bogie.Application`, no base classes, no DSL.
   Bogie renders `go:embed`ded templates and shells out.
-- **Not full-stack.** API-only, no views. The Rails app renders.
+- **Not full-stack.** API-only, no views. Whatever renders (a web app, a mobile app) calls it.
 - **Not configurable (yet).** Postgres only, Gin only, one choice per concern.
   SQLite is deliberately out until River's SQLite driver is stable
   ([DESIGN.md §12.4](docs/DESIGN.md)).
-- **Not idiomatic Go layout, on purpose.** `app/controllers`, `db/migrate`,
-  underscored package names. Moving between the two repos costs nothing. If
-  that layout bothers you, this tool will too.
+- **Not the usual Go layout, on purpose.** Files live by role:
+  `app/controllers`, `db/migrate`, underscored package names for namespaces.
+  Every file has one obvious home. If that layout bothers you, this tool will
+  too.
 
 ## Status
 
-**v0.4.x, single maintainer, MIT.** Working today: `bogie new` (with or
+**v0.5.x, single maintainer, MIT.** Working today: `bogie new` (with or
 without `--jobs`); `g`/`d` for `scaffold`, `model`, `migration`, `controller`,
 `service`, `seed`, `job`, `authentication` and `config`; `doctor`; the `db:*` and `credentials:*` tasks; `server` and
 `worker` (both live-reload under Air in development), `test`, `lint`, `ci`; and `app:update`.
@@ -260,7 +248,7 @@ No telemetry, now or later.
 
 ## Contributing
 
-Issues and design arguments are welcome, especially from Rails developers who
+Issues and design arguments are welcome, especially from people who
 have shipped a Go service. Before a PR: `go install . && bin/ci` (about a
 minute; it scaffolds two apps, runs every generator and `destroy` against them,
 and runs their pipelines). There is no hosted CI, so `bin/ci` is the check of
@@ -270,7 +258,6 @@ change, change the doc first.
 ## Links
 
 - Website: <https://bogie-go.com>
-- Rails → Bogie dictionary: [`docs/FROM_RAILS.md`](docs/FROM_RAILS.md)
 - Design: [`docs/DESIGN.md`](docs/DESIGN.md) · Status: [`docs/STATUS.md`](docs/STATUS.md)
 - Credentials library: [bogie-go/credentials](https://github.com/bogie-go/credentials)
 

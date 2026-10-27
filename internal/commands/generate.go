@@ -27,13 +27,13 @@ Generators:
                                     db/adapter/<table>.go; then runs sqlc
   scaffold NAME [field[:type] ...]  the model, plus app/views/<table>.go and
                                     a <Table>Controller with real handlers
-                                    over the store, REGISTERED. As Rails:
-                                    the model is singular, the rest plural
+                                    over the store, REGISTERED. The model is
+                                    singular, the rest plural
   controller NAME [action ...]      app/controllers/<name>_controller.go, one
-                                    Rails controller in one file, REGISTERED:
+                                    controller in one file, REGISTERED:
                                     a field, a wire line and a mount above
                                     each marker. Name a resource in the
-                                    plural, as Rails does: posts answers at
+                                    plural: posts answers at
                                     /posts, post at /post. admin/NAME puts it
                                     in the admin namespace, the package
                                     app/controllers/admin_controller/, made
@@ -60,15 +60,15 @@ Generators:
   authentication SHAPE              a middleware on a route group, its config
                                     key with a development value written to
                                     the credentials, and a WithX group helper
-                                    on the root Server. SHAPE is secret (the
-                                    Rails app calls this service), token
+                                    on the root Server. SHAPE is secret (a
+                                    trusted service calls this one), token
                                     (bearer JWT a user presents) or api_key
                                     (keys for machine clients, with a table
                                     and api_keys:create)
 
 Attributes are field:type, with :index or :uniq after the type. Types:
   string text integer bigint boolean datetime uuid jsonb references
-A field with no :type defaults to string, as in Rails. A references field
+A field with no :type defaults to string. A references field
 names the other model: post:references is post_id.
 
   bogie g scaffold post title body:text
@@ -131,7 +131,7 @@ func generateIn(root string, args []string, out io.Writer) error {
 		say(generateUsage)
 		return fmt.Errorf("generate %s: NAME is required", generator)
 	}
-	// Post, BlogPost and AddSlugToPosts are what Rails fingers type; every
+	// Post, BlogPost and AddSlugToPosts are what a hand types; every
 	// generator works in snake_case.
 	name, attrArgs := generate.Snake(positional[0]), positional[1:]
 
@@ -182,12 +182,12 @@ func generateIn(root string, args []string, out io.Writer) error {
 			return fmt.Errorf("generate controller: %w", err)
 		}
 		files, wires = append(files, ctlFiles...), append(wires, ctlWires...)
-		// Rails names a resource controller in the plural and uses the name
-		// as typed, so `g controller post show` answers at /post/:id there
-		// too. Say so once, last, since the path is what the caller will
+		// A resource controller is named in the plural and the name is used
+		// as typed, so `g controller post show` answers at /post/:id.
+		// Say so once, last, since the path is what the caller will
 		// notice.
 		if generate.LooksLikeASingularResource(ctl, attrArgs) {
-			defer say("%12s  Rails names a resource in the plural: %s would answer at /%s; %s answers at /%s\n", "note", generate.Plural(ctl), generate.Plural(ctl), ctl, ctl)
+			defer say("%12s  A resource is named in the plural: %s would answer at /%s; %s answers at /%s\n", "note", generate.Plural(ctl), generate.Plural(ctl), ctl, ctl)
 		}
 	case "service":
 		files, err = generate.Service(module, name)
@@ -291,7 +291,7 @@ func generateIn(root string, args []string, out io.Writer) error {
 	toWrite := make([]scaffold.File, len(files))
 	for i, f := range files {
 		// A migration is named by what it does, not by its stamp: a second
-		// create_comments is the same migration, as Rails says ("Another
+		// create_comments is the same migration ("Another
 		// migration is already named create_comments"). Point the write at
 		// the existing file, so it reports identical or conflict, and --force
 		// replaces it in place rather than adding a duplicate.
@@ -411,8 +411,7 @@ func hasQueries(root string) bool {
 
 // nextStamp returns now, moved forward a second at a time until no migration
 // in the app carries that version. goose refuses duplicate versions, and two
-// generators run in the same second would otherwise produce them, as Rails's
-// next_migration_number guards against too.
+// generators run in the same second would otherwise produce them.
 func nextStamp(root string, now time.Time) time.Time {
 	for {
 		matches, _ := filepath.Glob(filepath.Join(root, "db", "migrate", generate.Stamp(now)+"_*.sql"))

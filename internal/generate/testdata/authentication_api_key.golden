@@ -692,7 +692,7 @@ const apiKeysUsage = `Usage: blog api_keys create NAME
 Makes an api key for a machine client and prints it, the only time it is
 shown in full. The client presents it as a bearer token on the routes
 mounted under WithAPIKey. The table keeps a bcrypt digest, never the key.
-Spelled the Rails way through the tool: bogie api_keys:create NAME
+Through the tool: bogie api_keys:create NAME
 `
 
 // runAPIKeys handles `blog api_keys ...`.

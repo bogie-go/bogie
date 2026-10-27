@@ -35,7 +35,7 @@ const (
 )
 
 // bundledPort is the port docker-compose.yml publishes. Postgres' own default
-// is 5432, and the Rails app next door almost certainly has it, so the
+// is 5432, and another Postgres next door almost certainly has it, so the
 // bundled container uses this one instead. A failure against this port is
 // almost always "the container is not running"; against any other it is
 // someone's own Postgres, and `make up` would be the wrong advice.

@@ -1,4 +1,4 @@
-// Command bogie scaffolds the Go service next to your Rails app.
+// Command bogie scaffolds a Go API service.
 //
 // The tool renders templates and shells out. It is never imported by the app
 // it generates: after `bogie new`, the code is the user's.
@@ -15,7 +15,7 @@ import (
 
 const usage = `Usage: bogie <command> [arguments]
 
-Every command is spelled the way Rails spells it.
+Tasks use a colon (db:migrate); the rest are plain words.
 
   new NAME                 generate a new service in ./NAME
 
@@ -26,7 +26,7 @@ Inside an app (found by its bogie.toml, from any subdirectory):
   app:update               move the app to this Bogie's layout: a three-way merge
   server, s                run it; migrates at boot, reloads on save
   worker                   work the job queue (apps made with --jobs)
-  routes                   every mounted route, method and path (rails routes)
+  routes                   every mounted route, method and path
   test, t [PKGS]           go test -race -cover ./...
   lint                     gofmt, vet, golangci-lint
   ci                       every check, locally, then sign off (bin/ci)
@@ -73,7 +73,7 @@ func main() {
 	case "help", "-h", "--help":
 		fmt.Print(usage)
 	default:
-		// A colon means a Rails-style task; let the proxy name the nearest
+		// A colon means a task; let the proxy name the nearest
 		// one rather than printing the whole usage.
 		if strings.Contains(command, ":") {
 			err = commands.Proxy(command, os.Args[2:], os.Stdout)

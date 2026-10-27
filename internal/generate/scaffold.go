@@ -8,13 +8,12 @@ import (
 )
 
 // Scaffold writes what `bogie generate scaffold post title:string body:text`
-// produces, as `rails g scaffold` does: the model (everything Model writes),
+// produces: the model (everything Model writes),
 // the wire shapes in app/views, and a controller with real handlers, a request
 // test, and the three lines that register it with the store
 // passed in. No service: the controller talks to the store, and the store
-// validates on save, as a Rails controller talks to the model (docs/DESIGN.md
-// §5). The model is named in the singular and the rest in the plural, as
-// Rails names them.
+// validates on save, and a controller talks to the model (docs/DESIGN.md
+// §5). The model is named in the singular and the rest in the plural.
 func Scaffold(module, name string, attrs []Attr, scheme IDScheme, now time.Time) ([]File, []Wire, error) {
 	files, err := Model(module, name, attrs, scheme, now)
 	if err != nil {

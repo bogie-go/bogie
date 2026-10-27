@@ -9,12 +9,12 @@ import (
 // Attr is one column, as `name:type[:index|:uniq]` on the command line.
 type Attr struct {
 	Name   string
-	Type   string // the Rails name: string, text, integer, ...
+	Type   string // the generator name: string, text, integer, ...
 	Index  bool
 	Unique bool
 }
 
-// kind is what one Rails attribute type becomes at each layer.
+// kind is what one attribute type becomes at each layer.
 type kind struct {
 	sql       string // the Postgres column type
 	sqlDef    string // NOT NULL and a default, so sqlc emits a plain Go type
@@ -26,7 +26,7 @@ type kind struct {
 	reference bool
 }
 
-// kinds maps Rails attribute names to Postgres and Go. Every generated column
+// kinds maps attribute names to Postgres and Go. Every generated column
 // is NOT NULL: a nullable column makes sqlc emit a pointer, and a pointer in
 // the domain is a nil check in every caller. A model that truly needs null
 // edits the migration by hand, which is one line.
@@ -50,7 +50,7 @@ var kinds = map[string]kind{
 }
 
 // IDScheme is how an app's primary keys and foreign keys are made: bigint
-// (Rails's own default, an auto-incrementing bigserial) or uuid. Chosen once
+// (the default, an auto-incrementing bigserial) or uuid. Chosen once
 // per app at `bogie new` time, recorded in bogie.toml, and threaded through
 // every generator that writes an id or a references column, so an app never
 // mixes the two.
@@ -140,7 +140,7 @@ func kindFor(a Attr, scheme IDScheme) kind {
 var attrPattern = regexp.MustCompile(`^([a-z][a-z0-9_]*)(?::([a-z]+))?(?::(index|uniq))?$`)
 
 // ParseAttrs reads `name[:type][:index|:uniq]` arguments. A bare name with no
-// `:type` defaults to string, as in Rails. A `references` attr names the
+// `:type` defaults to string. A `references` attr names the
 // other model: `post:references` becomes the column post_id.
 func ParseAttrs(args []string) ([]Attr, error) {
 	var out []Attr

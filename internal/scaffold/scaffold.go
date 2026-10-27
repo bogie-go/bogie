@@ -1,5 +1,5 @@
-// Package scaffold renders an embedded template tree onto disk the way Rails
-// generators do: one line per file saying what happened, nothing overwritten
+// Package scaffold renders an embedded template tree onto disk the way a generator
+// does: one line per file saying what happened, nothing overwritten
 // without --force, and --pretend to see the plan without writing anything.
 package scaffold
 

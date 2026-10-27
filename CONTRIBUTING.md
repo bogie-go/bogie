@@ -1,8 +1,8 @@
 # Contributing to Bogie
 
 Thanks for looking. Read this first, because a few things here are unusual:
-there is **no hosted CI**, the layout is **Rails-shaped on purpose**, and the
-project has **one maintainer** and is at **v0.2.x**.
+there is **no hosted CI**, the layout is **by role on purpose**, and the
+project has **one maintainer** and is at **v0.5.x**.
 
 ## Before you write code
 
@@ -11,7 +11,7 @@ project has **one maintainer** and is at **v0.2.x**.
   that app's `bogie.toml` and the output of `bogie doctor`.
 - **Features and design changes:** open an issue first. Bogie runs on a
   written design, [`docs/DESIGN.md`](docs/DESIGN.md). The decisions in it
-  (Rails spelling, Rails layout, API-only, Postgres-only, River for jobs,
+  (familiar command spelling, a layout by role, API-only, Postgres-only, River for jobs,
   marker comments for wiring, no runtime framework, no telemetry) are
   deliberate, and each one has its reasoning next to it. They can change, but
   the doc changes first, in its own discussion, before any code does.
@@ -61,21 +61,20 @@ reproduction) can go straight to a PR.
 | `go run . new NAME --pretend` | Shows what `new` would write, without writing it. |
 | `go test ./internal/generate -update` | Rewrites the generators' golden files after an *intended* output change. Review the diff. That diff is the change. |
 
-There is no `.github/workflows`, by design (see DESIGN.md §8, after Rails
-8.1's `bin/ci`). **Run `bin/ci` before you open a PR**, and paste its final
+There is no `.github/workflows`, by design (see DESIGN.md §8). **Run `bin/ci` before you open a PR**, and paste its final
 summary into the PR description. A failed run leaves the scaffolded app under
 `/tmp/tmp.*` so you can look at it. A green run removes it.
 
 ## How the code is laid out
 
 ```
-main.go                 the command table; every command spelled as Rails spells it
+main.go                 the command table; commands spelled `db:migrate`, `g`, `s`
 internal/commands/      new, generate, destroy, doctor, app:update, the proxy into the app
 internal/generate/      the generators, pure (clock passed in), pinned by golden files in testdata/
 internal/markers/       inserting and removing lines above // bogie:… markers
 internal/scaffold/      rendering templates/app into a directory
 templates/app/          the generated app, go:embed-ed
-docs/                   DESIGN.md (the why), STATUS.md (the state), FROM_RAILS.md (the dictionary)
+docs/                   DESIGN.md (the why), STATUS.md (the state)
 ```
 
 ### Templates
@@ -102,7 +101,7 @@ docs/                   DESIGN.md (the why), STATUS.md (the state), FROM_RAILS.m
   import, and format the file with `go/format`.
 - **Every marker is checked before any file is written.** A missing marker is
   a named error with no partial write, and there are tests for that. Keep it so.
-- Output follows Rails: `create` / `insert` / `skip` / `conflict` per file,
+- Output is one line per file: `create` / `insert` / `skip` / `conflict` per file,
   `--pretend` for a dry run, and nothing is overwritten without `--force`.
 - `destroy` has to undo everything `generate` did, registration included.
   `bogie doctor` has to keep passing afterwards.
@@ -111,7 +110,7 @@ docs/                   DESIGN.md (the why), STATUS.md (the state), FROM_RAILS.m
 
 Please don't "fix" these. Each one is a decision recorded in DESIGN.md or STATUS.md:
 
-- Rails layout (`app/controllers`, `db/migrate`) and underscored package names
+- The layout by role (`app/controllers`, `db/migrate`) and underscored package names
   (`admin_controller`). ST1003 is off for that reason, and nothing else is.
 - No `spec/` directory. Go tests sit beside the code, stdlib `testing` only.
 - Every generated column is `NOT NULL` with a default, so sqlc emits no pointers.
@@ -139,15 +138,15 @@ into every app's `AGENTS.md`):
   the reasoning"). Look at a few recent commits for the style:
   - The subject is an imperative sentence in plain English, capitalised, no
     trailing period, no `feat:`/`fix:` prefix. For example: *"Test that a missing
-    marker writes nothing (§8.3)"*, *"Accept Post and AddSlugToPosts as Rails does"*.
+    marker writes nothing (§8.3)"*, *"Accept Post and AddSlugToPosts as model names"*.
   - The body says what was wrong or missing, what was considered, and what was
     decided. Reference DESIGN.md sections where they apply.
 - **If generator output changed**, include the updated golden files in the
   same commit and say in the PR why the output should change.
 - **If a decision changed**, the DESIGN.md edit goes in the PR too, ideally
   as the first commit.
-- Keep docs in step: if you change what a command does, update `docs/STATUS.md`,
-  `docs/FROM_RAILS.md` and the generated `AGENTS.md` where they mention it.
+- Keep docs in step: if you change what a command does, update `docs/STATUS.md`
+  and the generated `AGENTS.md` where they mention it.
 - **AI-assisted contributions are fine.** Bogie itself is developed with
   Claude Code, and its commits carry a `Co-Authored-By` trailer. You are
   responsible for every line you submit. Say in the PR if an agent wrote
@@ -163,7 +162,7 @@ into every app's `AGENTS.md`):
   version.
 - **Scope is deliberately narrow.** "Bogie should also do X" will often get a
   "no, and here is why", with a pointer to DESIGN.md or to a tool that does X
-  well (Andurel for a full-stack Rails-like framework, for example). That's
+  well (Andurel for a full-stack framework, for example). That's
   not a judgement of the idea. It's the project staying small enough for one
   person to maintain.
 

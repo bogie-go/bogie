@@ -5,7 +5,7 @@ package generate
 
 import "strings"
 
-// A small inflector, enough for the names a Rails developer reaches for. It
+// A small inflector, enough for the names a model gets. It
 // is deliberately not clever: the common rules, a short irregular list, and
 // no attempt at Latin. A name it gets wrong is spelled out in full instead.
 var irregulars = map[string]string{
@@ -79,7 +79,7 @@ func Camel(s string) string {
 	return strings.Join(parts, "")
 }
 
-// Snake turns a name as a Rails developer might type it, Post, BlogPost or
+// Snake turns a name as it might be typed, Post, BlogPost or
 // AddSlugToPosts, into the snake_case every generator works in. Already
 // snake_case input comes back unchanged.
 func Snake(s string) string {
