@@ -2,9 +2,10 @@
 // would still be true if HTTP, Postgres and Gin all disappeared.
 //
 // It imports nothing third-party. If holding that becomes hard, the boundary
-// is in the wrong place and you will know immediately. Ids are strings here
-// and become uuid at the store boundary; that conversion living in app/models
-// is what lets this package stay dependency-free.
+// is in the wrong place and you will know immediately. Ids are plain
+// Go values here (int64, or string for uuid, per bogie.toml) and become the
+// database's key type at the store boundary; that conversion living in
+// app/models is what lets this package stay dependency-free.
 //
 // `bogie g model` adds a type and its validations here, one file per model.
 // The two errors below are what every model's layers above map to HTTP
@@ -14,7 +15,7 @@ package domain
 import "errors"
 
 // ErrNotFound is returned for an id that names nothing. An id that is not
-// even a uuid gets the same answer: it cannot exist, and a caller should not
+// even a valid id gets the same answer: it cannot exist, and a caller should not
 // be able to tell the two apart.
 var ErrNotFound = errors.New("not found")
 
