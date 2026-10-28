@@ -121,7 +121,7 @@ func (s *Store) CreateAdminProduct(ctx context.Context, a models.AdminProduct) (
 	if err != nil {
 		return models.AdminProduct{}, fmt.Errorf("store: create admin_product: %w", err)
 	}
-	return admin_productFromRow(row), nil
+	return adminProductFromRow(row), nil
 }
 
 // GetAdminProduct finds one admin_product. An id that is not a valid id is simply not found.
@@ -137,7 +137,7 @@ func (s *Store) GetAdminProduct(ctx context.Context, id string) (models.AdminPro
 	case err != nil:
 		return models.AdminProduct{}, fmt.Errorf("store: get admin_product %s: %w", id, err)
 	}
-	return admin_productFromRow(row), nil
+	return adminProductFromRow(row), nil
 }
 
 // ListAdminProducts returns the newest admin_products first, at most limit of them.
@@ -148,7 +148,7 @@ func (s *Store) ListAdminProducts(ctx context.Context, limit int32) ([]models.Ad
 	}
 	out := make([]models.AdminProduct, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, admin_productFromRow(r))
+		out = append(out, adminProductFromRow(r))
 	}
 	return out, nil
 }
@@ -166,7 +166,7 @@ func (s *Store) UpdateAdminProduct(ctx context.Context, a models.AdminProduct) (
 	case err != nil:
 		return models.AdminProduct{}, fmt.Errorf("store: update admin_product %v: %w", a.ID, err)
 	}
-	return admin_productFromRow(row), nil
+	return adminProductFromRow(row), nil
 }
 
 // DeleteAdminProduct removes an admin_product, and says so if there was none.
@@ -189,7 +189,7 @@ func (s *Store) DeleteAdminProduct(ctx context.Context, id string) error {
 	return nil
 }
 
-func admin_productFromRow(r sqlc.AdminProduct) models.AdminProduct {
+func adminProductFromRow(r sqlc.AdminProduct) models.AdminProduct {
 	return models.AdminProduct{
 		ID:        r.ID,
 		Name:      r.Name,
@@ -429,12 +429,12 @@ func (ctl *ProductsController) SetupRoutes(router *gin.RouterGroup) {
 
 // Index handles GET /admin/products.
 func (ctl *ProductsController) Index(c *gin.Context) {
-	admin_products, err := ctl.Store.ListAdminProducts(c.Request.Context(), adminProductsListLimit)
+	adminProducts, err := ctl.Store.ListAdminProducts(c.Request.Context(), adminProductsListLimit)
 	if err != nil {
 		ctl.fail(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, adminProductsView(admin_products))
+	c.JSON(http.StatusOK, adminProductsView(adminProducts))
 }
 
 // Show handles GET /admin/products/:id.
@@ -522,9 +522,9 @@ func adminProductView(a models.AdminProduct) views.AdminProductResponse {
 	}
 }
 
-func adminProductsView(admin_products []models.AdminProduct) views.AdminProductsResponse {
-	out := views.AdminProductsResponse{AdminProducts: make([]views.AdminProductResponse, 0, len(admin_products))}
-	for _, a := range admin_products {
+func adminProductsView(adminProducts []models.AdminProduct) views.AdminProductsResponse {
+	out := views.AdminProductsResponse{AdminProducts: make([]views.AdminProductResponse, 0, len(adminProducts))}
+	for _, a := range adminProducts {
 		out.AdminProducts = append(out.AdminProducts, adminProductView(a))
 	}
 	return out

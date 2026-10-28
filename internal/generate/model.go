@@ -515,7 +515,7 @@ func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 	} else {
 		fmt.Fprintf(&b, "\tif err != nil {\n\t\treturn models.%s{}, fmt.Errorf(\"store: create %s: %%w\", err)\n\t}\n", typ, name)
 	}
-	fmt.Fprintf(&b, "\treturn %sFromRow(row), nil\n}\n\n", name)
+	fmt.Fprintf(&b, "\treturn %sFromRow(row), nil\n}\n\n", lowerCamel(name))
 
 	// Get
 	fmt.Fprintf(&b, "// Get%s finds one %s. An id that is not a %s is simply not found.\n", typ, name, scheme.notFoundWord())
@@ -523,13 +523,13 @@ func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 	fmt.Fprintf(&b, "\tpk, err := %s(id)\n\tif err != nil {\n\t\treturn models.%s{}, models.ErrNotFound\n\t}\n", scheme.parseFunc(), typ)
 	fmt.Fprintf(&b, "\trow, err := s.q.Get%s(ctx, pk)\n\tswitch {\n\tcase errors.Is(err, pgx.ErrNoRows):\n\t\treturn models.%s{}, models.ErrNotFound\n", typ, typ)
 	fmt.Fprintf(&b, "\tcase err != nil:\n\t\treturn models.%s{}, fmt.Errorf(\"store: get %s %%s: %%w\", id, err)\n\t}\n", typ, name)
-	fmt.Fprintf(&b, "\treturn %sFromRow(row), nil\n}\n\n", name)
+	fmt.Fprintf(&b, "\treturn %sFromRow(row), nil\n}\n\n", lowerCamel(name))
 
 	// List
 	fmt.Fprintf(&b, "// List%s returns the newest %s first, at most limit of them.\n", Camel(table), table)
 	fmt.Fprintf(&b, "func (s *Store) List%s(ctx context.Context, limit int32) ([]models.%s, error) {\n", Camel(table), typ)
 	fmt.Fprintf(&b, "\trows, err := s.q.List%s(ctx, limit)\n\tif err != nil {\n\t\treturn nil, fmt.Errorf(\"store: list %s: %%w\", err)\n\t}\n", Camel(table), table)
-	fmt.Fprintf(&b, "\tout := make([]models.%s, 0, len(rows))\n\tfor _, r := range rows {\n\t\tout = append(out, %sFromRow(r))\n\t}\n\treturn out, nil\n}\n\n", typ, name)
+	fmt.Fprintf(&b, "\tout := make([]models.%s, 0, len(rows))\n\tfor _, r := range rows {\n\t\tout = append(out, %sFromRow(r))\n\t}\n\treturn out, nil\n}\n\n", typ, lowerCamel(name))
 
 	// Update
 	fmt.Fprintf(&b, "// Update%s validates %s, writes its columns, and returns the stored row.\n", typ, withArticle(name))
@@ -557,7 +557,7 @@ func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 		fmt.Fprintf(&b, "\tcase errors.As(err, &pgErr) && pgErr.Code == \"23505\":\n\t\treturn models.%s{}, fmt.Errorf(\"%%w: %s\", models.ErrInvalid)\n", typ, uniqueViolationMessage(uniq))
 	}
 	fmt.Fprintf(&b, "\tcase err != nil:\n\t\treturn models.%s{}, fmt.Errorf(\"store: update %s %%v: %%w\", %s.ID, err)\n\t}\n", typ, name, recv)
-	fmt.Fprintf(&b, "\treturn %sFromRow(row), nil\n}\n\n", name)
+	fmt.Fprintf(&b, "\treturn %sFromRow(row), nil\n}\n\n", lowerCamel(name))
 
 	// Delete
 	fmt.Fprintf(&b, "// Delete%s removes %s, and says so if there was none.\n", typ, withArticle(name))
@@ -567,7 +567,7 @@ func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 	b.WriteString("\tif n == 0 {\n\t\treturn models.ErrNotFound\n\t}\n\treturn nil\n}\n\n")
 
 	// fromRow
-	fmt.Fprintf(&b, "func %sFromRow(r sqlc.%s) models.%s {\n\treturn models.%s{\n", name, typ, typ, typ)
+	fmt.Fprintf(&b, "func %sFromRow(r sqlc.%s) models.%s {\n\treturn models.%s{\n", lowerCamel(name), typ, typ, typ)
 	width := len("CreatedAt:")
 	for _, a := range attrs {
 		if n := len(a.goName()) + 1; n > width {

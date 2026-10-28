@@ -514,14 +514,14 @@ func New%[1]s(store %[3]s, log *slog.Logger) *%[1]s {
 // controller needs goes here; which group it sits in, and so how it is
 // exposed, is decided by routes.go, which calls this.
 func (ctl *%[1]s) SetupRoutes(router *gin.RouterGroup) {
-	%[2]s := router.Group("/%[2]s")
-`, ctl, s.res, iface)
+	%[4]s := router.Group("/%[2]s")
+`, ctl, s.res, iface, lowerCamel(s.res))
 	for _, a := range []string{"index", "create", "show", "update", "destroy"} {
 		if !s.has(a) {
 			continue
 		}
 		r := resourceful[a]
-		w("\t%s.%s(%q, ctl.%s)\n", s.res, r.method, r.path, Camel(a))
+		w("\t%s.%s(%q, ctl.%s)\n", lowerCamel(s.res), r.method, r.path, Camel(a))
 	}
 	w("}\n\n")
 
@@ -537,7 +537,7 @@ func (ctl *%[4]s) Index(c *gin.Context) {
 	c.JSON(http.StatusOK, %[5]sView(%[1]s))
 }
 
-`, s.table, many, s.url(), ctl, lowerCamel(s.table))
+`, lowerCamel(s.table), many, s.url(), ctl, lowerCamel(s.table))
 	}
 	if s.has("show") {
 		w(`// Show handles GET %[1]s/:id.
@@ -644,9 +644,9 @@ func (ctl *%[2]s) fail(c *gin.Context, err error) {
 	w("\t\t%-*s %s.CreatedAt,\n\t\t%-*s %s.UpdatedAt,\n\t}\n}\n", width, "CreatedAt:", recv, width, "UpdatedAt:", recv)
 
 	if s.has("index") {
-		w("\nfunc %sView(%s []models.%s) views.%sResponse {\n", lowerCamel(s.table), s.table, typ, many)
-		w("\tout := views.%sResponse{%s: make([]views.%sResponse, 0, len(%s))}\n", many, many, typ, s.table)
-		w("\tfor _, %s := range %s {\n\t\tout.%s = append(out.%s, %sView(%s))\n\t}\n\treturn out\n}\n", recv, s.table, many, many, lowerCamel(s.name), recv)
+		w("\nfunc %sView(%s []models.%s) views.%sResponse {\n", lowerCamel(s.table), lowerCamel(s.table), typ, many)
+		w("\tout := views.%sResponse{%s: make([]views.%sResponse, 0, len(%s))}\n", many, many, typ, lowerCamel(s.table))
+		w("\tfor _, %s := range %s {\n\t\tout.%s = append(out.%s, %sView(%s))\n\t}\n\treturn out\n}\n", recv, lowerCamel(s.table), many, many, lowerCamel(s.name), recv)
 	}
 	return b.String()
 }

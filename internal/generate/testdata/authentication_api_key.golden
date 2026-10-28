@@ -132,7 +132,7 @@ func (s *Store) CreateApiKey(ctx context.Context, a models.ApiKey) (models.ApiKe
 		}
 		return models.ApiKey{}, fmt.Errorf("store: create api_key: %w", err)
 	}
-	return api_keyFromRow(row), nil
+	return apiKeyFromRow(row), nil
 }
 
 // GetApiKey finds one api_key. An id that is not a valid id is simply not found.
@@ -148,7 +148,7 @@ func (s *Store) GetApiKey(ctx context.Context, id string) (models.ApiKey, error)
 	case err != nil:
 		return models.ApiKey{}, fmt.Errorf("store: get api_key %s: %w", id, err)
 	}
-	return api_keyFromRow(row), nil
+	return apiKeyFromRow(row), nil
 }
 
 // ListApiKeys returns the newest api_keys first, at most limit of them.
@@ -159,7 +159,7 @@ func (s *Store) ListApiKeys(ctx context.Context, limit int32) ([]models.ApiKey, 
 	}
 	out := make([]models.ApiKey, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, api_keyFromRow(r))
+		out = append(out, apiKeyFromRow(r))
 	}
 	return out, nil
 }
@@ -180,7 +180,7 @@ func (s *Store) UpdateApiKey(ctx context.Context, a models.ApiKey) (models.ApiKe
 	case err != nil:
 		return models.ApiKey{}, fmt.Errorf("store: update api_key %v: %w", a.ID, err)
 	}
-	return api_keyFromRow(row), nil
+	return apiKeyFromRow(row), nil
 }
 
 // DeleteApiKey removes an api_key, and says so if there was none.
@@ -203,7 +203,7 @@ func (s *Store) DeleteApiKey(ctx context.Context, id string) error {
 	return nil
 }
 
-func api_keyFromRow(r sqlc.ApiKey) models.ApiKey {
+func apiKeyFromRow(r sqlc.ApiKey) models.ApiKey {
 	return models.ApiKey{
 		ID:        r.ID,
 		Name:      r.Name,
@@ -224,7 +224,7 @@ func (s *Store) GetApiKeyByPrefix(ctx context.Context, prefix string) (models.Ap
 	case err != nil:
 		return models.ApiKey{}, fmt.Errorf("store: get api key by prefix: %w", err)
 	}
-	return api_keyFromRow(row), nil
+	return apiKeyFromRow(row), nil
 }
 ==> db/adapter/api_keys_test.go
 package adapter_test

@@ -299,9 +299,11 @@ func routeFor(action string) (method, path string) {
 
 // test is the controller's request spec, beside the controller: every action
 // is mounted, which fails when a route was never registered or the namespace's
-// routes.go lost the mount line, since the request goes through the whole
-// application the suite builds (package controllers_test, or the namespace's
-// own suite).
+// routes.go lost the mount line. It looks the method and path up in the routes
+// of the whole application the suite builds (package controllers_test, or the
+// namespace's own suite), rather than sending a request and expecting not a
+// 404: a real Show or Destroy answers 404 for a record that is not there, and
+// that must not break this spec once the action is written.
 func (c controller) test() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "package %s_test\n\n", c.pkg())
@@ -309,16 +311,16 @@ func (c controller) test() string {
 		b.WriteString("// No actions yet. Add a request spec per route as you add it: the suite\n// provides app, the whole application on a clean test database.\n")
 		return b.String()
 	}
-	b.WriteString("import (\n\t\"net/http\"\n\t\"net/http/httptest\"\n\n\t. \"github.com/onsi/ginkgo/v2\"\n\t. \"github.com/onsi/gomega\"\n)\n\n")
+	b.WriteString("import (\n\t\"net/http\"\n\n\t. \"github.com/onsi/ginkgo/v2\"\n\t. \"github.com/onsi/gomega\"\n)\n\n")
 	for _, a := range c.actions {
 		method, path := routeFor(a)
-		route := c.prefix() + strings.ReplaceAll(path, ":id", "1")
+		route := c.prefix() + path
 		fmt.Fprintf(&b, `var _ = Describe("%[1]s %[2]s", func() {
 	It("is mounted", func() {
-		rec := httptest.NewRecorder()
-		app.Server.Router.ServeHTTP(rec, httptest.NewRequest(http.Method%[3]s, %[2]q, nil))
-
-		Expect(rec.Code).NotTo(Equal(http.StatusNotFound))
+		Expect(app.Server.Router.Routes()).To(ContainElement(And(
+			HaveField("Method", http.Method%[3]s),
+			HaveField("Path", %[2]q),
+		)))
 	})
 })
 

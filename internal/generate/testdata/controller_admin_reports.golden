@@ -119,7 +119,6 @@ package admin_controllers_test
 
 import (
 	"net/http"
-	"net/http/httptest"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -127,18 +126,18 @@ import (
 
 var _ = Describe("GET /admin/reports", func() {
 	It("is mounted", func() {
-		rec := httptest.NewRecorder()
-		app.Server.Router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/reports", nil))
-
-		Expect(rec.Code).NotTo(Equal(http.StatusNotFound))
+		Expect(app.Server.Router.Routes()).To(ContainElement(And(
+			HaveField("Method", http.MethodGet),
+			HaveField("Path", "/admin/reports"),
+		)))
 	})
 })
 
-var _ = Describe("GET /admin/reports/1", func() {
+var _ = Describe("GET /admin/reports/:id", func() {
 	It("is mounted", func() {
-		rec := httptest.NewRecorder()
-		app.Server.Router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/reports/1", nil))
-
-		Expect(rec.Code).NotTo(Equal(http.StatusNotFound))
+		Expect(app.Server.Router.Routes()).To(ContainElement(And(
+			HaveField("Method", http.MethodGet),
+			HaveField("Path", "/admin/reports/:id"),
+		)))
 	})
 })

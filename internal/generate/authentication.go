@@ -659,7 +659,7 @@ func (s *Store) GetApiKeyByPrefix(ctx context.Context, prefix string) (models.Ap
 	case err != nil:
 		return models.ApiKey{}, fmt.Errorf("store: get api key by prefix: %w", err)
 	}
-	return api_keyFromRow(row), nil
+	return apiKeyFromRow(row), nil
 }
 `
 		}

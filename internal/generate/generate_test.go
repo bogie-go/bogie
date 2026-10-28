@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -754,6 +755,36 @@ func TestScaffoldInANamespace(t *testing.T) {
 	}
 	if _, _, m, err := ParseScaffoldName("post"); err != nil || m != "post" {
 		t.Errorf("a plain scaffold name keeps its model: %q %v", m, err)
+	}
+}
+
+// Go names are camelCase: a two-word model never puts its snake_case name into
+// an identifier (cartItemFromRow, cartItems), whatever the scaffold or
+// namespace.
+func TestScaffoldNamesAreCamelCase(t *testing.T) {
+	snake := regexp.MustCompile(`\b[a-z]+_[a-z]+(FromRow|View)?\b`)
+	for _, c := range []struct{ ns, res, model string }{{"", "", "cart_item"}, {"admin", "cart_items", "admin_cart_item"}} {
+		files, _, err := Scaffold("example.com/blog", c.ns, c.res, c.model, attrs(t, "name:string"), IDBigint, at, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range files {
+			if !strings.HasSuffix(f.Path, ".go") {
+				continue
+			}
+			for i, line := range strings.Split(f.Content, "\n") {
+				code, _, _ := strings.Cut(line, "//")
+				// Strings (log labels, JSON keys, descriptions) and the table
+				// names inside them are text, not identifiers.
+				code = regexp.MustCompile(`"(\\.|[^"\\])*"|`+"`[^`]*`").ReplaceAllString(code, "")
+				if strings.HasPrefix(code, "package ") {
+					continue
+				}
+				if m := snake.FindString(code); m != "" && !strings.Contains(code, "admin_controllers") {
+					t.Errorf("%s:%d: snake_case %q in an identifier: %s", f.Path, i+1, m, strings.TrimSpace(line))
+				}
+			}
+		}
 	}
 }
 
