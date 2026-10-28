@@ -124,20 +124,20 @@ func destroyIn(root string, args []string, out io.Writer) error {
 			empty := len(matches) > 0
 			for _, m := range matches {
 				base := filepath.Base(m)
-				if !removing[base] && base != "server.go" && base != "routes.go" {
+				if !removing[base] && base != "server.go" && base != "routes.go" && base != filepath.Base(generate.NamespaceSuitePath(ns)) {
 					empty = false
 				}
 			}
 			if empty {
 				rel := "app/controllers/" + ns + "_controller/"
-				files = append(files, generate.File{Path: rel + "server.go"}, generate.File{Path: rel + "routes.go"})
+				files = append(files, generate.File{Path: rel + "server.go"}, generate.File{Path: rel + "routes.go"}, generate.File{Path: generate.NamespaceSuitePath(ns)})
 				wires = append(wires, generate.NamespaceWirePrefixes(ns)...)
 			}
 		}
 	case "service":
 		files, err = generate.Service(module, name)
 	case "job":
-		files, _, err = generate.Job(name)
+		files, _, err = generate.Job(module, name)
 		wires = generate.JobWirePrefix(name)
 	case "seed":
 		files, _, err = generate.Seed(module, name)
@@ -169,7 +169,7 @@ func destroyIn(root string, args []string, out io.Writer) error {
 			wires = append(wires, generate.ConfigGroupWirePrefixes(setting.Group)...)
 		}
 		if name == "api_key" {
-			files = append(files, generate.File{Path: "app/models/api_keys.sql.go"})
+			files = append(files, generate.File{Path: "db/sqlc/api_keys.sql.go"})
 			runSqlc = true
 		}
 	case "model", "scaffold":
@@ -180,11 +180,9 @@ func destroyIn(root string, args []string, out io.Writer) error {
 			wires = generate.WirePrefixes("", generate.Plural(name))
 		}
 		// sqlc writes a file per query file and never removes one whose
-		// source is gone, so the generated half goes too; and a test the
-		// model may have been given by hand.
+		// source is gone, so the generated half goes too.
 		files = append(files,
-			generate.File{Path: "app/models/" + generate.Plural(name) + ".sql.go"},
-			generate.File{Path: "app/domain/" + name + "_test.go"})
+			generate.File{Path: "db/sqlc/" + generate.Plural(name) + ".sql.go"})
 		runSqlc = true
 	case "migration":
 		var f generate.File
@@ -217,7 +215,7 @@ func destroyIn(root string, args []string, out io.Writer) error {
 			return err
 		}
 		// A controller or service package directory goes once it is empty.
-		// The layout's own directories (db/migrate, app/domain, ...) stay.
+		// The layout's own directories (db/migrate, app/models, ...) stay.
 		if generator == "controller" || generator == "service" {
 			_ = os.Remove(filepath.Dir(abs))
 		}

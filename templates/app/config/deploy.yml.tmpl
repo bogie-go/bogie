@@ -26,7 +26,7 @@ proxy:
   ssl: true
   hosts:
     - staging-{{.Name}}.example.com
-  # The app listens on 8080, not Rails' 3000.
+  # The app listens on 8080, not Kamal's default of 3000.
   app_port: 8080
   # Kamal's default probe is /up, which this service does not have. /healthz
   # touches nothing and allocates nothing, so it stays honest under load.
@@ -62,7 +62,7 @@ builder:
   arch: amd64
 
 # The database is not an accessory here on purpose. The premise is a service
-# next to a Rails app that already runs Postgres, so database.url in
+# next to an app that already runs Postgres, so database.url in
 # config/credentials/staging.yml.enc points at that server, as a SEPARATE
 # database on it. If this service is to run its own, uncomment:
 #

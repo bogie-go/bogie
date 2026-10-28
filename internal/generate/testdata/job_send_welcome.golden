@@ -23,7 +23,7 @@ func (SendWelcomeArgs) Kind() string { return "send_welcome" }
 //	app.Jobs.Insert(ctx, jobs.SendWelcomeArgs{}, nil)
 //
 // Dependencies go here as fields, declared as the smallest interface this
-// worker uses (rule 2), and are passed on the registration line in jobs.go.
+// worker uses, next to the worker, and are passed on the registration line in jobs.go.
 type SendWelcomeWorker struct {
 	river.WorkerDefaults[SendWelcomeArgs]
 	Log *slog.Logger
@@ -36,22 +36,37 @@ func (w *SendWelcomeWorker) Work(ctx context.Context, job *river.Job[SendWelcome
 	return nil
 }
 ==> app/jobs/send_welcome_test.go
-package jobs
+package jobs_test
 
 import (
 	"context"
 	"io"
 	"log/slog"
-	"testing"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
+
+	"example.com/blog/app/jobs"
 )
 
-func TestSendWelcomeWork(t *testing.T) {
-	w := &SendWelcomeWorker{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
-	job := &river.Job[SendWelcomeArgs]{JobRow: &rivertype.JobRow{ID: 1}, Args: SendWelcomeArgs{}}
-	if err := w.Work(context.Background(), job); err != nil {
-		t.Fatalf("Work: %v", err)
-	}
-}
+var _ = Describe("SendWelcomeWorker", func() {
+	var (
+		worker *jobs.SendWelcomeWorker
+		job    *river.Job[jobs.SendWelcomeArgs]
+	)
+
+	Describe("Work", func() {
+		Context("with a job and no dependencies", func() {
+			BeforeEach(func() {
+				worker = &jobs.SendWelcomeWorker{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+				job = &river.Job[jobs.SendWelcomeArgs]{JobRow: &rivertype.JobRow{ID: 1}, Args: jobs.SendWelcomeArgs{}}
+			})
+
+			It("succeeds", func() {
+				Expect(worker.Work(context.Background(), job)).To(Succeed())
+			})
+		})
+	})
+})

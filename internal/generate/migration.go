@@ -21,10 +21,10 @@ var (
 )
 
 // Stamp is the goose version for a migration generated at t: the same
-// 14-digit UTC form Rails uses, so files sort by creation.
+// 14-digit UTC form, so files sort by creation.
 func Stamp(t time.Time) string { return t.UTC().Format("20060102150405") }
 
-// Migration writes db/migrate/<stamp>_<name>.sql. As in Rails, the NAME says
+// Migration writes db/migrate/<stamp>_<name>.sql. The NAME says
 // what the migration does: create_<table>, add_<x>_to_<table> and
 // remove_<x>_from_<table> get their SQL written; anything else gets an empty
 // Up and Down to fill in.

@@ -15,8 +15,8 @@ import (
 )
 
 // Server owns the router and its lifecycle, and holds every controller: a
-// *<Name>Controller from this package per Rails controller, and a
-// *<ns>_controller.Server per Rails namespace, which holds its own.
+// *<Name>Controller from this package per controller, and a
+// *<ns>_controller.Server per namespace, which holds its own.
 //
 // One NAMED field per controller, never positional constructor arguments, so
 // adding a controller is one line here, one in app/application.go and one in

@@ -1,4 +1,4 @@
-package controllers
+package controllers_test
 
 import (
 	"io"
@@ -7,11 +7,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
-	"strings"
-	"testing"
 
 	"github.com/gin-gonic/gin"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
+	"{{.Module}}/app/controllers"
 	"{{.Module}}/config"
 	"{{.Module}}/public"
 )
@@ -22,9 +23,9 @@ import (
 // method values and never calls a handler, and app/application.go is what
 // builds the real ones. `bogie doctor` checks that every controller is both
 // constructed and mounted.
-func testServer(env string) *Server {
+func testServer(env string) *controllers.Server {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	s := NewServer(config.Config{Env: env, Server: config.ServerConfig{Addr: ":0", LogLevel: "info"}}, log)
+	s := controllers.NewServer(config.Config{Env: env, Server: config.ServerConfig{Addr: ":0", LogLevel: "info"}}, log)
 	fields := reflect.ValueOf(s).Elem()
 	for i := range fields.NumField() {
 		if f := fields.Field(i); f.Kind() == reflect.Pointer && f.IsNil() && f.CanSet() {
@@ -35,114 +36,133 @@ func testServer(env string) *Server {
 	return s
 }
 
-func TestHealthz(t *testing.T) {
-	s := testServer(config.EnvTest)
-
-	rec := httptest.NewRecorder()
-	s.Router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
-
-	if rec.Code != http.StatusOK || rec.Body.String() != "ok" {
-		t.Fatalf("GET /healthz = %d %q, want 200 ok", rec.Code, rec.Body.String())
-	}
-	if rec.Header().Get("X-Request-Id") == "" {
-		t.Error("no X-Request-Id header: the middleware chain is not mounted")
-	}
-}
-
-func get(s *Server, path string) *httptest.ResponseRecorder {
+func get(s *controllers.Server, path string) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
 	s.Router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 	return rec
 }
 
-// The welcome page greets a developer at / and nobody else: development only,
-// GET / only, and gone the moment a route or public/index.html claims /.
-func TestWelcomeInDevelopmentOnly(t *testing.T) {
-	dev := testServer(config.EnvDevelopment)
-	if rec := get(dev, "/nothing-here"); rec.Code != http.StatusNotFound {
-		t.Errorf("development GET /nothing-here = %d, want 404: the welcome page answers / only", rec.Code)
-	}
+var _ = Describe("the server's routes", func() {
+	Describe("GET /healthz", func() {
+		It("answers ok through the middleware chain", func() {
+			rec := get(testServer(config.EnvTest), "/healthz")
 
-	if _, err := fs.Stat(public.Files, "index.html"); err == nil {
-		t.Skip("public/index.html answers / in every environment; TestPublicIndexAnswersRoot covers it")
-	}
-	if rec := get(dev, "/"); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "is running") ||
-		strings.Contains(rec.Body.String(), "404 Not Found") {
-		t.Errorf("development GET / = %d %q, want only the welcome page: notFound must not also run", rec.Code, rec.Body.String())
-	}
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(rec.Body.String()).To(Equal("ok"))
+			Expect(rec.Header().Get("X-Request-Id")).NotTo(BeEmpty(), "the middleware chain is not mounted")
+		})
+	})
 
-	prod := testServer(config.EnvProduction)
-	if rec := get(prod, "/"); rec.Code != http.StatusNotFound {
-		t.Errorf("production GET / = %d, want 404", rec.Code)
-	}
-}
-
-// public/index.html, once the app has one, answers / in every environment,
-// ahead of the welcome page and the 404.
-func TestPublicIndexAnswersRoot(t *testing.T) {
-	want, err := fs.ReadFile(public.Files, "index.html")
-	if err != nil {
-		t.Skip("no public/index.html: the welcome page answers / in development")
-	}
-	for _, env := range []string{config.EnvDevelopment, config.EnvProduction} {
-		if rec := get(testServer(env), "/"); rec.Code != http.StatusOK || rec.Body.String() != string(want) {
-			t.Errorf("%s GET / = %d %q, want 200 and public/index.html", env, rec.Code, rec.Body.String())
+	// The welcome page greets a developer at / and nobody else: development
+	// only, GET / only, and gone the moment a route or public/index.html
+	// claims /. Exercised directly here, bypassing staticFile, so it keeps
+	// being checked after public/index.html answers / in every environment.
+	Describe("the welcome page", func() {
+		call := func(env string) *httptest.ResponseRecorder {
+			s := testServer(env)
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+			s.Welcome(c)
+			return rec
 		}
-	}
-}
 
-func TestARouteAtRootReplacesTheWelcomePage(t *testing.T) {
-	s := testServer(config.EnvDevelopment)
-	s.Router.GET("/", func(c *gin.Context) { c.String(http.StatusOK, "mine") })
+		It("greets in development", func() {
+			Expect(call(config.EnvDevelopment).Body.String()).To(ContainSubstring("is running"))
+		})
 
-	if rec := get(s, "/"); rec.Body.String() != "mine" {
-		t.Errorf("GET / = %q, want the app's own route", rec.Body.String())
-	}
-}
+		It("writes nothing in production", func() {
+			Expect(call(config.EnvProduction).Body.Len()).To(BeZero())
+		})
 
-// public/ is tried before the welcome page and the final 404: a request for
-// a file that is actually there is served as itself, status 200, in every
-// environment.
-func TestStaticFileAnsweredBeforeTheWelcomePage(t *testing.T) {
-	s := testServer(config.EnvDevelopment)
-	rec := get(s, "/500.html")
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "500 Internal Server Error") ||
-		strings.Contains(rec.Body.String(), "404 Not Found") {
-		t.Errorf("GET /500.html = %d %q, want 200 and only the file's own content: welcome and notFound must not also run", rec.Code, rec.Body.String())
-	}
-}
+		It("leaves an unknown path a 404 in development: the welcome page answers / only", func() {
+			Expect(get(testServer(config.EnvDevelopment), "/nothing-here").Code).To(Equal(http.StatusNotFound))
+		})
 
-// The images the error pages reference are embedded too, not just the HTML:
-// public/'s go:embed has to list "images" alongside "*.html" or these 404.
-func TestStaticFileServesImages(t *testing.T) {
-	s := testServer(config.EnvProduction)
-	for _, path := range []string{"/images/bogie-404.webp", "/images/bogie-500.webp"} {
-		if rec := get(s, path); rec.Code != http.StatusOK {
-			t.Errorf("GET %s = %d, want 200", path, rec.Code)
-		}
-	}
-}
+		It("is replaced by a real route at /", func() {
+			s := testServer(config.EnvDevelopment)
+			s.Router.GET("/", func(c *gin.Context) { c.String(http.StatusOK, "mine") })
 
-// Nothing above answering, in any environment, is public/404.html: the last
-// of the three no-route handlers.
-func TestUnmatchedRouteServesThe404Page(t *testing.T) {
-	for _, env := range []string{config.EnvDevelopment, config.EnvProduction} {
-		s := testServer(env)
-		rec := get(s, "/nothing-here")
-		if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "404 Not Found") {
-			t.Errorf("%s GET /nothing-here = %d %q, want 404 and public/404.html", env, rec.Code, rec.Body.String())
-		}
-	}
-}
+			Expect(get(s, "/").Body.String()).To(Equal("mine"))
+		})
 
-// A panicking handler gets public/500.html from middlewares.Recover, not a
-// bare status with no body.
-func TestPanicRecoveredServesThe500Page(t *testing.T) {
-	s := testServer(config.EnvTest)
-	s.Router.GET("/boom", func(c *gin.Context) { panic("boom") })
+		It("answers GET / on its own in development, and not in production", func() {
+			if _, err := fs.Stat(public.Files, "index.html"); err == nil {
+				Skip("public/index.html answers / in every environment")
+			}
 
-	rec := get(s, "/boom")
-	if rec.Code != http.StatusInternalServerError || !strings.Contains(rec.Body.String(), "500 Internal Server Error") {
-		t.Errorf("GET /boom = %d %q, want 500 and public/500.html", rec.Code, rec.Body.String())
-	}
-}
+			dev := get(testServer(config.EnvDevelopment), "/")
+			Expect(dev.Code).To(Equal(http.StatusOK))
+			Expect(dev.Body.String()).To(ContainSubstring("is running"))
+			Expect(dev.Body.String()).NotTo(ContainSubstring("404 Not Found"), "notFound must not also run")
+
+			Expect(get(testServer(config.EnvProduction), "/").Code).To(Equal(http.StatusNotFound))
+		})
+	})
+
+	// public/index.html, once the app has one, answers / in every environment,
+	// ahead of the welcome page and the 404.
+	DescribeTable("GET / serves public/index.html verbatim",
+		func(env string) {
+			want, err := fs.ReadFile(public.Files, "index.html")
+			if err != nil {
+				Skip("no public/index.html: the welcome page answers / in development")
+			}
+
+			rec := get(testServer(env), "/")
+
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(rec.Body.String()).To(Equal(string(want)))
+		},
+		Entry("in development", config.EnvDevelopment),
+		Entry("in production", config.EnvProduction),
+	)
+
+	Describe("static files", func() {
+		// public/ is tried before the welcome page and the final 404: a request for
+		// a file that is actually there is served as itself, status 200, in every
+		// environment.
+		It("answers before the welcome page", func() {
+			rec := get(testServer(config.EnvDevelopment), "/500.html")
+
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(rec.Body.String()).To(ContainSubstring("500 Internal Server Error"))
+			Expect(rec.Body.String()).NotTo(ContainSubstring("404 Not Found"), "welcome and notFound must not also run")
+		})
+
+		// The images the error pages reference are embedded too, not just the HTML:
+		// public/'s go:embed has to list "images" alongside "*.html" or these 404.
+		DescribeTable("serves embedded images",
+			func(path string) {
+				Expect(get(testServer(config.EnvProduction), path).Code).To(Equal(http.StatusOK))
+			},
+			Entry("/images/bogie-404.webp", "/images/bogie-404.webp"),
+			Entry("/images/bogie-500.webp", "/images/bogie-500.webp"),
+		)
+	})
+
+	// Nothing above answering, in any environment, is public/404.html: the last
+	// of the three no-route handlers.
+	DescribeTable("an unmatched route serves the 404 page",
+		func(env string) {
+			rec := get(testServer(env), "/nothing-here")
+
+			Expect(rec.Code).To(Equal(http.StatusNotFound))
+			Expect(rec.Body.String()).To(ContainSubstring("404 Not Found"))
+		},
+		Entry("in development", config.EnvDevelopment),
+		Entry("in production", config.EnvProduction),
+	)
+
+	// A panicking handler gets public/500.html from middlewares.Recover, not a
+	// bare status with no body.
+	It("serves the 500 page for a recovered panic", func() {
+		s := testServer(config.EnvTest)
+		s.Router.GET("/boom", func(c *gin.Context) { panic("boom") })
+
+		rec := get(s, "/boom")
+
+		Expect(rec.Code).To(Equal(http.StatusInternalServerError))
+		Expect(rec.Body.String()).To(ContainSubstring("500 Internal Server Error"))
+	})
+})

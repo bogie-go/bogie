@@ -10,11 +10,11 @@ import (
 // AuthenticationShapes are what `bogie g authentication SHAPE` writes, each
 // a middleware on a route group, as the reference services guard theirs:
 //
-//	secret   a shared secret in a header, for the Rails app calling this
+//	secret   a shared secret in a header, for a trusted service calling this
 //	         service over the private network (kchat's control secret)
 //	token    bearer tokens, JWT HS256 with a shared secret, for a service
-//	         that faces users or devices; the Rails app can mint them with
-//	         the jwt gem and this service verifies (line-connect's sessions)
+//	         that faces users or devices; another service can mint them
+//	         with any JWT library and this service verifies (line-connect's sessions)
 //	api_key  keys with a bcrypt digest in an api_keys table, for machine
 //	         clients (line-connect's applications)
 var AuthenticationShapes = []string{"secret", "token", "api_key"}
@@ -124,13 +124,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// SecretHeader carries the shared secret on the routes the Rails app calls.
+// SecretHeader carries the shared secret on the routes a trusted service calls.
 const SecretHeader = %[1]q
 
-// RequireSecret guards routes for a trusted caller: the Rails app next door,
+// RequireSecret guards routes for a trusted caller: another service next door,
 // over the private network. This is a shared secret, not a user credential.
 // Anything that needs to know WHICH person is acting carries that in the
-// request body, because the permission check already happened in Rails.
+// request body, because the permission check already happened in the caller.
 //
 // The secret comes from config (%[3]s in the credentials file,
 // %[4]s in the environment); an empty one opens nothing.
@@ -161,21 +161,27 @@ func RequireSecret(secret string) gin.HandlerFunc {
 	}
 }
 `, a.header(), a.name, setting.Path(), setting.Env())},
-		{Path: "app/middlewares/require_secret_test.go", Content: fmt.Sprintf(`package middlewares
+		{Path: "app/middlewares/require_secret_test.go", Content: fmt.Sprintf(`package middlewares_test
 
 import (
 	"net/http"
 	"net/http/httptest"
-	"testing"
 
 	"github.com/gin-gonic/gin"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	%[1]q
 )
 
-func secretRequest(t *testing.T, secret string, set func(*http.Request)) int {
-	t.Helper()
+const secret = "a-secret-that-is-at-least-thirty-two-bytes"
+
+// secretRequest sends one request through a router guarded by
+// RequireSecret(configured) and returns the status.
+func secretRequest(configured string, set func(*http.Request)) int {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.GET("/guarded", RequireSecret(secret), func(c *gin.Context) { c.Status(http.StatusOK) })
+	router.GET("/guarded", middlewares.RequireSecret(configured), func(c *gin.Context) { c.Status(http.StatusOK) })
 	req := httptest.NewRequest(http.MethodGet, "/guarded", nil)
 	set(req)
 	rec := httptest.NewRecorder()
@@ -183,27 +189,58 @@ func secretRequest(t *testing.T, secret string, set func(*http.Request)) int {
 	return rec.Code
 }
 
-func TestRequireSecret(t *testing.T) {
-	const secret = "a-secret-that-is-at-least-thirty-two-bytes"
-	cases := map[string]struct {
-		configured string
-		set        func(*http.Request)
-		want       int
-	}{
-		"the header opens":          {secret, func(r *http.Request) { r.Header.Set(SecretHeader, secret) }, http.StatusOK},
-		"basic auth opens":          {secret, func(r *http.Request) { r.SetBasicAuth("anyone", secret) }, http.StatusOK},
-		"nothing is refused":        {secret, func(*http.Request) {}, http.StatusUnauthorized},
-		"a wrong secret is refused": {secret, func(r *http.Request) { r.Header.Set(SecretHeader, "nope") }, http.StatusUnauthorized},
-		"a prefix is refused":       {secret, func(r *http.Request) { r.Header.Set(SecretHeader, secret[:10]) }, http.StatusUnauthorized},
-		"an empty secret opens nothing": {"", func(r *http.Request) { r.Header.Set(SecretHeader, "") }, http.StatusUnauthorized},
-	}
-	for name, tc := range cases {
-		if got := secretRequest(t, tc.configured, tc.set); got != tc.want {
-			t.Errorf("%%s: %%d, want %%d", name, got, tc.want)
-		}
-	}
-}
-`)},
+var _ = Describe("RequireSecret", func() {
+	var code int
+
+	Context("with the secret in the header", func() {
+		BeforeEach(func() {
+			code = secretRequest(secret, func(r *http.Request) { r.Header.Set(middlewares.SecretHeader, secret) })
+		})
+
+		It("opens", func() { Expect(code).To(Equal(http.StatusOK)) })
+	})
+
+	Context("with the secret as the basic auth password", func() {
+		BeforeEach(func() {
+			code = secretRequest(secret, func(r *http.Request) { r.SetBasicAuth("anyone", secret) })
+		})
+
+		It("opens", func() { Expect(code).To(Equal(http.StatusOK)) })
+	})
+
+	Context("with no secret", func() {
+		BeforeEach(func() {
+			code = secretRequest(secret, func(*http.Request) {})
+		})
+
+		It("is refused", func() { Expect(code).To(Equal(http.StatusUnauthorized)) })
+	})
+
+	Context("with a wrong secret", func() {
+		BeforeEach(func() {
+			code = secretRequest(secret, func(r *http.Request) { r.Header.Set(middlewares.SecretHeader, "nope") })
+		})
+
+		It("is refused", func() { Expect(code).To(Equal(http.StatusUnauthorized)) })
+	})
+
+	Context("with only a prefix of the secret", func() {
+		BeforeEach(func() {
+			code = secretRequest(secret, func(r *http.Request) { r.Header.Set(middlewares.SecretHeader, secret[:10]) })
+		})
+
+		It("is refused", func() { Expect(code).To(Equal(http.StatusUnauthorized)) })
+	})
+
+	Context("when no secret is configured", func() {
+		BeforeEach(func() {
+			code = secretRequest("", func(r *http.Request) { r.Header.Set(middlewares.SecretHeader, "") })
+		})
+
+		It("opens nothing", func() { Expect(code).To(Equal(http.StatusUnauthorized)) })
+	})
+})
+`, a.module+"/app/middlewares")},
 		{Path: "app/controllers/authentication_secret.go", Content: fmt.Sprintf(`package controllers
 
 import (
@@ -212,16 +249,16 @@ import (
 	%[1]q
 )
 
-// WithSecret is the route group the Rails app calls. Every route mounted in
+// WithSecret is the route group a trusted service calls. Every route mounted in
 // it needs the shared secret from config (%[3]s in the credentials
 // file, %[4]s in the environment) in the %[5]s header. Mount a
 // controller here instead of on the router, in routes.go:
 //
 //	s.Reports.SetupRoutes(s.WithSecret(&r.RouterGroup))
 //
-// On the Rails side, one header on the client:
+// The caller sends one header on every request:
 //
-//	Faraday.new(url: ENV["%[6]s_URL"], headers: { "%[5]s" => Rails.application.credentials.%[2]s_secret })
+//	%[5]s: <the secret>
 func (s *Server) WithSecret(r *gin.RouterGroup) *gin.RouterGroup {
 	return r.Group("", middlewares.RequireSecret(s.Config.%[7]s))
 }
@@ -234,9 +271,9 @@ func (a auth) token() ([]File, []Wire, error) {
 	setting, _ := AuthenticationSetting("token")
 	files := []File{
 		{Path: "app/services/token/token.go", Content: fmt.Sprintf(`// Package token mints and verifies the bearer tokens a signed-in user
-// presents. JWT, HS256, one shared secret: the Rails app next door can mint
-// a token for its user with the jwt gem and this service verifies it, so
-// users keep living in Rails, or this service mints its own from a sessions
+// presents. JWT, HS256, one shared secret: another service can mint
+// a token for its user with any JWT library and this service verifies it, so
+// users keep living there, or this service mints its own from a sessions
 // controller. Nothing here knows about HTTP.
 package token
 
@@ -267,7 +304,7 @@ type Maker struct {
 
 // Claims is what a verified token says.
 type Claims struct {
-	// Subject is who the token was minted for: the Rails user's id, usually.
+	// Subject is who the token was minted for: the caller's user id, usually.
 	Subject   string
 	ExpiresAt time.Time
 	// ID is the token's own id, for a revocation list if you keep one.
@@ -311,54 +348,100 @@ func (m Maker) Verify(raw string) (Claims, error) {
 	return Claims{Subject: claims.Subject, ExpiresAt: claims.ExpiresAt.Time, ID: claims.ID}, nil
 }
 `, setting.Path(), setting.Env())},
-		{Path: "app/services/token/token_test.go", Content: `package token
+		{Path: "app/services/token/token_suite_test.go", Content: suiteFile("token", "Token")},
+		{Path: "app/services/token/token_test.go", Content: fmt.Sprintf(`package token_test
 
 import (
-	"errors"
-	"testing"
 	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	%[1]q
 )
 
-var maker = Maker{Secret: []byte("a-test-secret-of-at-least-thirty-two-bytes"), Issuer: "test"}
+var maker = token.Maker{Secret: []byte("a-test-secret-of-at-least-thirty-two-bytes"), Issuer: "test"}
 
-func TestMintThenVerify(t *testing.T) {
-	raw, err := maker.Mint("user-42", time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
-	claims, err := maker.Verify(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if claims.Subject != "user-42" || claims.ID == "" || time.Until(claims.ExpiresAt) <= 0 {
-		t.Errorf("claims = %+v", claims)
-	}
-}
+var _ = Describe("Maker", func() {
+	var (
+		raw    string
+		claims token.Claims
+		err    error
+	)
 
-func TestVerifyRefuses(t *testing.T) {
-	expired, _ := maker.Mint("user-42", -time.Minute)
-	otherSecret, _ := Maker{Secret: []byte("another-secret-of-at-least-thirty-two-bytes"), Issuer: "test"}.Mint("user-42", time.Minute)
-	otherIssuer, _ := Maker{Secret: maker.Secret, Issuer: "someone-else"}.Mint("user-42", time.Minute)
+	mint := func(m token.Maker, ttl time.Duration) string {
+		signed, err := m.Mint("user-42", ttl)
+		Expect(err).NotTo(HaveOccurred())
+		return signed
+	}
 
-	for name, tc := range map[string]struct {
-		raw  string
-		want error
-	}{
-		"expired":        {expired, ErrExpired},
-		"another secret": {otherSecret, ErrInvalid},
-		"another issuer": {otherIssuer, ErrInvalid},
-		"garbage":        {"not.a.token", ErrInvalid},
-		"empty":          {"", ErrInvalid},
-	} {
-		if _, err := maker.Verify(tc.raw); !errors.Is(err, tc.want) {
-			t.Errorf("%s: err = %v, want %v", name, err, tc.want)
-		}
-	}
-	if _, err := maker.Mint("", time.Minute); err == nil {
-		t.Error("minted a token with no subject")
-	}
-}
-`},
+	Describe("Mint and Verify", func() {
+		Context("with a valid token", func() {
+			BeforeEach(func() {
+				raw = mint(maker, time.Minute)
+				claims, err = maker.Verify(raw)
+			})
+
+			It("verifies", func() { Expect(err).NotTo(HaveOccurred()) })
+			It("gives back the subject", func() { Expect(claims.Subject).To(Equal("user-42")) })
+			It("carries an id", func() { Expect(claims.ID).NotTo(BeEmpty()) })
+			It("expires in the future", func() { Expect(claims.ExpiresAt).To(BeTemporally(">", time.Now())) })
+		})
+
+		Context("with an expired token", func() {
+			BeforeEach(func() {
+				_, err = maker.Verify(mint(maker, -time.Minute))
+			})
+
+			It("is refused as expired", func() { Expect(err).To(MatchError(token.ErrExpired)) })
+		})
+
+		Context("with a token signed by another secret", func() {
+			BeforeEach(func() {
+				other := token.Maker{Secret: []byte("another-secret-of-at-least-thirty-two-bytes"), Issuer: "test"}
+				_, err = maker.Verify(mint(other, time.Minute))
+			})
+
+			It("is refused as invalid", func() { Expect(err).To(MatchError(token.ErrInvalid)) })
+		})
+
+		Context("with a token from another issuer", func() {
+			BeforeEach(func() {
+				other := token.Maker{Secret: maker.Secret, Issuer: "someone-else"}
+				_, err = maker.Verify(mint(other, time.Minute))
+			})
+
+			It("is refused as invalid", func() { Expect(err).To(MatchError(token.ErrInvalid)) })
+		})
+
+		Context("with garbage", func() {
+			BeforeEach(func() {
+				_, err = maker.Verify("not.a.token")
+			})
+
+			It("is refused as invalid", func() { Expect(err).To(MatchError(token.ErrInvalid)) })
+		})
+
+		Context("with an empty string", func() {
+			BeforeEach(func() {
+				_, err = maker.Verify("")
+			})
+
+			It("is refused as invalid", func() { Expect(err).To(MatchError(token.ErrInvalid)) })
+		})
+	})
+
+	Describe("Mint", func() {
+		Context("with an empty subject", func() {
+			BeforeEach(func() {
+				_, err = maker.Mint("", time.Minute)
+			})
+
+			It("refuses to mint", func() { Expect(err).To(HaveOccurred()) })
+		})
+	})
+})
+`, a.module+"/app/services/token")},
 		{Path: "app/middlewares/require_user.go", Content: fmt.Sprintf(`package middlewares
 
 import (
@@ -372,7 +455,7 @@ import (
 )
 
 // userTokens is the slice of the token service this middleware uses,
-// declared here (rule 2). token.Maker satisfies it.
+// declared here, where it is used. token.Maker satisfies it.
 type userTokens interface {
 	Verify(raw string) (token.Claims, error)
 }
@@ -382,7 +465,7 @@ const subjectKey = "subject"
 // RequireUser guards routes for a signed-in user: a bearer token in the
 // Authorization header that the token service verifies. The token's subject
 // is then on the context for handlers, through Subject. Who the subject is,
-// a Rails user id usually, is for the caller and the handler to agree on;
+// a user id usually, is for the caller and the handler to agree on;
 // nothing is loaded here.
 func RequireUser(tokens userTokens) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -407,26 +490,27 @@ func RequireUser(tokens userTokens) gin.HandlerFunc {
 // RequireUser does not guard.
 func Subject(c *gin.Context) string { return c.GetString(subjectKey) }
 `, a.module+"/app/services/token", a.module+"/app/views", a.name)},
-		{Path: "app/middlewares/require_user_test.go", Content: fmt.Sprintf(`package middlewares
+		{Path: "app/middlewares/require_user_test.go", Content: fmt.Sprintf(`package middlewares_test
 
 import (
 	"net/http"
 	"net/http/httptest"
-	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
 	%[1]q
+	%[2]q
 )
 
 var testTokens = token.Maker{Secret: []byte("a-test-secret-of-at-least-thirty-two-bytes"), Issuer: "test"}
 
-func userRequest(t *testing.T, authorization string) *httptest.ResponseRecorder {
-	t.Helper()
+func userRequest(authorization string) *httptest.ResponseRecorder {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.GET("/me", RequireUser(testTokens), func(c *gin.Context) { c.String(http.StatusOK, Subject(c)) })
+	router.GET("/me", middlewares.RequireUser(testTokens), func(c *gin.Context) { c.String(http.StatusOK, middlewares.Subject(c)) })
 	req := httptest.NewRequest(http.MethodGet, "/me", nil)
 	if authorization != "" {
 		req.Header.Set("Authorization", authorization)
@@ -436,22 +520,53 @@ func userRequest(t *testing.T, authorization string) *httptest.ResponseRecorder 
 	return rec
 }
 
-func TestRequireUser(t *testing.T) {
-	good, _ := testTokens.Mint("user-42", time.Minute)
-	expired, _ := testTokens.Mint("user-42", -time.Minute)
+var _ = Describe("RequireUser", func() {
+	var rec *httptest.ResponseRecorder
 
-	if rec := userRequest(t, "Bearer "+good); rec.Code != http.StatusOK || rec.Body.String() != "user-42" {
-		t.Errorf("good token: %%d %%q", rec.Code, rec.Body.String())
-	}
-	for name, header := range map[string]string{
-		"none": "", "expired": "Bearer " + expired, "garbage": "Bearer nope", "wrong scheme": "Basic " + good,
-	} {
-		if rec := userRequest(t, header); rec.Code != http.StatusUnauthorized {
-			t.Errorf("%%s: %%d, want 401", name, rec.Code)
-		}
-	}
-}
-`, a.module+"/app/services/token")},
+	Context("with a good token", func() {
+		BeforeEach(func() {
+			good, err := testTokens.Mint("user-42", time.Minute)
+			Expect(err).NotTo(HaveOccurred())
+			rec = userRequest("Bearer " + good)
+		})
+
+		It("lets the request through", func() { Expect(rec.Code).To(Equal(http.StatusOK)) })
+		It("puts the subject on the context", func() { Expect(rec.Body.String()).To(Equal("user-42")) })
+	})
+
+	Context("with no token", func() {
+		BeforeEach(func() { rec = userRequest("") })
+
+		It("answers 401", func() { Expect(rec.Code).To(Equal(http.StatusUnauthorized)) })
+	})
+
+	Context("with an expired token", func() {
+		BeforeEach(func() {
+			expired, err := testTokens.Mint("user-42", -time.Minute)
+			Expect(err).NotTo(HaveOccurred())
+			rec = userRequest("Bearer " + expired)
+		})
+
+		It("answers 401", func() { Expect(rec.Code).To(Equal(http.StatusUnauthorized)) })
+	})
+
+	Context("with garbage", func() {
+		BeforeEach(func() { rec = userRequest("Bearer nope") })
+
+		It("answers 401", func() { Expect(rec.Code).To(Equal(http.StatusUnauthorized)) })
+	})
+
+	Context("with the wrong scheme", func() {
+		BeforeEach(func() {
+			good, err := testTokens.Mint("user-42", time.Minute)
+			Expect(err).NotTo(HaveOccurred())
+			rec = userRequest("Basic " + good)
+		})
+
+		It("answers 401", func() { Expect(rec.Code).To(Equal(http.StatusUnauthorized)) })
+	})
+})
+`, a.module+"/app/middlewares", a.module+"/app/services/token")},
 		{Path: "app/controllers/authentication_token.go", Content: fmt.Sprintf(`package controllers
 
 import (
@@ -464,11 +579,9 @@ import (
 // Tokens is the token maker for this app: the secret from config
 // (%[4]s in the credentials file, %[5]s in the environment) and the
 // app's name as issuer. A sessions controller that signs users in here mints
-// with it; a Rails app that signs them in mints the same token with the jwt
-// gem and the same secret:
-//
-//	JWT.encode({ iss: %[3]q, sub: user.id.to_s, iat: Time.now.to_i, exp: 15.minutes.from_now.to_i, jti: SecureRandom.uuid },
-//	           Rails.application.credentials.%[3]s_token_secret, "HS256")
+// with it; another service that signs users in mints the same token with any JWT
+// library: HS256, the same secret, and the claims iss (%[3]q), sub, iat, exp
+// and jti.
 func (s *Server) Tokens() token.Maker {
 	return token.Maker{Secret: []byte(s.Config.%[6]s), Issuer: %[3]q}
 }
@@ -483,6 +596,27 @@ func (s *Server) WithUser(r *gin.RouterGroup) *gin.RouterGroup {
 	return r.Group("", middlewares.RequireUser(s.Tokens()))
 }
 `, a.module+"/app/middlewares", a.module+"/app/services/token", a.name, setting.Path(), setting.Env(), setting.Field())},
+		{Path: "test/testapp/authentication_token.go", Content: `package testapp
+
+import "time"
+
+// As signs a request test in as that token subject: whatever the app's
+// sessions mint, usually a user's id as a string. The token is minted with
+// the app's own secret, so the real RequireUser accepts it.
+//
+//	app := testapp.New(GinkgoT())
+//	app.Get("/posts").As(strconv.FormatInt(user.ID, 10)).Do().Status(http.StatusOK)
+//
+// Leave As off to test the 401.
+func (r *Request) As(subject string) *Request {
+	signed, err := r.app.Server.Tokens().Mint(subject, time.Hour)
+	if err != nil {
+		r.app.t.Fatal(err)
+	}
+	r.authorization = "Bearer " + signed
+	return r
+}
+`},
 	}
 	return files, nil, nil
 }
@@ -513,17 +647,17 @@ func (a auth) apiKey(now time.Time) ([]File, []Wire, error) {
 		switch files[i].Path {
 		case "db/queries/api_keys.sql":
 			files[i].Content += "\n-- name: GetApiKeyByPrefix :one\nSELECT * FROM api_keys WHERE prefix = $1;\n"
-		case "app/models/api_keys.go":
+		case "db/adapter/api_keys.go":
 			files[i].Content += `
 // GetApiKeyByPrefix finds the key a presented "<prefix>.<secret>" names, by
 // its prefix; the service compares the secret against the digest.
-func (s *Store) GetApiKeyByPrefix(ctx context.Context, prefix string) (domain.ApiKey, error) {
+func (s *Store) GetApiKeyByPrefix(ctx context.Context, prefix string) (models.ApiKey, error) {
 	row, err := s.q.GetApiKeyByPrefix(ctx, prefix)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		return domain.ApiKey{}, domain.ErrNotFound
+		return models.ApiKey{}, models.ErrNotFound
 	case err != nil:
-		return domain.ApiKey{}, fmt.Errorf("models: get api key by prefix: %w", err)
+		return models.ApiKey{}, fmt.Errorf("store: get api key by prefix: %w", err)
 	}
 	return api_keyFromRow(row), nil
 }
@@ -555,10 +689,10 @@ import (
 // a caller cannot tell the two apart.
 var ErrInvalid = errors.New("api key: invalid")
 
-// store is the slice of the store this service uses (rule 2).
+// store is the slice of the store this service uses, declared here.
 type store interface {
-	CreateApiKey(ctx context.Context, k domain.ApiKey) (domain.ApiKey, error)
-	GetApiKeyByPrefix(ctx context.Context, prefix string) (domain.ApiKey, error)
+	CreateApiKey(ctx context.Context, k models.ApiKey) (models.ApiKey, error)
+	GetApiKeyByPrefix(ctx context.Context, prefix string) (models.ApiKey, error)
 }
 
 // Service makes and verifies keys.
@@ -571,38 +705,38 @@ func New(s store) *Service { return &Service{Store: s} }
 
 // Create makes a key for name and returns it in full, "<prefix>.<secret>",
 // the only time the secret is ever seen; and the row that was stored.
-func (s *Service) Create(ctx context.Context, name string) (string, domain.ApiKey, error) {
+func (s *Service) Create(ctx context.Context, name string) (string, models.ApiKey, error) {
 	prefix, err := random(6)
 	if err != nil {
-		return "", domain.ApiKey{}, err
+		return "", models.ApiKey{}, err
 	}
 	secret, err := random(24)
 	if err != nil {
-		return "", domain.ApiKey{}, err
+		return "", models.ApiKey{}, err
 	}
 	digest, err := bcrypt.GenerateFromPassword([]byte(secret), bcrypt.DefaultCost)
 	if err != nil {
-		return "", domain.ApiKey{}, fmt.Errorf("api keys: digest: %%w", err)
+		return "", models.ApiKey{}, fmt.Errorf("api keys: digest: %%w", err)
 	}
-	key, err := s.Store.CreateApiKey(ctx, domain.ApiKey{Name: name, Prefix: prefix, Digest: string(digest)})
+	key, err := s.Store.CreateApiKey(ctx, models.ApiKey{Name: name, Prefix: prefix, Digest: string(digest)})
 	if err != nil {
-		return "", domain.ApiKey{}, err
+		return "", models.ApiKey{}, err
 	}
 	return prefix + "." + secret, key, nil
 }
 
 // Verify checks a presented key and returns the row it names.
-func (s *Service) Verify(ctx context.Context, presented string) (domain.ApiKey, error) {
+func (s *Service) Verify(ctx context.Context, presented string) (models.ApiKey, error) {
 	prefix, secret, ok := strings.Cut(presented, ".")
 	if !ok || prefix == "" || secret == "" {
-		return domain.ApiKey{}, ErrInvalid
+		return models.ApiKey{}, ErrInvalid
 	}
 	key, err := s.Store.GetApiKeyByPrefix(ctx, prefix)
 	if err != nil {
-		return domain.ApiKey{}, ErrInvalid
+		return models.ApiKey{}, ErrInvalid
 	}
 	if bcrypt.CompareHashAndPassword([]byte(key.Digest), []byte(secret)) != nil {
-		return domain.ApiKey{}, ErrInvalid
+		return models.ApiKey{}, ErrInvalid
 	}
 	return key, nil
 }
@@ -614,61 +748,111 @@ func random(n int) (string, error) {
 	}
 	return hex.EncodeToString(b), nil
 }
-`, a.module+"/app/domain")},
-		File{Path: "app/services/api_keys/api_keys_test.go", Content: fmt.Sprintf(`package api_keys
+`, a.module+"/app/models")},
+		File{Path: "app/services/api_keys/api_keys_suite_test.go", Content: suiteFile("api_keys", "APIKeys")},
+		File{Path: "app/services/api_keys/api_keys_test.go", Content: fmt.Sprintf(`package api_keys_test
 
 import (
 	"context"
-	"errors"
-	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
 	%[1]q
+	%[3]q
 )
 
 // fakeStore keeps keys in memory, by prefix.
-type fakeStore struct{ keys map[string]domain.ApiKey }
+type fakeStore struct{ keys map[string]models.ApiKey }
 
-func (f *fakeStore) CreateApiKey(_ context.Context, k domain.ApiKey) (domain.ApiKey, error) {
+func (f *fakeStore) CreateApiKey(_ context.Context, k models.ApiKey) (models.ApiKey, error) {
 	k.ID = %[2]s
 	f.keys[k.Prefix] = k
 	return k, nil
 }
 
-func (f *fakeStore) GetApiKeyByPrefix(_ context.Context, prefix string) (domain.ApiKey, error) {
+func (f *fakeStore) GetApiKeyByPrefix(_ context.Context, prefix string) (models.ApiKey, error) {
 	k, ok := f.keys[prefix]
 	if !ok {
-		return domain.ApiKey{}, domain.ErrNotFound
+		return models.ApiKey{}, models.ErrNotFound
 	}
 	return k, nil
 }
 
-func TestCreateThenVerify(t *testing.T) {
-	svc := New(&fakeStore{keys: map[string]domain.ApiKey{}})
-	ctx := context.Background()
+var _ = Describe("Service", func() {
+	var (
+		svc       *api_keys.Service
+		ctx       context.Context
+		presented string
+		made      models.ApiKey
+	)
 
-	presented, made, err := svc.Create(ctx, "billing")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if made.Name != "billing" || made.Digest == "" || made.Digest == presented {
-		t.Errorf("stored %%+v for key %%q", made, presented)
-	}
-	got, err := svc.Verify(ctx, presented)
-	if err != nil || got.ID != made.ID {
-		t.Errorf("Verify = %%+v, %%v", got, err)
-	}
-	for name, bad := range map[string]string{
-		"wrong secret":  made.Prefix + ".nope",
-		"wrong prefix":  "nope." + presented[len(made.Prefix)+1:],
-		"no dot":        "nope",
-		"empty":         "",
-	} {
-		if _, err := svc.Verify(ctx, bad); !errors.Is(err, ErrInvalid) {
-			t.Errorf("%%s: err = %%v, want ErrInvalid", name, err)
-		}
-	}
-}
-`, a.module+"/app/domain", fakeIDAssign(a.scheme))},
+	BeforeEach(func() {
+		svc = api_keys.New(&fakeStore{keys: map[string]models.ApiKey{}})
+		ctx = context.Background()
+	})
+
+	Describe("Create", func() {
+		Context("with a name", func() {
+			BeforeEach(func() {
+				var err error
+				presented, made, err = svc.Create(ctx, "billing")
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("stores the name", func() { Expect(made.Name).To(Equal("billing")) })
+			It("stores a digest, never the key", func() {
+				Expect(made.Digest).NotTo(BeEmpty())
+				Expect(made.Digest).NotTo(Equal(presented))
+			})
+		})
+	})
+
+	Describe("Verify", func() {
+		Context("with a key the service made", func() {
+			BeforeEach(func() {
+				var err error
+				presented, made, err = svc.Create(ctx, "billing")
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("returns the row it names", func() {
+				got, err := svc.Verify(ctx, presented)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(got.ID).To(Equal(made.ID))
+			})
+
+			Context("with a wrong secret", func() {
+				It("is refused", func() {
+					_, err := svc.Verify(ctx, made.Prefix+".nope")
+					Expect(err).To(MatchError(api_keys.ErrInvalid))
+				})
+			})
+
+			Context("with a wrong prefix", func() {
+				It("is refused", func() {
+					_, err := svc.Verify(ctx, "nope."+presented[len(made.Prefix)+1:])
+					Expect(err).To(MatchError(api_keys.ErrInvalid))
+				})
+			})
+		})
+
+		Context("with a key that has no dot", func() {
+			It("is refused", func() {
+				_, err := svc.Verify(ctx, "nope")
+				Expect(err).To(MatchError(api_keys.ErrInvalid))
+			})
+		})
+
+		Context("with an empty key", func() {
+			It("is refused", func() {
+				_, err := svc.Verify(ctx, "")
+				Expect(err).To(MatchError(api_keys.ErrInvalid))
+			})
+		})
+	})
+})
+`, a.module+"/app/models", fakeIDAssign(a.scheme), a.module+"/app/services/api_keys")},
 		File{Path: "app/middlewares/require_api_key.go", Content: fmt.Sprintf(`package middlewares
 
 import (
@@ -683,9 +867,9 @@ import (
 )
 
 // apiKeys is the slice of the api_keys service this middleware uses,
-// declared here (rule 2).
+// declared here, where it is used.
 type apiKeys interface {
-	Verify(ctx context.Context, presented string) (domain.ApiKey, error)
+	Verify(ctx context.Context, presented string) (models.ApiKey, error)
 }
 
 const apiKeyNameKey = "api_key"
@@ -714,35 +898,37 @@ func RequireAPIKey(keys apiKeys) gin.HandlerFunc {
 // APIKeyName is the name of the key the request presented, or "" on a route
 // that RequireAPIKey does not guard.
 func APIKeyName(c *gin.Context) string { return c.GetString(apiKeyNameKey) }
-`, a.module+"/app/domain", a.module+"/app/views", a.name, a.name)},
-		File{Path: "app/middlewares/require_api_key_test.go", Content: fmt.Sprintf(`package middlewares
+`, a.module+"/app/models", a.module+"/app/views", a.name, a.name)},
+		File{Path: "app/middlewares/require_api_key_test.go", Content: fmt.Sprintf(`package middlewares_test
 
 import (
 	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"testing"
 
 	"github.com/gin-gonic/gin"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
 	%[1]q
+	%[2]q
 )
 
+// fakeAPIKeys accepts one key, "good.key".
 type fakeAPIKeys struct{}
 
-func (fakeAPIKeys) Verify(_ context.Context, presented string) (domain.ApiKey, error) {
+func (fakeAPIKeys) Verify(_ context.Context, presented string) (models.ApiKey, error) {
 	if presented == "good.key" {
-		return domain.ApiKey{Name: "billing"}, nil
+		return models.ApiKey{Name: "billing"}, nil
 	}
-	return domain.ApiKey{}, errors.New("invalid")
+	return models.ApiKey{}, errors.New("invalid")
 }
 
-func apiKeyRequest(t *testing.T, authorization string) *httptest.ResponseRecorder {
-	t.Helper()
+func apiKeyRequest(authorization string) *httptest.ResponseRecorder {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.GET("/guarded", RequireAPIKey(fakeAPIKeys{}), func(c *gin.Context) { c.String(http.StatusOK, APIKeyName(c)) })
+	router.GET("/guarded", middlewares.RequireAPIKey(fakeAPIKeys{}), func(c *gin.Context) { c.String(http.StatusOK, middlewares.APIKeyName(c)) })
 	req := httptest.NewRequest(http.MethodGet, "/guarded", nil)
 	if authorization != "" {
 		req.Header.Set("Authorization", authorization)
@@ -752,17 +938,35 @@ func apiKeyRequest(t *testing.T, authorization string) *httptest.ResponseRecorde
 	return rec
 }
 
-func TestRequireAPIKey(t *testing.T) {
-	if rec := apiKeyRequest(t, "Bearer good.key"); rec.Code != http.StatusOK || rec.Body.String() != "billing" {
-		t.Errorf("good key: %%d %%q", rec.Code, rec.Body.String())
-	}
-	for name, header := range map[string]string{"none": "", "wrong": "Bearer bad.key", "wrong scheme": "Basic good.key"} {
-		if rec := apiKeyRequest(t, header); rec.Code != http.StatusUnauthorized {
-			t.Errorf("%%s: %%d, want 401", name, rec.Code)
-		}
-	}
-}
-`, a.module+"/app/domain")},
+var _ = Describe("RequireAPIKey", func() {
+	var rec *httptest.ResponseRecorder
+
+	Context("with a good key", func() {
+		BeforeEach(func() { rec = apiKeyRequest("Bearer good.key") })
+
+		It("lets the request through", func() { Expect(rec.Code).To(Equal(http.StatusOK)) })
+		It("puts the key's name on the context", func() { Expect(rec.Body.String()).To(Equal("billing")) })
+	})
+
+	Context("with no key", func() {
+		BeforeEach(func() { rec = apiKeyRequest("") })
+
+		It("answers 401", func() { Expect(rec.Code).To(Equal(http.StatusUnauthorized)) })
+	})
+
+	Context("with a wrong key", func() {
+		BeforeEach(func() { rec = apiKeyRequest("Bearer bad.key") })
+
+		It("answers 401", func() { Expect(rec.Code).To(Equal(http.StatusUnauthorized)) })
+	})
+
+	Context("with the wrong scheme", func() {
+		BeforeEach(func() { rec = apiKeyRequest("Basic good.key") })
+
+		It("answers 401", func() { Expect(rec.Code).To(Equal(http.StatusUnauthorized)) })
+	})
+})
+`, a.module+"/app/middlewares", a.module+"/app/models")},
 		File{Path: "app/controllers/authentication_api_key.go", Content: fmt.Sprintf(`package controllers
 
 import (
@@ -800,7 +1004,7 @@ const apiKeysUsage = `+"`"+`Usage: %[4]s api_keys create NAME
 Makes an api key for a machine client and prints it, the only time it is
 shown in full. The client presents it as a bearer token on the routes
 mounted under WithAPIKey. The table keeps a bcrypt digest, never the key.
-Spelled the Rails way through the tool: bogie api_keys:create NAME
+Through the tool: bogie api_keys:create NAME
 `+"`"+`
 
 // runAPIKeys handles `+"`%[4]s api_keys ...`"+`.
@@ -813,7 +1017,7 @@ func runAPIKeys(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	store, err := models.Open(ctx, cfg.Database.URL)
+	store, err := adapter.Open(ctx, cfg.Database.URL)
 	if err != nil {
 		return err
 	}
@@ -826,7 +1030,7 @@ func runAPIKeys(ctx context.Context, args []string) error {
 	fmt.Println(key)
 	return nil
 }
-`, a.module+"/app/models", a.module+"/app/services/api_keys", a.module+"/config", a.name)},
+`, a.module+"/db/adapter", a.module+"/app/services/api_keys", a.module+"/config", a.name)},
 	)
 
 	wires := []Wire{

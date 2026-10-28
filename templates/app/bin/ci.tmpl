@@ -3,7 +3,7 @@
 #
 # Every check that must pass before a commit is merged or deployed, in one
 # file, run on the machine you already have rather than a slower one you rent.
-# This is Rails 8.1's bin/ci, ported. Every step runs even when an earlier one
+# Every step runs even when an earlier one
 # failed, so one run reports everything; the run as a whole fails if any step
 # did. A green run on a clean tree ends with `gh signoff`, which records a
 # "signoff" status on the commit for branch protection to require.
@@ -72,7 +72,7 @@ signoff() {
 
 # Everything below the setup runs in the test environment, against the
 # compose stack's {{.Name}}_test. It is dropped and rebuilt from the migration
-# files every run, as Rails's test preparation does, so the database can never
+# files every run, so the database can never
 # drift from the files on disk; then it is rolled all the way back and forward
 # again, so a migration with a broken Down is caught before it reaches anyone.
 export {{.EnvPrefix}}_ENV=test
@@ -80,12 +80,12 @@ export {{.EnvPrefix}}_ENV=test
 step "Setup: modules"          "go mod download && go mod verify"
 step "Setup: database"         "docker compose up -d --wait && go run . db drop --yes && go run . db prepare"
 step "Schema: down and up"     "go run . migrate down-to 0 --yes && go run . migrate up && go run . migrate status"
-step "Schema: models current"  "ls db/queries/*.sql >/dev/null 2>&1 || exit 0; cd db && go tool sqlc diff"
+step "Schema: sqlc current"  "ls db/queries/*.sql >/dev/null 2>&1 || exit 0; cd db && go tool sqlc diff"
 step "Style: gofmt"            "test -z \"\$(gofmt -l .)\" || { gofmt -l .; exit 1; }"
 step "Style: go vet"           "go vet ./..."
 step "Style: golangci-lint"    "lint"
 step "Build"                   "go build ./..."
-step "Tests"                   "go test -race -cover ./..."{{if .Jobs}}
+step "Tests"                   "go test -p 1 -race -cover ./..."{{if .Jobs}}
 step "Worker: boots and drains" "go build -o bin/{{.Name}} . && timeout -s TERM 6 ./bin/{{.Name}} worker; s=\$?; test \$s -eq 124 || test \$s -eq 0"{{end}}
 
 printf '\n'

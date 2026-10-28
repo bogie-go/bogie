@@ -3,7 +3,7 @@ package generate
 import "fmt"
 
 // Seed writes db/seeds/<name>.go, a function that loads its data through
-// app/models, and the line in db/seeds/seeds.go that registers it above the
+// db/adapter, and the line in db/seeds/seeds.go that registers it above the
 // bogie:seeds marker. Unlike a migration, a seed carries no version table:
 // `db seed` runs every seed every time, so the function it writes must be
 // safe to run twice.
@@ -34,13 +34,13 @@ func seedFile(module, name, typ string) string {
 import (
 	"context"
 
-	"%[1]s/app/models"
+	"%[1]s/db/adapter"
 )
 
 // Seed%[3]s seeds %[2]s. db seed can run this any number of times, so
 // make it safe to run twice: insert with ON CONFLICT DO NOTHING, or
 // check before creating.
-func Seed%[3]s(ctx context.Context, s *models.Store) error {
+func Seed%[3]s(ctx context.Context, s *adapter.Store) error {
 	// TODO: s.Create...(ctx, ...), written so a second run does nothing new.
 	return nil
 }

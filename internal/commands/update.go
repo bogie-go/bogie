@@ -20,7 +20,7 @@ import (
 
 const updateUsage = `Usage: bogie app:update [--pretend]
 
-Moves the app to this Bogie's layout, as rails app:update does, but as a
+Moves the app to this Bogie's layout, the way a generator's update does, but as a
 three-way merge: bogie.toml records the version that generated the app, so
 what that version generated (base) is rendered again, what this version
 generates (theirs) is rendered, and each file on disk (ours, with your

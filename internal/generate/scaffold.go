@@ -8,13 +8,12 @@ import (
 )
 
 // Scaffold writes what `bogie generate scaffold post title:string body:text`
-// produces, as `rails g scaffold` does: the model (everything Model writes),
-// the wire shapes in app/views, and a controller with real handlers, a test
-// with a fake store, and the three lines that register it with the store
+// produces: the model (everything Model writes),
+// the wire shapes in app/views, and a controller with real handlers, a request
+// test, and the three lines that register it with the store
 // passed in. No service: the controller talks to the store, and the store
-// validates on save, as a Rails controller talks to the model (docs/DESIGN.md
-// §5). The model is named in the singular and the rest in the plural, as
-// Rails names them.
+// validates on save, and a controller talks to the model (docs/DESIGN.md
+// §5). The model is named in the singular and the rest in the plural.
 func Scaffold(module, name string, attrs []Attr, scheme IDScheme, now time.Time) ([]File, []Wire, error) {
 	files, err := Model(module, name, attrs, scheme, now)
 	if err != nil {
@@ -131,14 +130,13 @@ import (
 )
 
 // %[3]s is the slice of the store this controller uses, declared next to
-// its caller (rule 2) and holding only the methods the actions call.
-// *models.Store satisfies it, and app/application.go passes it in; the
-// test's fake is a few lines.
+// its caller and holding only the methods the actions call.
+// *adapter.Store satisfies it, and app/application.go passes it in.
 type %[3]s interface {
-	Create%[4]s(ctx context.Context, %[5]s domain.%[4]s) (domain.%[4]s, error)
-	Get%[4]s(ctx context.Context, id string) (domain.%[4]s, error)
-	List%[6]s(ctx context.Context, limit int32) ([]domain.%[4]s, error)
-	Update%[4]s(ctx context.Context, %[5]s domain.%[4]s) (domain.%[4]s, error)
+	Create%[4]s(ctx context.Context, %[5]s models.%[4]s) (models.%[4]s, error)
+	Get%[4]s(ctx context.Context, id string) (models.%[4]s, error)
+	List%[6]s(ctx context.Context, limit int32) ([]models.%[4]s, error)
+	Update%[4]s(ctx context.Context, %[5]s models.%[4]s) (models.%[4]s, error)
 	Delete%[4]s(ctx context.Context, id string) error
 }
 
@@ -150,7 +148,7 @@ const %[7]sListLimit = 100
 // handler converts HTTP into domain values, calls one store method, and
 // converts the result back. Validation is the domain's and runs on save,
 // which is why a bad value is a 422 from the store and not a binding rule
-// here. Nothing below app/controllers sees *gin.Context (rule 5).
+// here. Nothing below app/controllers sees *gin.Context.
 type %[8]s struct {
 	Store %[3]s
 	Log   *slog.Logger
@@ -193,7 +191,7 @@ func (ctl *%[8]s) Show(c *gin.Context) {
 	c.JSON(http.StatusOK, %[10]sView(%[5]s))
 }
 
-`, s.module+"/app/domain", s.module+"/app/views", iface, typ, recv, many, lowerCamel(s.table), ctl, s.table, lowerCamel(s.name))
+`, s.module+"/app/models", s.module+"/app/views", iface, typ, recv, many, lowerCamel(s.table), ctl, s.table, lowerCamel(s.name))
 
 	// Create and Update bind the request body, when there is one to bind.
 	fmt.Fprintf(&b, "// Create handles POST /%s.\n", s.table)
@@ -213,12 +211,12 @@ func (ctl *%[8]s) Show(c *gin.Context) {
 		b.WriteString("\tif err != nil {\n\t\tctl.fail(c, err)\n\t\treturn\n\t}\n")
 		fmt.Fprintf(&b, "\t%s, err = ctl.Store.Update%s(c.Request.Context(), %s)\n", recv, typ, recv)
 	} else {
-		// As in Rails's find-then-update: load the record, decode the body
+		// Find, then update: load the record, decode the body
 		// over its current values so a key left out keeps its value, then
 		// save, so validation sees the whole record. The id comes from the
 		// loaded record, not the URL, so it is already the domain's id type.
-		fmt.Fprintf(&b, " Only the fields in the body change, as\n")
-		fmt.Fprintf(&b, "// in Rails: the %s is loaded, the body is decoded over its current values,\n", s.name)
+		fmt.Fprintf(&b, " Only the fields in the body change: the %s is loaded,\n", s.name)
+		b.WriteString("// the body is decoded over its current values,\n")
 		b.WriteString("// so a key left out keeps its value, and the result is saved and validated\n// whole.\n")
 		fmt.Fprintf(&b, "func (ctl *%s) Update(c *gin.Context) {\n", ctl)
 		fmt.Fprintf(&b, "\t%s, err := ctl.Store.Get%s(c.Request.Context(), c.Param(\"id\"))\n", recv, typ)
@@ -239,13 +237,13 @@ func (ctl *%[2]s) Destroy(c *gin.Context) {
 }
 
 // fail maps a domain error to a status, the one place that mapping lives:
-// not found is 404, a validation failure is 422 as in Rails, and anything
+// not found is 404, a validation failure is 422, and anything
 // else is logged and answered 500 without leaking its text.
 func (ctl *%[2]s) fail(c *gin.Context, err error) {
 	switch {
-	case errors.Is(err, domain.ErrNotFound):
+	case errors.Is(err, models.ErrNotFound):
 		c.JSON(http.StatusNotFound, views.ErrorMessage("no such %[4]s"))
-	case errors.Is(err, domain.ErrInvalid):
+	case errors.Is(err, models.ErrInvalid):
 		c.JSON(http.StatusUnprocessableEntity, views.Error(err))
 	default:
 		ctl.Log.ErrorContext(c.Request.Context(), "%[1]s: request failed",
@@ -259,7 +257,7 @@ func (ctl *%[2]s) fail(c *gin.Context, err error) {
 
 `, s.table, ctl, typ, s.name)
 
-	fmt.Fprintf(&b, "func %sView(%s domain.%s) views.%sResponse {\n\treturn views.%sResponse{\n", lowerCamel(s.name), recv, typ, typ, typ)
+	fmt.Fprintf(&b, "func %sView(%s models.%s) views.%sResponse {\n\treturn views.%sResponse{\n", lowerCamel(s.name), recv, typ, typ, typ)
 	width := len("CreatedAt:")
 	for _, a := range s.attrs {
 		if n := len(a.goName()) + 1; n > width {
@@ -272,7 +270,7 @@ func (ctl *%[2]s) fail(c *gin.Context, err error) {
 	}
 	fmt.Fprintf(&b, "\t\t%-*s %s.CreatedAt,\n\t\t%-*s %s.UpdatedAt,\n\t}\n}\n\n", width, "CreatedAt:", recv, width, "UpdatedAt:", recv)
 
-	fmt.Fprintf(&b, "func %sView(%s []domain.%s) views.%sResponse {\n", lowerCamel(s.table), s.table, typ, many)
+	fmt.Fprintf(&b, "func %sView(%s []models.%s) views.%sResponse {\n", lowerCamel(s.table), s.table, typ, many)
 	fmt.Fprintf(&b, "\tout := views.%sResponse{%s: make([]views.%sResponse, 0, len(%s))}\n", many, many, typ, s.table)
 	fmt.Fprintf(&b, "\tfor _, %s := range %s {\n\t\tout.%s = append(out.%s, %sView(%s))\n\t}\n\treturn out\n}\n", recv, s.table, many, many, lowerCamel(s.name), recv)
 	return b.String()
@@ -297,7 +295,7 @@ func (s scaffold) fromRequest(id string) string {
 	for _, a := range s.attrs {
 		parts = append(parts, fmt.Sprintf("%s: req.%s", a.goName(), a.goName()))
 	}
-	return fmt.Sprintf("domain.%s{%s}", s.typ(), strings.Join(parts, ", "))
+	return fmt.Sprintf("models.%s{%s}", s.typ(), strings.Join(parts, ", "))
 }
 
 // toRequest is the request body prefilled with a stored value's fields, for
@@ -333,239 +331,251 @@ func edited(a Attr, scheme IDScheme) (jsonValue, goLiteral string) {
 	}
 }
 
-// sample is a JSON value and the Go literal it decodes to, per attribute
-// type, for the controller test's request body.
-func sample(a Attr, scheme IDScheme) (jsonValue, goLiteral string) {
-	switch a.Type {
-	case "string", "text":
-		return `"Hello"`, `"Hello"`
-	case "integer", "bigint":
-		return "7", "7"
-	case "boolean":
-		return "true", "true"
-	case "datetime":
-		return `"2026-10-02T09:30:00Z"`, ""
-	case "jsonb":
-		return `{"k":1}`, ""
-	case "uuid":
-		return `"00000000-0000-4000-8000-000000000000"`, `"00000000-0000-4000-8000-000000000000"`
-	default: // references: whatever this scheme's foreign keys are made of
-		if scheme == IDUUID {
-			return `"00000000-0000-4000-8000-000000000000"`, `"00000000-0000-4000-8000-000000000000"`
-		}
-		return "1", "1"
-	}
-}
-
-// controllerTest is the controller's test: a fake of the store interface
-// records what the controller asked for and answers with what the test
-// chose, so no database is involved.
+// controllerTest is the controller's request spec, beside the controller in
+// package controllers_test: the real router, controller and store on the
+// test database, records made with the model's factory. The suite provides
+// app. A model with a references column cannot be saved without its parent,
+// which bogie cannot know a factory for, so its specs stop at those that need
+// no saved record, and say so.
 func (s scaffold) controllerTest() string {
-	typ, many, ctl := s.typ(), s.many(), s.ctl()
-	fake := "fake" + many + "Store"
-	helper := lowerCamel(s.table) + "Request"
-	idA, idB := s.scheme.testIDs()
+	typ, many, table := s.typ(), s.many(), s.table
+	hasRefs := hasReferences(s.attrs)
+	missing := s.scheme.sampleID()
+	factory := "factories." + typ + "(GinkgoT(), app.Store)"
+	pathOf := fmt.Sprintf(`"/%s/" + fmt.Sprint(record.ID)`, table)
 	var b strings.Builder
-	fmt.Fprintf(&b, `package controllers
+	w := func(format string, args ...any) { fmt.Fprintf(&b, format, args...) }
 
-import (
-	"context"
-	"encoding/json"
-	"errors"
-	"io"
-	"log/slog"
-	"net/http"
-	"net/http/httptest"
-	"strings"
-	"testing"
+	// GET /things
+	w("var _ = Describe(\"GET /%s\", func() {\n", table)
+	w("\tContext(\"with no %s\", func() {\n\t\tIt(\"is an empty list\", func() {\n\t\t\tapp.Get(\"/%s\").Do().Status(http.StatusOK).Contains(\"\\\"%s\\\":[]\")\n\t\t})\n\t})\n", table, table, table)
+	if !hasRefs {
+		w(`
+	Context("with %[1]s", func() {
+		var first, second models.%[2]s
 
-	"github.com/gin-gonic/gin"
+		BeforeEach(func() {
+			first = %[4]s
+			second = %[4]s
+		})
 
-	%[1]q
-)
+		It("lists them, newest first", func() {
+			var list views.%[3]sResponse
+			app.Get("/%[1]s").Do().Status(http.StatusOK).JSON(&list)
 
-// %[2]s is a fake of the store interface declared beside the controller: it
-// records what the controller asked for and answers with what the test chose.
-type %[2]s struct {
-	one  domain.%[3]s
-	many []domain.%[3]s
-	err  error
-
-	gotID string
-	got   domain.%[3]s
-}
-
-func (f *%[2]s) Create%[3]s(_ context.Context, %[4]s domain.%[3]s) (domain.%[3]s, error) {
-	f.got = %[4]s
-	return f.one, f.err
-}
-
-func (f *%[2]s) Get%[3]s(_ context.Context, id string) (domain.%[3]s, error) {
-	f.gotID = id
-	return f.one, f.err
-}
-
-func (f *%[2]s) List%[5]s(context.Context, int32) ([]domain.%[3]s, error) { return f.many, f.err }
-
-func (f *%[2]s) Update%[3]s(_ context.Context, %[4]s domain.%[3]s) (domain.%[3]s, error) {
-	f.got = %[4]s
-	return f.one, f.err
-}
-
-func (f *%[2]s) Delete%[3]s(_ context.Context, id string) error {
-	f.gotID = id
-	return f.err
-}
-
-// %[6]s mounts the controller alone on a bare router, so these tests see
-// the controller and nothing else: no middleware, no other routes.
-func %[6]s(t *testing.T, store *%[2]s, method, path, body string) *httptest.ResponseRecorder {
-	t.Helper()
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	New%[7]s(store, slog.New(slog.NewTextHandler(io.Discard, nil))).SetupRoutes(&router.RouterGroup)
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(method, path, strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	router.ServeHTTP(rec, req)
-	return rec
-}
-
-func Test%[5]sIndexLists(t *testing.T) {
-	store := &%[2]s{many: []domain.%[3]s{{ID: %[10]s}, {ID: %[11]s}}}
-	rec := %[6]s(t, store, http.MethodGet, "/%[8]s", "")
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %%d: %%s", rec.Code, rec.Body)
+			Expect(list.%[3]s).To(HaveLen(2))
+			Expect(list.%[3]s[0].ID).To(Equal(second.ID))
+			Expect(list.%[3]s[1].ID).To(Equal(first.ID))
+		})
+	})
+`, table, typ, many, factory)
 	}
-	var body struct {
-		%[5]s []struct{ ID %[12]s } `+"`json:%[9]q`"+`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatal(err)
-	}
-	if len(body.%[5]s) != 2 || body.%[5]s[1].ID != %[11]s {
-		t.Errorf("body = %%+v", body)
-	}
-}
+	w("})\n\n")
 
-func Test%[5]sShowUnknownIs404(t *testing.T) {
-	rec := %[6]s(t, &%[2]s{err: domain.ErrNotFound}, http.MethodGet, "/%[8]s/nope", "")
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("status = %%d, want 404", rec.Code)
+	// GET /things/:id
+	w("var _ = Describe(\"GET /%s/:id\", func() {\n", table)
+	if !hasRefs {
+		w(`	Context("when the %[1]s exists", func() {
+		var record models.%[2]s
+
+		BeforeEach(func() {
+			record = %[3]s
+		})
+
+		It("shows it", func() {
+			var shown views.%[2]sResponse
+			app.Get(%[4]s).Do().Status(http.StatusOK).JSON(&shown)
+
+			Expect(shown.ID).To(Equal(record.ID))
+		})
+	})
+
+`, s.name, typ, factory, pathOf)
 	}
-}
+	w(`	Context("when the %[1]s does not exist", func() {
+		It("is not found", func() {
+			app.Get("/%[2]s/%[3]s").Do().Status(http.StatusNotFound)
+		})
+	})
+})
 
-`, s.module+"/app/domain", fake, typ, paramName(s.name, "f"), many, helper, ctl, s.table, s.table, idA, idB, s.scheme.idDomain())
+`, s.name, table, missing)
 
-	// Create: the body goes through to the store, and the answer is 201.
-	var jsonParts []string
-	var assertion string
-	for _, a := range s.attrs {
-		jv, lit := sample(a, s.scheme)
-		jsonParts = append(jsonParts, fmt.Sprintf("%q:%s", a.Name, jv))
-		if assertion == "" && lit != "" {
-			assertion = fmt.Sprintf("\tif store.got.%s != %s {\n\t\tt.Errorf(\"store got %s = %%v\", store.got.%s)\n\t}\n", a.goName(), lit, a.goName(), a.goName())
+	// POST /things
+	w("var _ = Describe(\"POST /%s\", func() {\n", table)
+	if len(s.attrs) == 0 {
+		w(`	Context("with no attributes to send", func() {
+		It("creates one", func() {
+			app.Post("/%s", nil).Do().Status(http.StatusCreated)
+		})
+	})
+`, table)
+	} else {
+		if !hasRefs {
+			w("\tvar body views.%sRequest\n\n", typ)
+			w(`	Context("with a valid body", func() {
+		BeforeEach(func() {
+			body = %[1]sRequest(factories.New%[2]s())
+		})
+
+		It("creates it", func() {
+			var created views.%[2]sResponse
+			app.Post("/%[3]s", body).Do().Status(http.StatusCreated).JSON(&created)
+
+			Expect(created.ID).NotTo(BeZero())
+			_, err := app.Store.Get%[2]s(GinkgoT().Context(), fmt.Sprint(created.ID))
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+`, lowerCamel(s.name), typ, table)
+			if uniq := uniqueAttrs(s.attrs); len(uniq) > 0 {
+				names := make([]string, len(uniq))
+				for i, a := range uniq {
+					names[i] = a.Name
+				}
+				w(`
+	Context("when a %[1]s with the same %[2]s exists", func() {
+		BeforeEach(func() {
+			body = %[3]sRequest(%[4]s)
+		})
+
+		It("is unprocessable", func() {
+			app.Post("/%[5]s", body).Do().Status(http.StatusUnprocessableEntity)
+		})
+	})
+`, s.name, strings.Join(names, " and "), lowerCamel(s.name), factory, table)
+			}
+			w("\n")
+		}
+		w(`	Context("with a malformed body", func() {
+		It("is a bad request", func() {
+			app.Post("/%s", "{\"nope\":").Do().Status(http.StatusBadRequest)
+		})
+	})
+`, table)
+	}
+	w("})\n\n")
+
+	// PATCH /things/:id
+	var sent *Attr
+	var sentLit string
+	for i, a := range s.attrs {
+		if _, lit := edited(a, s.scheme); lit != "" && a.Type != "references" && a.Type != "uuid" {
+			sent, sentLit = &s.attrs[i], lit
+			break
 		}
 	}
-	body := "{" + strings.Join(jsonParts, ",") + "}"
-	fmt.Fprintf(&b, "func Test%sCreatePassesTheBodyThroughAndAnswers201(t *testing.T) {\n", many)
-	fmt.Fprintf(&b, "\tstore := &%s{one: domain.%s{ID: %s}}\n", fake, typ, idA)
-	fmt.Fprintf(&b, "\trec := %s(t, store, http.MethodPost, \"/%s\", `%s`)\n\n", helper, s.table, body)
-	b.WriteString("\tif rec.Code != http.StatusCreated {\n\t\tt.Fatalf(\"status = %d: %s\", rec.Code, rec.Body)\n\t}\n")
-	b.WriteString(assertion)
-	fmt.Fprintf(&b, "\tif !strings.Contains(rec.Body.String(), `\"id\":%s`) {\n\t\tt.Errorf(\"body = %%s\", rec.Body)\n\t}\n}\n\n", idA)
+	w("var _ = Describe(\"PATCH /%s/:id\", func() {\n", table)
+	if !hasRefs {
+		w(`	Context("when the %[1]s exists", func() {
+		var record models.%[2]s
 
-	fmt.Fprintf(&b, `// Validation is the domain's and runs in the store. The controller's only
-// job is to say 422.
-func Test%[1]sCreateInvalidIs422(t *testing.T) {
-	store := &%[2]s{err: errors.Join(domain.ErrInvalid, errors.New("not valid"))}
-	rec := %[3]s(t, store, http.MethodPost, "/%[4]s", `+"`%[5]s`"+`)
-	if rec.Code != http.StatusUnprocessableEntity {
-		t.Errorf("status = %%d, want 422: %%s", rec.Code, rec.Body)
-	}
-}
+		BeforeEach(func() {
+			record = %[3]s
+		})
 
-`, many, fake, helper, s.table, body)
+`, s.name, typ, factory)
+		if sent != nil {
+			// PATCH is partial: a field the body leaves out keeps
+			// its stored value rather than being blanked.
+			w("\t\tIt(\"changes only the fields sent\", func() {\n\t\t\tvar updated views.%sResponse\n", typ)
+			w("\t\t\tapp.Patch(%s, map[string]any{%q: %s}).Do().Status(http.StatusOK).JSON(&updated)\n\n", pathOf, sent.Name, sentLit)
+			w("\t\t\tExpect(updated.%s).To(BeEquivalentTo(%s))\n", sent.goName(), sentLit)
+			for _, a := range s.attrs {
+				if a.Name == sent.Name {
+					continue
+				}
+				switch a.Type {
+				case "datetime", "jsonb":
+				default:
+					w("\t\t\tExpect(updated.%[1]s).To(Equal(record.%[1]s))\n", a.goName())
+				}
+			}
+			w("\t\t})\n")
+		} else {
+			w(`		It("keeps it as it is when nothing is sent", func() {
+			var updated views.%[1]sResponse
+			app.Patch(%[2]s, map[string]any{}).Do().Status(http.StatusOK).JSON(&updated)
 
-	if len(s.attrs) > 0 {
-		fmt.Fprintf(&b, `func Test%[1]sCreateMalformedJSONIs400(t *testing.T) {
-	rec := %[2]s(t, &%[3]s{}, http.MethodPost, "/%[4]s", `+"`{\"nope\":`"+`)
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("status = %%d, want 400", rec.Code)
-	}
-}
-
-`, many, helper, fake, s.table)
-	}
-
-	b.WriteString(s.patchTest(fake, helper))
-
-	fmt.Fprintf(&b, `func Test%[1]sDestroyAnswers204(t *testing.T) {
-	store := &%[2]s{}
-	rec := %[3]s(t, store, http.MethodDelete, "/%[4]s/a", "")
-	if rec.Code != http.StatusNoContent || store.gotID != "a" {
-		t.Errorf("status = %%d, id = %%q", rec.Code, store.gotID)
-	}
-}
-
-// An unexpected error is a 500 that says nothing about its cause.
-func Test%[1]sUnexpectedErrorIs500WithoutDetail(t *testing.T) {
-	rec := %[3]s(t, &%[2]s{err: errors.New("connection refused to db-1")}, http.MethodGet, "/%[4]s", "")
-	if rec.Code != http.StatusInternalServerError {
-		t.Errorf("status = %%d, want 500", rec.Code)
-	}
-	if strings.Contains(rec.Body.String(), "db-1") {
-		t.Errorf("body leaks the internal error: %%s", rec.Body)
-	}
-}
-`, many, fake, helper, s.table)
-	return b.String()
-}
-
-// patchTest proves PATCH changes only what the body names: the stored value
-// has every attribute set, the body sends one of them, and the store is
-// asked to save that one changed and the rest as they were. Models without
-// an attribute the test can write a literal for get no such test.
-func (s scaffold) patchTest(fake, helper string) string {
-	var lits []Attr
-	for _, a := range s.attrs {
-		if _, lit := sample(a, s.scheme); lit != "" {
-			lits = append(lits, a)
+			Expect(updated.ID).To(Equal(record.ID))
+		})
+`, typ, pathOf)
 		}
+		if len(s.attrs) > 0 {
+			w(`
+		Context("with a malformed body", func() {
+			It("is a bad request", func() {
+				app.Patch(%s, "{\"nope\":").Do().Status(http.StatusBadRequest)
+			})
+		})
+`, pathOf)
+		}
+		w("\t})\n\n")
 	}
-	if len(lits) == 0 {
-		return ""
-	}
-	typ, many := s.typ(), s.many()
-	idA, _ := s.scheme.testIDs()
-	stored := []string{"ID: " + idA}
-	for _, a := range lits {
-		_, lit := sample(a, s.scheme)
-		stored = append(stored, fmt.Sprintf("%s: %s", a.goName(), lit))
-	}
-	sent := lits[0]
-	jv, lit := edited(sent, s.scheme)
-	var b strings.Builder
-	fmt.Fprintf(&b, "// PATCH is partial, as in Rails: a field the body leaves out keeps its\n// stored value rather than being blanked.\n")
-	fmt.Fprintf(&b, "func Test%sUpdateChangesOnlyTheFieldsSent(t *testing.T) {\n", many)
-	fmt.Fprintf(&b, "\tstore := &%s{one: domain.%s{%s}}\n", fake, typ, strings.Join(stored, ", "))
-	fmt.Fprintf(&b, "\trec := %s(t, store, http.MethodPatch, \"/%s/a\", `{%q:%s}`)\n\n", helper, s.table, sent.Name, jv)
-	b.WriteString("\tif rec.Code != http.StatusOK {\n\t\tt.Fatalf(\"status = %d: %s\", rec.Code, rec.Body)\n\t}\n")
-	fmt.Fprintf(&b, "\tif store.got.%s != %s {\n\t\tt.Errorf(\"store got %s = %%v, want %%v\", store.got.%s, %s)\n\t}\n", sent.goName(), lit, sent.goName(), sent.goName(), lit)
-	for _, a := range lits[1:] {
-		_, keep := sample(a, s.scheme)
-		fmt.Fprintf(&b, "\tif store.got.%s != %s {\n\t\tt.Errorf(\"store got %s = %%v, want it kept\", store.got.%s)\n\t}\n", a.goName(), keep, a.goName(), a.goName())
-	}
-	b.WriteString("}\n\n")
-	fmt.Fprintf(&b, `func Test%[1]sUpdateUnknownIs404(t *testing.T) {
-	rec := %[2]s(t, &%[3]s{err: domain.ErrNotFound}, http.MethodPatch, "/%[4]s/nope", `+"`{}`"+`)
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("status = %%d, want 404", rec.Code)
-	}
-}
+	w(`	Context("when the %[1]s does not exist", func() {
+		It("is not found", func() {
+			app.Patch("/%[2]s/%[3]s", map[string]any{}).Do().Status(http.StatusNotFound)
+		})
+	})
+})
 
-`, many, helper, fake, s.table)
-	return b.String()
+`, s.name, table, missing)
+
+	// DELETE /things/:id
+	w("var _ = Describe(\"DELETE /%s/:id\", func() {\n", table)
+	if !hasRefs {
+		w(`	Context("when the %[1]s exists", func() {
+		var record models.%[2]s
+
+		BeforeEach(func() {
+			record = %[3]s
+		})
+
+		It("deletes it", func() {
+			app.Delete(%[4]s).Do().Status(http.StatusNoContent)
+
+			app.Get(%[4]s).Do().Status(http.StatusNotFound)
+		})
+	})
+
+`, s.name, typ, factory, pathOf)
+	}
+	w(`	Context("when the %[1]s does not exist", func() {
+		It("is not found", func() {
+			app.Delete("/%[2]s/%[3]s").Do().Status(http.StatusNotFound)
+		})
+	})
+})
+`, s.name, table, missing)
+
+	if hasRefs {
+		w(`
+// The specs that save a %[1]s are left out: it belongs to a parent that has to
+// be saved first. Make the parent with its factory, set the reference in the
+// "with" function of factories.%[2]s, and add them.
+`, s.name, typ)
+	} else if len(s.attrs) > 0 {
+		w("\n// %[1]sRequest is the body that creates a record like this one.\nfunc %[1]sRequest(record models.%[2]s) views.%[2]sRequest {\n\treturn views.%[2]sRequest{", lowerCamel(s.name), typ)
+		for i, a := range s.attrs {
+			if i > 0 {
+				w(", ")
+			}
+			w("%[1]s: record.%[1]s", a.goName())
+		}
+		w("}\n}\n")
+	}
+
+	var head strings.Builder
+	head.WriteString("package controllers_test\n\nimport (\n")
+	if !hasRefs {
+		head.WriteString("\t\"fmt\"\n")
+	}
+	head.WriteString("\t\"net/http\"\n\n\t. \"github.com/onsi/ginkgo/v2\"\n")
+	if !hasRefs {
+		// Only the specs that save a record assert with Expect.
+		head.WriteString("\t. \"github.com/onsi/gomega\"\n")
+		fmt.Fprintf(&head, "\n\t%q\n\t%q\n\t%q\n", s.module+"/app/models", s.module+"/app/views", s.module+"/test/factories")
+	}
+	head.WriteString(")\n\n")
+	return head.String() + b.String()
 }

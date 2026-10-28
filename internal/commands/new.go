@@ -32,7 +32,7 @@ func New(args []string, out io.Writer) error {
 	pretend := fs.Bool("pretend", false, "report what would be written and write nothing")
 	skipTidy := fs.Bool("skip-tidy", false, "do not run go mod tidy in the new app")
 	jobs := fs.Bool("jobs", false, "add background jobs: River on the same Postgres, a worker role, app/jobs and g job")
-	id := fs.String("id", string(generate.IDBigint), "primary key scheme: bigint (Rails's own default) or uuid")
+	id := fs.String("id", string(generate.IDBigint), "primary key scheme: bigint (the default) or uuid")
 	// Everything the command says goes through say; a failed write to the
 	// terminal has nowhere to be reported, so the result is dropped.
 	say := func(format string, a ...any) { _, _ = fmt.Fprintf(out, format, a...) }

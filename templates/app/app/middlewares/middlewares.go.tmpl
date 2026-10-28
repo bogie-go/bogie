@@ -1,6 +1,5 @@
-// Package middlewares holds the cross-cutting request filters: the Go
-// equivalent of Rails before_action, used the same way. Declared once in
-// routes.go, never scattered through handlers.
+// Package middlewares holds the cross-cutting request filters, declared once in
+// routes.go and never scattered through handlers.
 package middlewares
 
 import (

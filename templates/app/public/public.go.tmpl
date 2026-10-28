@@ -1,10 +1,9 @@
 // Package public is a static file server with nowhere else to run: these
 // files are embedded into the binary and tried as the second-to-last step
 // of routing (app/controllers/routes.go), after every real route and before
-// the development welcome page and the final 404. The Go analogue of a
-// Rails app's own public/ folder, served the same way even in --api mode
-// (robots.txt, a favicon, 404.html, 500.html): it sits below the router,
-// not inside app/views.
+// the development welcome page and the final 404. Plain files (robots.txt, a
+// favicon, 404.html, 500.html) that sit below the router, not inside
+// app/views.
 package public
 
 import "embed"

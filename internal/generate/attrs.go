@@ -9,16 +9,16 @@ import (
 // Attr is one column, as `name:type[:index|:uniq]` on the command line.
 type Attr struct {
 	Name   string
-	Type   string // the Rails name: string, text, integer, ...
+	Type   string // the generator name: string, text, integer, ...
 	Index  bool
 	Unique bool
 }
 
-// kind is what one Rails attribute type becomes at each layer.
+// kind is what one attribute type becomes at each layer.
 type kind struct {
 	sql       string // the Postgres column type
 	sqlDef    string // NOT NULL and a default, so sqlc emits a plain Go type
-	domain    string // the Go type in app/domain, stdlib only
+	domain    string // the Go type in app/models, stdlib only
 	sqlcType  string // the Go type sqlc emits for the column
 	toRow     string // expression converting a domain value %s to the row type
 	fromRow   string // expression converting a row value %s to the domain type
@@ -26,7 +26,7 @@ type kind struct {
 	reference bool
 }
 
-// kinds maps Rails attribute names to Postgres and Go. Every generated column
+// kinds maps attribute names to Postgres and Go. Every generated column
 // is NOT NULL: a nullable column makes sqlc emit a pointer, and a pointer in
 // the domain is a nil check in every caller. A model that truly needs null
 // edits the migration by hand, which is one line.
@@ -50,7 +50,7 @@ var kinds = map[string]kind{
 }
 
 // IDScheme is how an app's primary keys and foreign keys are made: bigint
-// (Rails's own default, an auto-incrementing bigserial) or uuid. Chosen once
+// (the default, an auto-incrementing bigserial) or uuid. Chosen once
 // per app at `bogie new` time, recorded in bogie.toml, and threaded through
 // every generator that writes an id or a references column, so an app never
 // mixes the two.
@@ -84,7 +84,7 @@ func (s IDScheme) referencesKind() kind {
 	return kind{sql: "bigint", sqlDef: "NOT NULL", domain: "int64", sqlcType: "int64", toRow: "%s", fromRow: "%s", reference: true}
 }
 
-// idDomain is the model's own ID field's type in app/domain.
+// idDomain is the model's own ID field's type in app/models.
 func (s IDScheme) idDomain() string {
 	if s == IDUUID {
 		return "string"
@@ -92,7 +92,7 @@ func (s IDScheme) idDomain() string {
 	return "int64"
 }
 
-// parseFunc is the store helper, from app/models/uuid.go or id.go, that
+// parseFunc is the store helper, from db/adapter/uuid.go or id.go, that
 // turns a URL path string into this scheme's id type.
 func (s IDScheme) parseFunc() string {
 	if s == IDUUID {
@@ -127,20 +127,6 @@ func (s IDScheme) sampleID() string {
 	return "999999999"
 }
 
-// testIDs are two distinct, well-formed id values, written as Go source,
-// for a generated controller test that needs two different domain ids to
-// tell apart (e.g. a two-item Index list). The text doubles as the JSON a
-// value of this type renders as: a Go string literal is already quoted the
-// way JSON quotes a string, and a bare int64 literal already is its own
-// JSON number, so the same two strings work as a struct literal, a
-// comparison, and a response-body substring to look for.
-func (s IDScheme) testIDs() (a, b string) {
-	if s == IDUUID {
-		return `"a"`, `"b"`
-	}
-	return "1", "2"
-}
-
 // kindFor resolves an attribute to its kind under scheme: every type but
 // references is scheme-independent and comes straight from kinds; a
 // references attribute is whatever shape this scheme's foreign keys are.
@@ -153,13 +139,13 @@ func kindFor(a Attr, scheme IDScheme) kind {
 
 // attrAliases are accepted spellings that resolve to a type in kinds. `bogie g
 // config` takes int and bool; scaffold, model and migration take integer and
-// boolean, as Rails does. Each now takes both.
+// boolean. Each now takes both.
 var attrAliases = map[string]string{"int": "integer", "bool": "boolean"}
 
 var attrPattern = regexp.MustCompile(`^([a-z][a-z0-9_]*)(?::([a-z]+))?(?::(index|uniq))?$`)
 
 // ParseAttrs reads `name[:type][:index|:uniq]` arguments. A bare name with no
-// `:type` defaults to string, as in Rails. A `references` attr names the
+// `:type` defaults to string. A `references` attr names the
 // other model: `post:references` becomes the column post_id.
 func ParseAttrs(args []string) ([]Attr, error) {
 	var out []Attr

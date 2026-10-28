@@ -1,10 +1,10 @@
-{{if eq .IDScheme "bigint"}}package models
+{{if eq .IDScheme "bigint"}}package adapter
 
 import "strconv"
 
 // The domain speaks strings on the way in, from a URL path, and int64 on
 // the way out, the same as Postgres's bigint. Converting here rather than
-// in app/domain is what lets the domain package import nothing third-party.
+// in db/adapter is what lets app/models import nothing third-party.
 
 // The store of every generated model calls parseID; until the first
 // g model there is none, and this keeps golangci-lint's unused check quiet.

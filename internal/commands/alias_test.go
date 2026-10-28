@@ -2,7 +2,7 @@ package commands
 
 import "testing"
 
-func TestExpandKnowsRailsShortForms(t *testing.T) {
+func TestExpandKnowsTheShortForms(t *testing.T) {
 	cases := map[string]string{"s": "server", "t": "test", "g": "generate", "d": "destroy", "server": "server", "db:migrate": "db:migrate", "x": "x"}
 	for in, want := range cases {
 		if got := Expand(in); got != want {

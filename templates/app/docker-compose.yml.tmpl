@@ -4,7 +4,7 @@
 #   make down      stop it, keeping the data
 #   make reset     stop it and DESTROY the data
 #
-# Postgres listens on 5440, not 5432, because the Rails app next door almost
+# Postgres listens on 5440, not 5432, because another Postgres next door almost
 # certainly holds 5432 already. To move it, change the number here and in
 # every place that repeats it, or the app keeps dialing 5440:
 #
@@ -19,7 +19,7 @@
 # make server). Seed data is separate and deliberate.
 #
 # An explicit project name, because Compose would otherwise derive one from the
-# directory, and a Rails app checked out under the same name would share this
+# directory, and another app checked out under the same name would share this
 # volume.
 name: {{.Name}}-service
 

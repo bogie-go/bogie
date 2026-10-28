@@ -6,10 +6,10 @@ import (
 	"os"
 	"strconv"
 
-	"{{.Module}}/app/models"
 	"{{.Module}}/app/services/database"
 	"{{.Module}}/app/services/migrate"
 	"{{.Module}}/config"
+	"{{.Module}}/db/adapter"
 	"{{.Module}}/db/seeds"
 	"{{.Module}}/lib/logger"
 )
@@ -108,11 +108,11 @@ const dbUsage = `Usage: {{.Name}} db <command>
 Commands:
   create              create the database this environment points at
   drop --yes          DROP that database, and everything in it
-  prepare             create if needed, migrate, seed (rails db:prepare)
-  seed                apply every seed in db/seeds (rails db:seed); each one
+  prepare             create if needed, migrate, seed
+  seed                apply every seed in db/seeds; each one
                       runs again every time, so it must be safe to run twice
 
-Rails' db:create and db:drop. Both connect to the server's "postgres" database
+create and drop connect to the server's "postgres" database
 rather than the target, so they work before it exists and after it is gone,
 and, like migrate, they need no psql on the host.
 
@@ -126,7 +126,7 @@ undo: this is not a rollback of one migration, it is every table at once.
 //
 // Separate from `{{.Name}} migrate` because it is a different object: migrate
 // changes a schema inside a database, this creates and destroys the database
-// holding it. Rails draws the same line between db:create and db:migrate.
+// holding it.
 func runDB(ctx context.Context, args []string) (err error) {
 	if len(args) == 0 {
 		fmt.Fprint(os.Stderr, dbUsage)
@@ -186,7 +186,7 @@ func runDB(ctx context.Context, args []string) (err error) {
 // runSeed opens the store, applies every seed in db/seeds, and closes it.
 // Separate from runDB's switch because db prepare calls it too.
 func runSeed(ctx context.Context, url string) error {
-	store, err := models.Open(ctx, url)
+	store, err := adapter.Open(ctx, url)
 	if err != nil {
 		return err
 	}

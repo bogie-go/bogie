@@ -1,0 +1,23 @@
+package controllers_test
+
+import (
+	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"{{.Module}}/test/testapp"
+)
+
+// app is the whole application on a clean test database, rebuilt before
+// every spec, so each spec starts from nothing.
+var app *testapp.App
+
+var _ = BeforeEach(func() {
+	app = testapp.New(GinkgoT())
+})
+
+func TestControllers(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Controllers")
+}

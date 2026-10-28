@@ -32,8 +32,8 @@ DELETE FROM api_keys WHERE id = $1;
 
 -- name: GetApiKeyByPrefix :one
 SELECT * FROM api_keys WHERE prefix = $1;
-==> app/domain/api_key.go
-package domain
+==> app/models/api_key.go
+package models
 
 import (
 	"time"
@@ -50,7 +50,7 @@ type ApiKey struct {
 	UpdatedAt time.Time
 }
 
-// Validate is the model's validations, as Rails would put them. Wrap every
+// Validate is the model's validations. Wrap every
 // failure in ErrInvalid so a controller can answer 422 without knowing the
 // rule:
 //
@@ -58,8 +58,45 @@ type ApiKey struct {
 func (a ApiKey) Validate() error {
 	return nil
 }
-==> app/models/api_keys.go
-package models
+==> app/models/api_key_test.go
+package models_test
+
+import (
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"example.com/blog/app/models"
+	"example.com/blog/test/factories"
+)
+
+var _ = Describe("ApiKey.Validate", func() {
+	Context("with the factory's defaults", func() {
+		var apiKey models.ApiKey
+
+		BeforeEach(func() {
+			apiKey = factories.NewApiKey()
+		})
+
+		It("is valid", func() {
+			Expect(apiKey.Validate()).To(Succeed())
+		})
+	})
+
+	// Add a Context for each rule you put in Validate, for example a
+	// required name:
+	//
+	//	Context("with a blank name", func() {
+	//		BeforeEach(func() {
+	//			apiKey.Name = ""
+	//		})
+	//
+	//		It("is refused", func() {
+	//			Expect(apiKey.Validate()).To(MatchError(models.ErrInvalid))
+	//		})
+	//	})
+})
+==> db/adapter/api_keys.go
+package adapter
 
 import (
 	"context"
@@ -69,57 +106,58 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"example.com/blog/app/domain"
+	"example.com/blog/app/models"
+	"example.com/blog/db/sqlc"
 )
 
-// ApiKeys, as the domain sees them. Each method converts domain.ApiKey to and from
-// the row type sqlc generated, and maps pgx's "no rows" to domain.ErrNotFound
+// ApiKeys, as the models see them. Each method converts models.ApiKey to and from
+// the row type sqlc generated, and maps pgx's "no rows" to models.ErrNotFound
 // so callers never import pgx to ask a question.
 //
 // Written by `bogie g model`: overwritten whole on the next run. A
 // hand-written addition goes in api_keys_extra.go, not here.
 
 // CreateApiKey validates a api_key, inserts it, and returns it with its id and
-// timestamps. Validation runs on save, as Rails's does, so every caller
+// timestamps. Validation runs on save, so every caller
 // gets it and none can forget it.
-func (s *Store) CreateApiKey(ctx context.Context, a domain.ApiKey) (domain.ApiKey, error) {
+func (s *Store) CreateApiKey(ctx context.Context, a models.ApiKey) (models.ApiKey, error) {
 	if err := a.Validate(); err != nil {
-		return domain.ApiKey{}, err
+		return models.ApiKey{}, err
 	}
-	row, err := s.q.CreateApiKey(ctx, CreateApiKeyParams{Name: a.Name, Prefix: a.Prefix, Digest: a.Digest})
+	row, err := s.q.CreateApiKey(ctx, sqlc.CreateApiKeyParams{Name: a.Name, Prefix: a.Prefix, Digest: a.Digest})
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return domain.ApiKey{}, fmt.Errorf("%w: prefix is already taken", domain.ErrInvalid)
+			return models.ApiKey{}, fmt.Errorf("%w: prefix is already taken", models.ErrInvalid)
 		}
-		return domain.ApiKey{}, fmt.Errorf("models: create api_key: %w", err)
+		return models.ApiKey{}, fmt.Errorf("store: create api_key: %w", err)
 	}
 	return api_keyFromRow(row), nil
 }
 
 // GetApiKey finds one api_key. An id that is not a valid id is simply not found.
-func (s *Store) GetApiKey(ctx context.Context, id string) (domain.ApiKey, error) {
+func (s *Store) GetApiKey(ctx context.Context, id string) (models.ApiKey, error) {
 	pk, err := parseID(id)
 	if err != nil {
-		return domain.ApiKey{}, domain.ErrNotFound
+		return models.ApiKey{}, models.ErrNotFound
 	}
 	row, err := s.q.GetApiKey(ctx, pk)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		return domain.ApiKey{}, domain.ErrNotFound
+		return models.ApiKey{}, models.ErrNotFound
 	case err != nil:
-		return domain.ApiKey{}, fmt.Errorf("models: get api_key %s: %w", id, err)
+		return models.ApiKey{}, fmt.Errorf("store: get api_key %s: %w", id, err)
 	}
 	return api_keyFromRow(row), nil
 }
 
 // ListApiKeys returns the newest api_keys first, at most limit of them.
-func (s *Store) ListApiKeys(ctx context.Context, limit int32) ([]domain.ApiKey, error) {
+func (s *Store) ListApiKeys(ctx context.Context, limit int32) ([]models.ApiKey, error) {
 	rows, err := s.q.ListApiKeys(ctx, limit)
 	if err != nil {
-		return nil, fmt.Errorf("models: list api_keys: %w", err)
+		return nil, fmt.Errorf("store: list api_keys: %w", err)
 	}
-	out := make([]domain.ApiKey, 0, len(rows))
+	out := make([]models.ApiKey, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, api_keyFromRow(r))
 	}
@@ -127,20 +165,20 @@ func (s *Store) ListApiKeys(ctx context.Context, limit int32) ([]domain.ApiKey, 
 }
 
 // UpdateApiKey validates a api_key, writes its columns, and returns the stored row.
-func (s *Store) UpdateApiKey(ctx context.Context, a domain.ApiKey) (domain.ApiKey, error) {
+func (s *Store) UpdateApiKey(ctx context.Context, a models.ApiKey) (models.ApiKey, error) {
 	if err := a.Validate(); err != nil {
-		return domain.ApiKey{}, err
+		return models.ApiKey{}, err
 	}
 	pk := a.ID
-	row, err := s.q.UpdateApiKey(ctx, UpdateApiKeyParams{ID: pk, Name: a.Name, Prefix: a.Prefix, Digest: a.Digest})
+	row, err := s.q.UpdateApiKey(ctx, sqlc.UpdateApiKeyParams{ID: pk, Name: a.Name, Prefix: a.Prefix, Digest: a.Digest})
 	var pgErr *pgconn.PgError
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		return domain.ApiKey{}, domain.ErrNotFound
+		return models.ApiKey{}, models.ErrNotFound
 	case errors.As(err, &pgErr) && pgErr.Code == "23505":
-		return domain.ApiKey{}, fmt.Errorf("%w: prefix is already taken", domain.ErrInvalid)
+		return models.ApiKey{}, fmt.Errorf("%w: prefix is already taken", models.ErrInvalid)
 	case err != nil:
-		return domain.ApiKey{}, fmt.Errorf("models: update api_key %v: %w", a.ID, err)
+		return models.ApiKey{}, fmt.Errorf("store: update api_key %v: %w", a.ID, err)
 	}
 	return api_keyFromRow(row), nil
 }
@@ -149,24 +187,24 @@ func (s *Store) UpdateApiKey(ctx context.Context, a domain.ApiKey) (domain.ApiKe
 func (s *Store) DeleteApiKey(ctx context.Context, id string) error {
 	pk, err := parseID(id)
 	if err != nil {
-		return domain.ErrNotFound
+		return models.ErrNotFound
 	}
 	n, err := s.q.DeleteApiKey(ctx, pk)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
-			return fmt.Errorf("%w: api_key is still in use", domain.ErrInvalid)
+			return fmt.Errorf("%w: api_key is still in use", models.ErrInvalid)
 		}
-		return fmt.Errorf("models: delete api_key %s: %w", id, err)
+		return fmt.Errorf("store: delete api_key %s: %w", id, err)
 	}
 	if n == 0 {
-		return domain.ErrNotFound
+		return models.ErrNotFound
 	}
 	return nil
 }
 
-func api_keyFromRow(r ApiKey) domain.ApiKey {
-	return domain.ApiKey{
+func api_keyFromRow(r sqlc.ApiKey) models.ApiKey {
+	return models.ApiKey{
 		ID:        r.ID,
 		Name:      r.Name,
 		Prefix:    r.Prefix,
@@ -178,49 +216,167 @@ func api_keyFromRow(r ApiKey) domain.ApiKey {
 
 // GetApiKeyByPrefix finds the key a presented "<prefix>.<secret>" names, by
 // its prefix; the service compares the secret against the digest.
-func (s *Store) GetApiKeyByPrefix(ctx context.Context, prefix string) (domain.ApiKey, error) {
+func (s *Store) GetApiKeyByPrefix(ctx context.Context, prefix string) (models.ApiKey, error) {
 	row, err := s.q.GetApiKeyByPrefix(ctx, prefix)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		return domain.ApiKey{}, domain.ErrNotFound
+		return models.ApiKey{}, models.ErrNotFound
 	case err != nil:
-		return domain.ApiKey{}, fmt.Errorf("models: get api key by prefix: %w", err)
+		return models.ApiKey{}, fmt.Errorf("store: get api key by prefix: %w", err)
 	}
 	return api_keyFromRow(row), nil
 }
-==> app/models/api_keys_test.go
-package models
+==> db/adapter/api_keys_test.go
+package adapter_test
+
+import (
+	"strconv"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"example.com/blog/app/models"
+	"example.com/blog/test/factories"
+)
+
+var _ = Describe("ApiKeys", func() {
+	Describe("GetApiKey", func() {
+		DescribeTable("returns ErrNotFound",
+			func(id string) {
+				_, err := store.GetApiKey(GinkgoT().Context(), id)
+				Expect(err).To(MatchError(models.ErrNotFound))
+			},
+			Entry("when the id is not a number", "nope"),
+			Entry("when the id is empty", ""),
+			Entry("when no api key has that id", "999999999"),
+		)
+
+		Context("with a saved api key", func() {
+			var record models.ApiKey
+
+			BeforeEach(func() {
+				record = factories.ApiKey(GinkgoT(), store)
+			})
+
+			It("finds the api key by id", func() {
+				Expect(store.GetApiKey(GinkgoT().Context(), strconv.FormatInt(record.ID, 10))).To(Equal(record))
+			})
+		})
+	})
+
+	Describe("ListApiKeys", func() {
+		Context("with a saved api key", func() {
+			var record models.ApiKey
+
+			BeforeEach(func() {
+				record = factories.ApiKey(GinkgoT(), store)
+			})
+
+			It("includes the saved api key", func() {
+				all, err := store.ListApiKeys(GinkgoT().Context(), 10)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(all).To(HaveLen(1))
+				Expect(all[0].ID).To(Equal(record.ID))
+			})
+		})
+	})
+
+	Describe("UpdateApiKey", func() {
+		Context("with a saved api key", func() {
+			var record models.ApiKey
+
+			BeforeEach(func() {
+				record = factories.ApiKey(GinkgoT(), store)
+			})
+
+			It("stores the change", func() {
+				record.Name = "Edited"
+				updated, err := store.UpdateApiKey(GinkgoT().Context(), record)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(updated.ID).To(Equal(record.ID))
+				Expect(updated.Name).To(BeEquivalentTo("Edited"))
+			})
+		})
+
+		Context("when the api key is not there", func() {
+			var missing models.ApiKey
+
+			BeforeEach(func() {
+				missing = factories.NewApiKey()
+				missing.ID = 999999999
+			})
+
+			It("is not found", func() {
+				_, err := store.UpdateApiKey(GinkgoT().Context(), missing)
+				Expect(err).To(MatchError(models.ErrNotFound))
+			})
+		})
+	})
+
+	Describe("DeleteApiKey", func() {
+		DescribeTable("returns ErrNotFound",
+			func(id string) {
+				Expect(store.DeleteApiKey(GinkgoT().Context(), id)).To(MatchError(models.ErrNotFound))
+			},
+			Entry("when the id is not a number", "nope"),
+			Entry("when the id is empty", ""),
+			Entry("when no api key has that id", "999999999"),
+		)
+
+		Context("with a saved api key", func() {
+			var record models.ApiKey
+
+			BeforeEach(func() {
+				record = factories.ApiKey(GinkgoT(), store)
+			})
+
+			It("removes the api key", func() {
+				id := strconv.FormatInt(record.ID, 10)
+				Expect(store.DeleteApiKey(GinkgoT().Context(), id)).To(Succeed())
+				_, err := store.GetApiKey(GinkgoT().Context(), id)
+				Expect(err).To(MatchError(models.ErrNotFound))
+			})
+		})
+	})
+})
+==> test/factories/api_keys.go
+package factories
 
 import (
 	"context"
-	"errors"
-	"testing"
 
-	"example.com/blog/app/domain"
+	"example.com/blog/app/models"
+	"example.com/blog/db/adapter"
 )
 
-// Whatever the id looks like, a api_key that is not there is ErrNotFound, and a
-// caller cannot tell a malformed id from a well-formed one that names nothing.
-func TestUnknownApiKeysAreNotFound(t *testing.T) {
-	store := testStore(t)
-	ctx := context.Background()
-
-	for _, id := range []string{"nope", "", "999999999"} {
-		if _, err := store.GetApiKey(ctx, id); !errors.Is(err, domain.ErrNotFound) {
-			t.Errorf("GetApiKey(%q): err = %v, want ErrNotFound", id, err)
-		}
-		if err := store.DeleteApiKey(ctx, id); !errors.Is(err, domain.ErrNotFound) {
-			t.Errorf("DeleteApiKey(%q): err = %v, want ErrNotFound", id, err)
-		}
+// NewApiKey is a valid api_key that is not saved: every attribute has a default,
+// and "with" overrides what the spec cares about.
+//
+// Written once by `bogie g model` and yours to edit: add an attribute's
+// default here when you add the column. Running the generator again leaves a
+// changed file alone unless --force.
+func NewApiKey(with ...func(*models.ApiKey)) models.ApiKey {
+	record := models.ApiKey{
+		Name:   Sequence("name "),
+		Prefix: Sequence("prefix "),
+		Digest: Sequence("digest "),
 	}
-
-	if _, err := store.UpdateApiKey(ctx, domain.ApiKey{ID: 999999999}); !errors.Is(err, domain.ErrNotFound) {
-		t.Errorf("UpdateApiKey(%d): err = %v, want ErrNotFound", 999999999, err)
+	for _, f := range with {
+		f(&record)
 	}
+	return record
 }
 
-// TODO: a round trip. Create a api_key with real values, Get it, List it,
-// Update it, Delete it; see posts_test.go for the shape.
+// ApiKey saves a NewApiKey through the real store and fails the spec if it
+// cannot, so a spec reads as its arrangement and nothing else.
+func ApiKey(t T, s *adapter.Store, with ...func(*models.ApiKey)) models.ApiKey {
+	t.Helper()
+	created, err := s.CreateApiKey(context.Background(), NewApiKey(with...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return created
+}
 ==> app/services/api_keys/api_keys.go
 // Package api_keys makes and checks the keys machine clients present: a
 // public prefix that finds the row and a secret that is stored only as a
@@ -238,17 +394,17 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"example.com/blog/app/domain"
+	"example.com/blog/app/models"
 )
 
 // ErrInvalid is a presented key that names no row or does not match it;
 // a caller cannot tell the two apart.
 var ErrInvalid = errors.New("api key: invalid")
 
-// store is the slice of the store this service uses (rule 2).
+// store is the slice of the store this service uses, declared here.
 type store interface {
-	CreateApiKey(ctx context.Context, k domain.ApiKey) (domain.ApiKey, error)
-	GetApiKeyByPrefix(ctx context.Context, prefix string) (domain.ApiKey, error)
+	CreateApiKey(ctx context.Context, k models.ApiKey) (models.ApiKey, error)
+	GetApiKeyByPrefix(ctx context.Context, prefix string) (models.ApiKey, error)
 }
 
 // Service makes and verifies keys.
@@ -261,38 +417,38 @@ func New(s store) *Service { return &Service{Store: s} }
 
 // Create makes a key for name and returns it in full, "<prefix>.<secret>",
 // the only time the secret is ever seen; and the row that was stored.
-func (s *Service) Create(ctx context.Context, name string) (string, domain.ApiKey, error) {
+func (s *Service) Create(ctx context.Context, name string) (string, models.ApiKey, error) {
 	prefix, err := random(6)
 	if err != nil {
-		return "", domain.ApiKey{}, err
+		return "", models.ApiKey{}, err
 	}
 	secret, err := random(24)
 	if err != nil {
-		return "", domain.ApiKey{}, err
+		return "", models.ApiKey{}, err
 	}
 	digest, err := bcrypt.GenerateFromPassword([]byte(secret), bcrypt.DefaultCost)
 	if err != nil {
-		return "", domain.ApiKey{}, fmt.Errorf("api keys: digest: %w", err)
+		return "", models.ApiKey{}, fmt.Errorf("api keys: digest: %w", err)
 	}
-	key, err := s.Store.CreateApiKey(ctx, domain.ApiKey{Name: name, Prefix: prefix, Digest: string(digest)})
+	key, err := s.Store.CreateApiKey(ctx, models.ApiKey{Name: name, Prefix: prefix, Digest: string(digest)})
 	if err != nil {
-		return "", domain.ApiKey{}, err
+		return "", models.ApiKey{}, err
 	}
 	return prefix + "." + secret, key, nil
 }
 
 // Verify checks a presented key and returns the row it names.
-func (s *Service) Verify(ctx context.Context, presented string) (domain.ApiKey, error) {
+func (s *Service) Verify(ctx context.Context, presented string) (models.ApiKey, error) {
 	prefix, secret, ok := strings.Cut(presented, ".")
 	if !ok || prefix == "" || secret == "" {
-		return domain.ApiKey{}, ErrInvalid
+		return models.ApiKey{}, ErrInvalid
 	}
 	key, err := s.Store.GetApiKeyByPrefix(ctx, prefix)
 	if err != nil {
-		return domain.ApiKey{}, ErrInvalid
+		return models.ApiKey{}, ErrInvalid
 	}
 	if bcrypt.CompareHashAndPassword([]byte(key.Digest), []byte(secret)) != nil {
-		return domain.ApiKey{}, ErrInvalid
+		return models.ApiKey{}, ErrInvalid
 	}
 	return key, nil
 }
@@ -304,60 +460,123 @@ func random(n int) (string, error) {
 	}
 	return hex.EncodeToString(b), nil
 }
+==> app/services/api_keys/api_keys_suite_test.go
+package api_keys_test
+
+import (
+	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+)
+
+func TestAPIKeys(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "APIKeys")
+}
 ==> app/services/api_keys/api_keys_test.go
-package api_keys
+package api_keys_test
 
 import (
 	"context"
-	"errors"
-	"testing"
 
-	"example.com/blog/app/domain"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"example.com/blog/app/models"
+	"example.com/blog/app/services/api_keys"
 )
 
 // fakeStore keeps keys in memory, by prefix.
-type fakeStore struct{ keys map[string]domain.ApiKey }
+type fakeStore struct{ keys map[string]models.ApiKey }
 
-func (f *fakeStore) CreateApiKey(_ context.Context, k domain.ApiKey) (domain.ApiKey, error) {
+func (f *fakeStore) CreateApiKey(_ context.Context, k models.ApiKey) (models.ApiKey, error) {
 	k.ID = int64(len(f.keys) + 1)
 	f.keys[k.Prefix] = k
 	return k, nil
 }
 
-func (f *fakeStore) GetApiKeyByPrefix(_ context.Context, prefix string) (domain.ApiKey, error) {
+func (f *fakeStore) GetApiKeyByPrefix(_ context.Context, prefix string) (models.ApiKey, error) {
 	k, ok := f.keys[prefix]
 	if !ok {
-		return domain.ApiKey{}, domain.ErrNotFound
+		return models.ApiKey{}, models.ErrNotFound
 	}
 	return k, nil
 }
 
-func TestCreateThenVerify(t *testing.T) {
-	svc := New(&fakeStore{keys: map[string]domain.ApiKey{}})
-	ctx := context.Background()
+var _ = Describe("Service", func() {
+	var (
+		svc       *api_keys.Service
+		ctx       context.Context
+		presented string
+		made      models.ApiKey
+	)
 
-	presented, made, err := svc.Create(ctx, "billing")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if made.Name != "billing" || made.Digest == "" || made.Digest == presented {
-		t.Errorf("stored %+v for key %q", made, presented)
-	}
-	got, err := svc.Verify(ctx, presented)
-	if err != nil || got.ID != made.ID {
-		t.Errorf("Verify = %+v, %v", got, err)
-	}
-	for name, bad := range map[string]string{
-		"wrong secret": made.Prefix + ".nope",
-		"wrong prefix": "nope." + presented[len(made.Prefix)+1:],
-		"no dot":       "nope",
-		"empty":        "",
-	} {
-		if _, err := svc.Verify(ctx, bad); !errors.Is(err, ErrInvalid) {
-			t.Errorf("%s: err = %v, want ErrInvalid", name, err)
-		}
-	}
-}
+	BeforeEach(func() {
+		svc = api_keys.New(&fakeStore{keys: map[string]models.ApiKey{}})
+		ctx = context.Background()
+	})
+
+	Describe("Create", func() {
+		Context("with a name", func() {
+			BeforeEach(func() {
+				var err error
+				presented, made, err = svc.Create(ctx, "billing")
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("stores the name", func() { Expect(made.Name).To(Equal("billing")) })
+			It("stores a digest, never the key", func() {
+				Expect(made.Digest).NotTo(BeEmpty())
+				Expect(made.Digest).NotTo(Equal(presented))
+			})
+		})
+	})
+
+	Describe("Verify", func() {
+		Context("with a key the service made", func() {
+			BeforeEach(func() {
+				var err error
+				presented, made, err = svc.Create(ctx, "billing")
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("returns the row it names", func() {
+				got, err := svc.Verify(ctx, presented)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(got.ID).To(Equal(made.ID))
+			})
+
+			Context("with a wrong secret", func() {
+				It("is refused", func() {
+					_, err := svc.Verify(ctx, made.Prefix+".nope")
+					Expect(err).To(MatchError(api_keys.ErrInvalid))
+				})
+			})
+
+			Context("with a wrong prefix", func() {
+				It("is refused", func() {
+					_, err := svc.Verify(ctx, "nope."+presented[len(made.Prefix)+1:])
+					Expect(err).To(MatchError(api_keys.ErrInvalid))
+				})
+			})
+		})
+
+		Context("with a key that has no dot", func() {
+			It("is refused", func() {
+				_, err := svc.Verify(ctx, "nope")
+				Expect(err).To(MatchError(api_keys.ErrInvalid))
+			})
+		})
+
+		Context("with an empty key", func() {
+			It("is refused", func() {
+				_, err := svc.Verify(ctx, "")
+				Expect(err).To(MatchError(api_keys.ErrInvalid))
+			})
+		})
+	})
+})
 ==> app/middlewares/require_api_key.go
 package middlewares
 
@@ -368,14 +587,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"example.com/blog/app/domain"
+	"example.com/blog/app/models"
 	"example.com/blog/app/views"
 )
 
 // apiKeys is the slice of the api_keys service this middleware uses,
-// declared here (rule 2).
+// declared here, where it is used.
 type apiKeys interface {
-	Verify(ctx context.Context, presented string) (domain.ApiKey, error)
+	Verify(ctx context.Context, presented string) (models.ApiKey, error)
 }
 
 const apiKeyNameKey = "api_key"
@@ -405,34 +624,36 @@ func RequireAPIKey(keys apiKeys) gin.HandlerFunc {
 // that RequireAPIKey does not guard.
 func APIKeyName(c *gin.Context) string { return c.GetString(apiKeyNameKey) }
 ==> app/middlewares/require_api_key_test.go
-package middlewares
+package middlewares_test
 
 import (
 	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"testing"
 
 	"github.com/gin-gonic/gin"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
-	"example.com/blog/app/domain"
+	"example.com/blog/app/middlewares"
+	"example.com/blog/app/models"
 )
 
+// fakeAPIKeys accepts one key, "good.key".
 type fakeAPIKeys struct{}
 
-func (fakeAPIKeys) Verify(_ context.Context, presented string) (domain.ApiKey, error) {
+func (fakeAPIKeys) Verify(_ context.Context, presented string) (models.ApiKey, error) {
 	if presented == "good.key" {
-		return domain.ApiKey{Name: "billing"}, nil
+		return models.ApiKey{Name: "billing"}, nil
 	}
-	return domain.ApiKey{}, errors.New("invalid")
+	return models.ApiKey{}, errors.New("invalid")
 }
 
-func apiKeyRequest(t *testing.T, authorization string) *httptest.ResponseRecorder {
-	t.Helper()
+func apiKeyRequest(authorization string) *httptest.ResponseRecorder {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.GET("/guarded", RequireAPIKey(fakeAPIKeys{}), func(c *gin.Context) { c.String(http.StatusOK, APIKeyName(c)) })
+	router.GET("/guarded", middlewares.RequireAPIKey(fakeAPIKeys{}), func(c *gin.Context) { c.String(http.StatusOK, middlewares.APIKeyName(c)) })
 	req := httptest.NewRequest(http.MethodGet, "/guarded", nil)
 	if authorization != "" {
 		req.Header.Set("Authorization", authorization)
@@ -442,16 +663,34 @@ func apiKeyRequest(t *testing.T, authorization string) *httptest.ResponseRecorde
 	return rec
 }
 
-func TestRequireAPIKey(t *testing.T) {
-	if rec := apiKeyRequest(t, "Bearer good.key"); rec.Code != http.StatusOK || rec.Body.String() != "billing" {
-		t.Errorf("good key: %d %q", rec.Code, rec.Body.String())
-	}
-	for name, header := range map[string]string{"none": "", "wrong": "Bearer bad.key", "wrong scheme": "Basic good.key"} {
-		if rec := apiKeyRequest(t, header); rec.Code != http.StatusUnauthorized {
-			t.Errorf("%s: %d, want 401", name, rec.Code)
-		}
-	}
-}
+var _ = Describe("RequireAPIKey", func() {
+	var rec *httptest.ResponseRecorder
+
+	Context("with a good key", func() {
+		BeforeEach(func() { rec = apiKeyRequest("Bearer good.key") })
+
+		It("lets the request through", func() { Expect(rec.Code).To(Equal(http.StatusOK)) })
+		It("puts the key's name on the context", func() { Expect(rec.Body.String()).To(Equal("billing")) })
+	})
+
+	Context("with no key", func() {
+		BeforeEach(func() { rec = apiKeyRequest("") })
+
+		It("answers 401", func() { Expect(rec.Code).To(Equal(http.StatusUnauthorized)) })
+	})
+
+	Context("with a wrong key", func() {
+		BeforeEach(func() { rec = apiKeyRequest("Bearer bad.key") })
+
+		It("answers 401", func() { Expect(rec.Code).To(Equal(http.StatusUnauthorized)) })
+	})
+
+	Context("with the wrong scheme", func() {
+		BeforeEach(func() { rec = apiKeyRequest("Basic good.key") })
+
+		It("answers 401", func() { Expect(rec.Code).To(Equal(http.StatusUnauthorized)) })
+	})
+})
 ==> app/controllers/authentication_api_key.go
 package controllers
 
@@ -480,9 +719,9 @@ import (
 	"fmt"
 	"os"
 
-	"example.com/blog/app/models"
 	"example.com/blog/app/services/api_keys"
 	"example.com/blog/config"
+	"example.com/blog/db/adapter"
 )
 
 const apiKeysUsage = `Usage: blog api_keys create NAME
@@ -490,7 +729,7 @@ const apiKeysUsage = `Usage: blog api_keys create NAME
 Makes an api key for a machine client and prints it, the only time it is
 shown in full. The client presents it as a bearer token on the routes
 mounted under WithAPIKey. The table keeps a bcrypt digest, never the key.
-Spelled the Rails way through the tool: bogie api_keys:create NAME
+Through the tool: bogie api_keys:create NAME
 `
 
 // runAPIKeys handles `blog api_keys ...`.
@@ -503,7 +742,7 @@ func runAPIKeys(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	store, err := models.Open(ctx, cfg.Database.URL)
+	store, err := adapter.Open(ctx, cfg.Database.URL)
 	if err != nil {
 		return err
 	}

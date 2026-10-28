@@ -4,12 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Bogie is "the Go service next to your Rails app": a CLI (`bogie`) that scaffolds
-an API-only, Postgres-only Go service out of existing ecosystem tools (Gin,
+Bogie is a Go API service generator: a CLI (`bogie`) that scaffolds an
+API-only, Postgres-only Go service out of existing ecosystem tools (Gin,
 sqlc + pgx/v5, goose, River, Kamal 2) and builds only what has no Go
-equivalent: a `rails new`-style project generator and generators that also
-*wire* new code in. The generated app never imports bogie. It is deliberately
-NOT a Rails-like Go framework; Andurel holds that slot.
+equivalent: a project generator and generators that also *wire* new code in.
+The generated app never imports bogie. It is deliberately NOT a full-stack Go
+framework; Andurel holds that slot.
 
 `docs/DESIGN.md` is the source of truth; read it before changing the
 architecture. `docs/STATUS.md` is where things stand, how to set up a machine,
@@ -38,20 +38,20 @@ generated app's `.golangci.yml`, which bin/ci enforces.
 
 ## Decisions already made (do not re-litigate; change `docs/DESIGN.md` first if they must change)
 
-- **As close to Rails as possible, for the Rails developer's convenience.**
-  Every command is spelled exactly as Rails spells it, colons included:
+- **Familiar command spelling.** A command that names a task uses a colon:
   `db:migrate`, `db:rollback`, `credentials:edit`, `app:update`; `server`,
-  `generate`, `new` with spaces, because that is Rails's own mix. Vocabulary,
-  layout and file names follow Rails wherever Rails has a word for the thing.
-- **Glue, then gaps.** For every Rails concept, use the ecosystem tool listed in
+  `generate`, `new` are plain words. Vocabulary, layout and file names stay
+  conventional wherever the thing has a common word: model, controller,
+  migration, seed.
+- **Glue, then gaps.** For every concern, use the ecosystem tool listed in
   DESIGN.md §2 and wire it once. Only build what is missing. New features must
   pass: is there an ecosystem tool? If yes, wire it; if no, is the gap big enough
   to own?
 - **Not a runtime framework.** No `bogie.Application`, no base classes, no DSL.
   Bogie renders `go:embed`ded `text/template` templates and shells out.
-- **Rails layout on purpose.** Generated apps use `app/controllers`,
+- **A layout by role, on purpose.** Generated apps use `app/controllers`,
   `app/services`, `app/models`, `db/migrate` etc. Do not "fix" this into
-  idiomatic Go layout. No `spec/` directory: Go tests sit beside the code. The
+  idiomatic Go layout. No `spec/` directory; shared test helpers live in `test/` (DESIGN.md §3). The
   reference implementation is kchat at `/home/mac/developments/klangtech/kchat`,
   pinned to commit 485b80f; extraction order and the findings it fixes are in
   DESIGN.md §9. kchat is reference code, never edited from this repo.
@@ -66,18 +66,18 @@ generated app's `.golangci.yml`, which bin/ci enforces.
   is a named error with no partial write. `bogie doctor` checks every marker
   exists exactly once. AST editing and a generated registry file were considered
   and rejected for v1 (§5).
-- **Generator output follows Rails:** `create` / `insert` / `skip` / `conflict`
+- **Generator output is one line per file:** `create` / `insert` / `skip` / `conflict`
   per file, `--pretend` for dry runs, never overwrite without `--force`.
 - **Postgres only** in v1. SQLite was considered and declined on 2026-10-03
   (§12.4): River's SQLite driver is a preview, so `--jobs` would break, and
   the database is wired in nine places. Attribute type mapping (`string`→`varchar`,
   `text`→`text`, `datetime`→`timestamptz`, `references`→`uuid` + FK, etc.) is
-  in §5. A bare field with no `:type` defaults to `string`, as in Rails.
+  in §5. A bare field with no `:type` defaults to `string`.
 - **API-only, no views.** Decided 2026-09-30.
 - **`public/` and a three-handler `NoRoute` chain, not views.** Decided
   2026-10-17 (DESIGN.md §5): `staticFile` → `welcome` (development only) →
-  `notFound`, serving `public/404.html`/`500.html` go:embedded, the same way
-  Rails serves its own `public/` even in `--api` mode — no template engine,
+  `notFound`, serving `public/404.html`/`500.html` go:embedded, the way a
+  web server serves a `public/` folder ahead of the app — no template engine,
   nothing above the router. In Gin, a handler that does not call `c.Abort()`
   does not stop the chain by itself; `staticFile` and `welcome` both do,
   once they have actually written a response.
@@ -90,8 +90,7 @@ generated app's `.golangci.yml`, which bin/ci enforces.
   goose SQL (§4.1): `db/seeds/*.go`, one function per file, `bogie g seed NAME`,
   registered above `// bogie:seeds` in `db/seeds/seeds.go` the same way a
   controller or job registers itself. `db seed` runs every seed every time —
-  there is no version table — so each one is written to be idempotent, as
-  Rails' `db/seeds.rb` already has to be. No mature Go seeding tool exists to
+  there is no version table — so each one is written to be idempotent. No mature Go seeding tool exists to
   glue in instead; reusing goose specifically for seeds cost a second
   provider, a second table, and no path to a seed that calls real application
   code without inventing another wiring marker.
@@ -121,7 +120,7 @@ These come from DESIGN.md §3 and are baked into templates and `.golangci.yml`:
 
 1. `ctx context.Context` first for anything doing I/O.
 2. Interfaces are declared by the consumer.
-3. `app/domain` imports nothing third-party.
+3. `app/models` imports nothing third-party.
 4. Constructors return `(T, error)`; only `main` exits.
 5. `*gin.Context` never travels below `app/controllers`.
 6. No `util/`, `helpers/`, `common/`.
@@ -136,7 +135,7 @@ tests that assert a named error and no partial write.
 ## Open questions (DESIGN.md §12)
 
 Whether migrate-at-boot stays the default (§12.11). Views, jobs, credentials,
-live reload (§12.12) and the domain package name (`app/domain/`, fixed) are
+live reload (§12.12) and the models package name (`app/models/`, fixed; it was `app/domain/` until 2026-10-27) are
 decided. Still open: `bin/dev` (§12.13, tried and withdrawn), plus
 `bin/setup` and an actionable hint when Postgres is unreachable, which are
 the rest of issue #11.
@@ -146,4 +145,4 @@ the rest of issue #11.
 M0 decide → M1 `bogie new` producing an app that builds, migrates and serves →
 M2 generators + markers + doctor + golden tests → M3 agent layer → M4 dogfood
 against kchat → M5 publish → M6 `app:update`. All built; v0.1.0 tagged
-2026-10-03, v0.3.2 the latest (2026-10-22). `docs/STATUS.md` has what is next.
+2026-10-03, v0.5.1 the latest (2026-10-27). `docs/STATUS.md` has what is next.

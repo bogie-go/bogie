@@ -8,13 +8,13 @@ import (
 )
 
 // HealthController is the HTTP surface of health: its dependencies, its routes
-// and its actions, one Rails controller in one file. Dependencies are small
-// interfaces declared here (rule 2), holding only the methods the actions
+// and its actions, all in one file. Dependencies are small
+// interfaces declared here, next to their consumer, holding only the methods the actions
 // call, and the real thing is passed in from app/application.go, where this
 // controller is wired:
 //
 //	type healthService interface {
-//		Get(ctx context.Context, id string) (domain.Thing, error)
+//		Get(ctx context.Context, id string) (models.Thing, error)
 //	}
 type HealthController struct {
 	Log *slog.Logger
@@ -33,31 +33,7 @@ func (ctl *HealthController) SetupRoutes(router *gin.RouterGroup) {
 	_ = health // no actions yet; add them below and mount them here
 }
 ==> app/controllers/health_controller_test.go
-package controllers
+package controllers_test
 
-import (
-	"io"
-	"log/slog"
-	"net/http"
-	"net/http/httptest"
-	"testing"
-
-	"github.com/gin-gonic/gin"
-)
-
-// Every action is mounted: a route that answers 404 was never registered.
-func TestHealthRoutesAreMounted(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	NewHealthController(log).SetupRoutes(&router.RouterGroup)
-
-	routes := []struct{ method, path string }{} // none yet; list each action's route here as you add it
-	for _, r := range routes {
-		rec := httptest.NewRecorder()
-		router.ServeHTTP(rec, httptest.NewRequest(r.method, r.path, nil))
-		if rec.Code == http.StatusNotFound {
-			t.Errorf("%s %s is not mounted", r.method, r.path)
-		}
-	}
-}
+// No actions yet. Add a request spec per route as you add it: the suite
+// provides app, the whole application on a clean test database.

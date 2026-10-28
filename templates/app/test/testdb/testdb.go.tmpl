@@ -1,0 +1,107 @@
+// Package testdb gives a test a real, empty Postgres database,
+// with each test starting from nothing.
+//
+// It needs Postgres running and the test database created: make up, then
+// {{.EnvPrefix}}_ENV=test bogie db:prepare once (bin/ci does both). There is no
+// in-memory substitute on purpose; a store test that does not touch the
+// database tests nothing.
+package testdb
+
+import (
+	"context"
+	"io"
+	"log/slog"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"{{.Module}}/app/services/migrate"
+	"{{.Module}}/config"
+	"{{.Module}}/db/adapter"
+)
+
+// T is the part of *testing.T the helpers need, so they also work with
+// Ginkgo's GinkgoT(), which is not a *testing.T.
+type T interface {
+	Helper()
+	Fatal(args ...any)
+	Fatalf(format string, args ...any)
+	Cleanup(func())
+	Setenv(key, value string)
+}
+
+// hint names both things a fresh checkout is missing: Postgres itself, and
+// the test database, which db:prepare in development does not create.
+var hint = "Is the database up, and the test database created? Run: make up && " +
+	config.EnvVar + "=test bogie db:prepare (bin/ci does both)"
+
+// Store opens the TEST database, migrates it, and empties every table, so
+// each test starts from nothing. The environment is forced to test here so
+// that `go test` run by hand in a development shell can never truncate
+// development data.
+func Store(t T) *adapter.Store {
+	t.Helper()
+	url := testURL(t)
+	ctx := context.Background()
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	if err := migrate.Run(ctx, url, quiet); err != nil {
+		t.Fatalf("migrate: %v\n%s", err, hint)
+	}
+	store, err := adapter.Open(ctx, url)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, hint)
+	}
+	t.Cleanup(store.Close)
+
+	// Every table of the app's, in one statement, CASCADE for the foreign
+	// keys between them. goose's version table is left alone, and so is
+	// River's schema, which keeps its own migration record{{if .Jobs}}; only its
+	// job table is emptied (below), so a test can ask what a request queued{{end}}.
+	pool := Pool(t)
+	rows, err := pool.Query(ctx,
+		"SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename != 'goose_db_version' AND tablename NOT LIKE 'river_%'")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tables []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			t.Fatal(err)
+		}
+		tables = append(tables, name)
+	}
+	rows.Close()
+{{- if .Jobs}}
+	tables = append(tables, "river_job")
+{{- end}}
+	for _, table := range tables {
+		if _, err := pool.Exec(ctx, "TRUNCATE "+table+" CASCADE"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return store
+}
+
+// Pool is a second connection pool to the same test database, for the SQL a
+// test wants to run or check directly (an UPDATE the store has no method
+// for, a count of rows that should be gone) without widening the store's
+// own API for it.
+func Pool(t T) *pgxpool.Pool {
+	t.Helper()
+	pool, err := pgxpool.New(context.Background(), testURL(t))
+	if err != nil {
+		t.Fatalf("%v\n%s", err, hint)
+	}
+	t.Cleanup(pool.Close)
+	return pool
+}
+
+func testURL(t T) string {
+	t.Helper()
+	t.Setenv(config.EnvVar, config.EnvTest)
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg.Database.URL
+}

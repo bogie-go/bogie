@@ -41,7 +41,7 @@ func TestExistingMigrationIgnoresTheStamp(t *testing.T) {
 	if got := existingMigration(root, "db/migrate/20261002101010_create_posts.sql"); got != "" {
 		t.Errorf("a different migration matched: %q", got)
 	}
-	if got := existingMigration(root, "app/domain/comment.go"); got != "" {
+	if got := existingMigration(root, "app/models/comment.go"); got != "" {
 		t.Errorf("a non-migration matched: %q", got)
 	}
 }

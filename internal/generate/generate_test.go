@@ -88,6 +88,31 @@ func TestModel(t *testing.T) {
 	golden(t, "model_comment", files)
 }
 
+// The not-found tables name what is wrong with the id in the app's own terms,
+// so the spec reads as a sentence: a number under bigint ids, a uuid under uuid.
+func TestModelSpecNamesTheKindOfIDPerScheme(t *testing.T) {
+	for scheme, want := range map[IDScheme]string{
+		IDBigint: `Entry("when the id is not a number", "nope")`,
+		IDUUID:   `Entry("when the id is not a uuid", "nope")`,
+	} {
+		files, err := Model("example.com/blog", "cart_item", nil, scheme, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var spec string
+		for _, f := range files {
+			if f.Path == "db/adapter/cart_items_test.go" {
+				spec = f.Content
+			}
+		}
+		for _, line := range []string{`DescribeTable("returns ErrNotFound"`, want, `Entry("when no cart item has that id"`} {
+			if !strings.Contains(spec, line) {
+				t.Errorf("%s ids: the store spec lacks %s", scheme, line)
+			}
+		}
+	}
+}
+
 func TestModelWithNoAttributes(t *testing.T) {
 	files, err := Model("example.com/blog", "ping", nil, IDBigint, at)
 	if err != nil {
@@ -540,7 +565,7 @@ func TestModelWithUniqueAttribute(t *testing.T) {
 }
 
 func TestJob(t *testing.T) {
-	files, wires, err := Job("send_welcome")
+	files, wires, err := Job("example.com/blog", "send_welcome")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -578,11 +603,11 @@ func TestGeneratedParamDoesNotShadow(t *testing.T) {
 		generator, name, file, shadowed string
 	}{
 		// The Store's methods all have receiver s.
-		{"model", "session", "app/models/sessions.go", ", s domain.Session)"},
+		{"model", "session", "db/adapter/sessions.go", ", s models.Session)"},
 		// An action's own variable is c *gin.Context.
 		{"scaffold", "comment", "app/controllers/comments_controller.go", "c, err := ctl.Store."},
 		// The fake store a controller test builds has receiver f.
-		{"scaffold", "form", "app/controllers/forms_controller_test.go", ", f domain.Form)"},
+		{"scaffold", "form", "app/controllers/forms_controller_test.go", ", f models.Form)"},
 	} {
 		t.Run(c.generator+" "+c.name, func(t *testing.T) {
 			var files []File

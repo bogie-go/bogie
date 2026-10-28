@@ -14,7 +14,7 @@ import (
 )
 
 // The development credentials file is the one thing `new` cannot render from
-// a template: its key is random, as rails new's master.key is. So it is made
+// a template: its key is random. So it is made
 // here, after the templates, with the settings development starts from.
 //
 // Only development. Staging and production get their own files and keys when
@@ -22,7 +22,7 @@ import (
 // development can never also open production.
 const developmentSettings = `# Development settings for %[1]s. Edit with: make credentials
 #
-# Groups at the top level, as Rails credentials are. A key's environment
+# Groups at the top level. A key's environment
 # variable is its path, upper-cased: server.addr is SERVER_ADDR, database.url
 # is DATABASE_URL, and the environment wins over this file. Keys you leave out
 # keep the defaults in config/config.go. Add a group or a key with bogie g

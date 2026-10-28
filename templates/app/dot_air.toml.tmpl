@@ -24,7 +24,7 @@ tmp_dir = "tmp"
 
   # db/queries is sqlc's INPUT, not its output. Watching it rebuilds against
   # half-generated models the moment `bogie g model` writes a query file;
-  # app/models is watched instead, which is what sqlc actually writes.
+  # db/sqlc is watched instead, which is what sqlc actually writes.
   exclude_dir = ["bin", "tmp", "vendor", "testdata", "db/queries", ".git", ".kamal"]
 
   # A test file cannot change what the server does; `make test` runs those.

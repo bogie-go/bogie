@@ -2,7 +2,7 @@
 # queue{{end}} and `{{.Name}} migrate` moves the schema, so a web container and a
 # {{if .Jobs}}job{{else}}migration{{end}} container are the same artifact started with different arguments,
 # and cannot be built from different commits.
-# go.mod decides the Go version, as .ruby-version does for a Rails image:
+# go.mod decides the Go version:
 # with GOTOOLCHAIN=auto the builder fetches the toolchain go.mod names if
 # the base image's is older, so bumping Go is a go.mod edit, not two.
 FROM golang:1.27-alpine AS builder

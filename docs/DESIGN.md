@@ -1,4 +1,4 @@
-# Go on Rails — design
+# Bogie — design
 
 Status: **draft for review**, revised 2026-09-30. Nothing here is built.
 
@@ -9,11 +9,10 @@ carries it along the track. The command is `bogie`.
 
 ## 0. The one-line version
 
-**The Go service next to your Rails app.** A CLI that scaffolds it out of tools
+**A Go API service, from zero to production.** A CLI that scaffolds it out of tools
 the Go ecosystem already ships, and builds only the parts that have no
-equivalent. Not a framework, not full-stack, not a Rails replacement: the one
-network-facing service a Rails shop eventually needs, with Rails conventions
-and generators that wire.
+equivalent. Not a framework, not full-stack: the network-facing service a team
+eventually needs, with a conventional layout and generators that wire.
 
     go install github.com/<org>/bogie@latest
     bogie new blog
@@ -27,8 +26,8 @@ The generated app **never imports bogie**. After `bogie new`, the code is the us
 
 Goals
 
-1. A Rails developer can read, run and extend a generated service on day one,
-   because the layout, the commands and the vocabulary match what they know.
+1. A developer can read, run and extend a generated service on day one,
+   because the layout, the commands and the vocabulary are conventional.
 2. **Agents write most of the Go.** The scaffold is built so an agent extends it
    by running generators and following written conventions, not by inventing
    structure. Guardrails matter more than boilerplate savings.
@@ -41,10 +40,10 @@ Non-goals
 
 - A runtime framework. No `bogie.Application`, no base classes, no DSL.
 - Swappable parts in v1. One choice per concern; flags come when someone needs one.
-- Idiomatic-Go-layout purity. The layout follows Rails on purpose (kchat
+- Idiomatic-Go-layout purity. The layout is by role on purpose (kchat
   `CLAUDE.md`: "Do not 'fix' this into idiomatic Go layout").
-- Replacing Rails. The target is the Rails shop that needs a Go service for
-  something that touches a network.
+- Replacing the main application. The target is a team that needs a Go service
+  for something that touches a network.
 
 ---
 
@@ -52,26 +51,25 @@ Non-goals
 
 Use whatever the Go ecosystem provides. Wire it once. Build only what is missing.
 
-| Rails concept | Choice | Kind |
+| Concern | Choice | Kind |
 | --- | --- | --- |
 | HTTP router | **Gin** | ecosystem |
-| Query layer (ActiveRecord) | **sqlc** + pgx/v5 | ecosystem |
+| Query layer | **sqlc** + pgx/v5 | ecosystem |
 | Migrations | **goose**, SQL files | ecosystem |
-| Background jobs (ActiveJob) | **River** (Postgres, pgx/v5), opt-in via `--jobs` — decided §12.2 | ecosystem |
+| Background jobs | **River** (Postgres, pgx/v5), opt-in via `--jobs` — decided §12.2 | ecosystem |
 | Credentials | `bogie-go/credentials` | ecosystem (ours) |
 | Deploy | **Kamal 2** | ecosystem |
 | Lint / test | golangci-lint, `go test` | ecosystem |
-| CI | **`bin/ci`**, run locally, Rails 8.1 style; `gh signoff` records the green run on the commit | **gap** (a port) |
+| CI | **`bin/ci`**, run locally; `gh signoff` records the green run on the commit | **gap** (a port) |
 | Task runner | `make` | ecosystem |
-| Live reload (Spring) | **Air**, pinned as a `tool` dep; `bogie server` and `bogie worker` run under it in development only — decided §12.12 | ecosystem |
-| Dev processes (`bin/dev`, Foreman) | none: two terminals. hivemind on a `Procfile.dev` was built and withdrawn over Ctrl-C orphaning a process — §12.13 | **open** |
+| Live reload | **Air**, pinned as a `tool` dep; `bogie server` and `bogie worker` run under it in development only — decided §12.12 | ecosystem |
+| Dev processes (Foreman) | none: two terminals. hivemind on a `Procfile.dev` was built and withdrawn over Ctrl-C orphaning a process — §12.13 | **open** |
 | Logging | `log/slog` | stdlib |
 | Tool versions | Go 1.25+ for the tool (what gin v1.12 needs), Go 1.26+ for a generated app (what sqlc v1.31 needs); `tool` directive in `go.mod` | ecosystem |
-| Project generator (`rails new`) | **bogie new** | **gap** |
-| Generators (`rails g`) that also *wire* | **bogie g** | **gap** |
-| One command surface (`rails db:*`, `rails s`) | app binary + `bogie` proxy | **gap** |
+| Project generator | **bogie new** | **gap** |
+| Generators that also *wire* | **bogie g** | **gap** |
+| One command surface (`db:*`, `s`) | app binary + `bogie` proxy | **gap** |
 | Conventions and agent instructions | `AGENTS.md`, `docs/` | **gap** |
-| Rails → Go cheat sheet | `docs/FROM_RAILS.md` | **gap** |
 | Console | none — `make psql` plus test helpers | **won't fix** |
 
 Why sqlc suits agent-written code: SQL lives in `.sql` files, the compiler
@@ -96,7 +94,7 @@ Taken from kchat's layout (`docs/STRUCTURE.md`), with everything channel-specifi
 ```
 main.go                       dispatches: serve | worker | db | migrate
 cli.go                        the subcommands (see §4)
-docker-compose.yml            postgres on 5440, because the Rails app next door holds 5432
+docker-compose.yml            postgres on 5440, because a Postgres next door often holds 5432
 bogie.toml                      layout version — which templates generated this
 AGENTS.md                     conventions, commands, recipes (§7)
 app/
@@ -105,19 +103,21 @@ app/
     application.go            root Server, one NAMED field per controller
     routes.go                 the whole routing table
     public.go                 no-route fallback: a file in public/, else public/404.html (§5)
-    welcome.go                the development page at /, as `rails new` has; gone once a route claims /
-    <name>_controller.go      one file per Rails controller: a <Name>Controller type, its routes, its actions
-    <ns>_controller/          one package per Rails namespace: server.go · routes.go · <name>_controller.go …
+    welcome.go                the development page at /; gone once a route claims /
+    <name>_controller.go      one file per controller: a <Name>Controller type, its routes, its actions
+    <ns>_controller/          one package per namespace: server.go · routes.go · <name>_controller.go …
   middlewares/                request id · logging · recover
   services/<name>/            ctx first, knows nothing about HTTP
-  models/                     sqlc output + the store
-  views/                      wire contracts; domain structs never double as wire structs
-  domain/                     THE DOMAIN — imports nothing third-party (§12.10)
+  views/                      wire contracts; model structs never double as wire structs
+  models/                     THE MODELS — imports nothing third-party (§12.10)
   jobs/                       only with --jobs: one River worker per file, typed args
 config/                       encrypted credentials → validated struct, no globals
 db/
   migrate/                    goose SQL, timestamped, go:embed
   queries/                    sqlc input
+  sqlc/                       sqlc output, generated, never edited (package sqlc)
+  adapter/                    the Store: validates, converts sqlc rows to app/models
+                              (package adapter)
   seeds/                      plain Go, one function per file, re-run every
                                time db seed runs (§4.1)
 public/                        404.html · 500.html, go:embedded (§5)
@@ -131,17 +131,52 @@ The rules ship in `AGENTS.md` and are enforced where a linter can enforce them
 
 1. `ctx context.Context` first for anything doing I/O.
 2. Interfaces are declared by the consumer.
-3. `app/domain` imports nothing third-party.
+3. `app/models` imports nothing third-party.
 4. Constructors return `(T, error)`; only `main` exits.
 5. `*gin.Context` never travels below `app/controllers`.
 6. No `util/`, `helpers/`, `common/`.
 
 `.golangci.yml` disables ST1003 for the underscore package names, exactly as kchat does.
 
-**No `spec/`.** kchat created `spec/{factories,fixtures,support}` from Rails
-habit and never used it: all 37 of its test files sit beside the code, stdlib
-`testing` only, no mocking library. A vestigial Rails directory teaches the
-wrong lesson about where Go tests go, so the scaffold does not create one.
+**`test/`, not `spec/` (changed 2026-10-24).** This section used to say the
+scaffold creates no test directory, because kchat made `spec/{factories,
+fixtures,support}` out of habit and never used it. The book's reference
+shop (and line-connect, which does use its `spec/`) showed what that left out:
+the things tests *share*. Unit and edge-case tests still sit beside the code,
+no mocking library. Three things that more than one
+package needs live in `test/`:
+
+- `test/testdb`: a clean, migrated test database per test (`testdb.Store(t)`),
+  and a second connection for raw SQL. One copy, where line-connect had one
+  per package.
+- `test/factories`: valid records with typed overrides, saved through the real
+  store. Hand-written, no library (factory-go would not shrink them and adds
+  reflection and a dependency).
+- `test/testapp`: the real application, router and all, on the test database,
+  with a request helper. `test/requests` holds the request tests built on it.
+
+**Ginkgo and Gomega (v0.5.0).** Every test in a generated app, including the
+ones the scaffold ships, is a Ginkgo v2 spec with Gomega matchers:
+`Describe`/`Context`/`It`/`BeforeEach` and `Expect`, a vocabulary most
+programmers have already met. Tests are in external `_test` packages
+(`package adapter_test`), so they use a package the way its callers do; the
+rare unexported thing they need is exported for tests only by an
+`export_test.go` in the package. Each package with tests has one
+`<pkg>_suite_test.go` that runs the specs and owns the shared setup as a
+package variable rebuilt in a `BeforeEach`: `app` (the
+whole application, `testapp.New(GinkgoT())`) in `app/controllers` and
+`test/requests`, `store` (`testdb.Store(GinkgoT())`) in `db/adapter`. The
+helpers in `test/` take a small `T` interface (what `GinkgoT()` and
+`*testing.T` both satisfy) rather than `*testing.T`. A controller's request
+tests sit beside the controller and go through the wired `Server`; there is no
+fake-store controller test, and `test/requests/wiring_test.go` checks every
+controller is constructed and mounted.
+
+The order is outside in: a feature starts with a request test, and the store,
+domain and service tests below cover the edge cases. Because the factories
+import `db/adapter`, the store tests are `package adapter_test`. `go test`
+runs one package at a time (`-p 1`) because the packages share one test
+database. No fixtures directory: fixed data is seeds.
 
 ---
 
@@ -173,9 +208,8 @@ from what the server resolves. `db seed` is a subcommand like the rest.
 Decided 2026-10-16, superseding the first design (versioned goose SQL in
 `db/seeds`, its own `seed_db_version` table, `db seed-down`). That shape
 borrowed the migration mental model — a seed runs once, ever — which is the
-opposite of Rails: `db/seeds.rb` is idempotent script re-run on every
-`db:seed`, relying on `find_or_create_by!`, not a version table, to make
-re-running safe.
+opposite of what seeding needs: an idempotent script re-run on every
+`db:seed`, relying on upserts, not a version table, to make re-running safe.
 
 There is no mature, widely-adopted Go seeding tool to glue in instead (the
 one candidate found, `2kims/peng`, is early and unproven); the ecosystem's own
@@ -191,10 +225,9 @@ So: `db/seeds/*.go`, one function per file (`bogie g seed NAME`), each
 registered above `// bogie:seeds` in `db/seeds/seeds.go` the same way a
 controller or job registers itself above its marker. `db seed` calls
 `seeds.Run`, which runs every seed in order and stops at the first error.
-Nothing is tracked in a table; idempotency is the seed's own job, exactly as
-it is in Rails. This also deletes the second goose provider, the
-`seed_db_version` table, and `db seed-down` (Rails has no `db:seed:down`
-either) — a net simplification, not a wash.
+Nothing is tracked in a table; idempotency is the seed's own job. This also
+deletes the second goose provider, the `seed_db_version` table, and
+`db seed-down` — a net simplification, not a wash.
 
 Commands, v1:
 
@@ -212,19 +245,18 @@ Commands, v1:
     bogie credentials:edit [-e production] | credentials:show
     bogie doctor                        # layout and markers intact? tools pinned?
 
-**Spelling, decided 2026-10-02: every command is spelled exactly as Rails
-spells it.** Rails mixes two forms, colons for its Rake-derived tasks
-(`db:migrate`, `credentials:edit`, `app:update`) and spaces for commands
-(`server`, `generate`, `new`), and Bogie copies the mix rather than tidying it,
-so a Rails developer never translates. The app's own binary stays a plain Go
+**Spelling, decided 2026-10-02: familiar forms.** Two forms are mixed on
+purpose: colons for tasks (`db:migrate`, `credentials:edit`, `app:update`) and
+plain words for commands (`server`, `generate`, `new`), so the common ones are
+short and nothing needs translating. The app's own binary stays a plain Go
 CLI with spaces (`blog db prepare`, what `docker exec` runs), and the tool
 accepts that form too. Tasks that destroy pass `--yes` on the developer's
-behalf, as `rails db:rollback` asks nothing either; the binary in a container
+behalf; the binary in a container
 keeps asking, because there a mistake is not undoable.
 
 Later: `g job`, `g mailer`, `app:update` (§5a), `deploy`.
 
-Output follows Rails: `create` / `insert` / `skip` / `conflict` per file, `--pretend`
+Output is one line per file: `create` / `insert` / `skip` / `conflict` per file, `--pretend`
 for a dry run, and never overwrite without `--force`.
 
 ---
@@ -280,14 +312,13 @@ checks that every marker exists exactly once. Keep C in reserve if marker drift
 proves common.
 
 **Controllers and namespaces, decided 2026-10-03.** The first cut made every
-Rails controller a Go package (`posts_controller/`, one file per action). That
+controller a Go package (`posts_controller/`, one file per action). That
 is not what kchat has: its `internal_controller` holds conversations, inboxes,
-messages and tags, so the package is Rails's `Internal::` module and the file
-is the Rails controller. Bogie now maps Rails's two things to Go's two things,
-and `g controller` follows Rails's own spelling, where a slash (or `::`) means
-a namespace:
+messages and tags, so the package is the namespace and the file is the
+controller. Bogie now maps those two things to Go's two things, and in
+`g controller` a slash (or `::`) means a namespace:
 
-- **A Rails controller is a Go type in one file.** `bogie g controller posts
+- **A controller is a Go type in one file.** `bogie g controller posts
   index show` writes `app/controllers/posts_controller.go` in the `controllers`
   package: `type PostsController struct` holding its dependencies as
   consumer-declared interfaces, `SetupRoutes`, and one method per action. The
@@ -297,7 +328,7 @@ a namespace:
   `PostsController`, not `Posts`, because it matches `posts_controller.rb` one
   for one and says what the file is in a directory that also holds
   `application.go`, `routes.go` and `welcome.go`.
-- **A Rails namespace is a Go package.** `bogie g controller internal/conversations
+- **A namespace is a Go package.** `bogie g controller internal/conversations
   index show` writes `app/controllers/internal_controller/conversations_controller.go`
   with `type ConversationsController`. If the package does not exist, the
   generator first writes its `server.go` (the namespace `Server`, one named
@@ -317,7 +348,7 @@ a namespace:
   registration too, since an empty namespace is an unused group variable
   that does not compile.
 - **The `_controller` suffix stays on namespace packages**, the one place the
-  folder name departs from Rails's `app/controllers/admin/`. Considered and
+  folder name departs from the namespace name (`admin/`). Considered and
   rejected on 2026-10-03: a plain `admin/` package is imported into
   `app/application.go` beside every service and layout package, so a
   namespace named like a service (`posts`), or `jobs`, `models`, `config`,
@@ -329,29 +360,28 @@ a namespace:
   namespace in v1; a version such as `v1` is a route group inside the
   namespace's `routes.go`, as kchat's `/internal/v1` is.
 
-**`g scaffold`, built 2026-10-03.** `rails g scaffold` for an API: the
+**`g scaffold`, built 2026-10-03.** A scaffold for an API: the
 model, the wire shapes in `app/views`, and a controller with the five
 resourceful actions over the store, registered with the store passed in.
 No service layer, decided the same day: a scaffold's service was two lines
-per action, validate then store, which is the layer Rails does not have
-either. Instead the store's create and update run the model's `Validate`,
-as Rails validates on save, and the controller consumes a `postsStore`
+per action, validate then store, which is a layer a scaffold does not need. Instead the store's create and update run the model's `Validate`,
+so validation runs on save, and the controller consumes a `postsStore`
 interface declared beside it (rule 2) so its test needs no database. The
-model is singular and the rest plural, as Rails names them, and that is the
+model is singular and the rest plural, by convention, and that is the
 one place the tool pluralizes; `g controller` uses the name as typed. A
 service is for logic that is not CRUD, and `g service` is there when a
 resource outgrows the store. One level: no namespace in v1, and a scaffold
 over an existing model is reported as a conflict rather than merged.
 
-**`g authentication`, built 2026-10-03.** Rails 8 has `rails g
-authentication`; Bogie's takes a shape, because the two reference services
+**`g authentication`, built 2026-10-03.** It takes a
+shape, because the two reference services
 needed three different things and all of them were a middleware on a route
 group. `secret` is kchat's control secret: a header, constant-time
-compared, with a Basic fallback for a browser, for the Rails app calling
+compared, with a Basic fallback for a browser, for the main app calling
 this service. `token` is line-connect's user sessions, as JWT HS256 rather
 than PASETO: line-connect reached for JWT every time it had to talk to
-another system, and with HS256 the Rails app mints the token with the `jwt`
-gem and this service verifies, so users keep living in Rails. `api_key` is
+another system, and with HS256 the main app mints the token with a JWT
+library and this service verifies, so users keep living there. `api_key` is
 line-connect's applications table: a public prefix, a bcrypt digest, a key
 shown once by `api_keys create`. Each shape writes the middleware and its
 test, a `WithSecret`, `WithUser` or `WithAPIKey` group helper on the root
@@ -367,13 +397,13 @@ binary's own. Applying the guard is one edit by hand, mounting a controller
 on the group instead of the router, because that line is the exposure
 boundary and belongs in `routes.go` where it can be read.
 
-The file rule is one sentence: one file per Rails controller, one package per
-Rails namespace. kchat's `conversations.go` already obeys it; "one file per
+The file rule is one sentence: one file per controller, one package per
+namespace. kchat's `conversations.go` already obeys it; "one file per
 action" is gone. `doctor` checks that every `*Controller` type is constructed
 and mounted, in the root or in its namespace, and that every `*_controller`
 package is.
 
-**`public/` and the no-route chain, decided 2026-10-17.** A Rails app serves
+**`public/` and the no-route chain, decided 2026-10-17.** A web app serves
 `public/404.html` and `public/500.html` for a request nothing in the app
 answered, even in `--api` mode: `ActionDispatch::PublicExceptions` sits below
 the router and the controller stack, so this is not the Views decision
@@ -404,13 +434,13 @@ actually written a response; the tests assert the body does not *also*
 contain the 404 page's own content, not just that the status code is right,
 so this class of bug fails loudly next time.
 
-Attribute types for `g model` / `g migration` map Rails-style names to Postgres
-types, following Rails's own `string`/`text` distinction rather than
-collapsing it: `string`→`varchar` (unlimited, as Rails leaves it with no
-`:limit`), `text`→`text`, `integer`→`integer`, `bigint`→`bigint`,
+Attribute types for `g model` / `g migration` map generator-style names to Postgres
+types, keeping the `string`/`text` distinction rather than
+collapsing it: `string`→`varchar` (unlimited, with no
+limit), `text`→`text`, `integer`→`integer`, `bigint`→`bigint`,
 `boolean`→`boolean`, `datetime`→`timestamptz`, `uuid`→`uuid`, `jsonb`→`jsonb`,
 `references`→`uuid` with a foreign key. A bare field with no `:type`, as in
-`rails g model post title`, defaults to `string`. `g model` writes the migration, a starter
+`g model post title`, defaults to `string`. `g model` writes the migration, a starter
 `db/queries/<table>.sql` (get, list, create, update, delete), the domain type
 and the store's conversion methods, and runs `sqlc generate`. Built
 2026-10-02, with three rules learned on the way: every generated column is
@@ -423,14 +453,14 @@ generators in one second would make them. Output is pinned by golden files,
 and `bin/ci` runs every generator into a fresh app and that app's pipeline.
 
 **Hand-written store additions, decided 2026-10-17.** The store file `g
-model` writes (`app/models/<table>.go`) is meant to be regenerated: adding a
+model` writes (`db/adapter/<table>.go`) is meant to be regenerated: adding a
 column and rerunning `g model` rewrites it whole. A hand-written method
 added straight into that file is byte-compared on the next run like any
 other generated file (§4, `create`/`identical`/`conflict`/`force`) and
 reported `conflict`, forcing a choice between losing the generator's new
 column handling or the hand-written method. The fix needs no new mechanism:
 Go merges every file in a package, so the convention is simply to put a
-hand-written addition in a sibling file (`app/models/<table>_extra.go`, any
+hand-written addition in a sibling file (`db/adapter/<table>_extra.go`, any
 name not ending the generator's own suffixes), never inside the generated
 one. `g model`'s conflict check then never has reason to touch it. Written
 into `AGENTS.md`'s "Add a model" and "Add a query" recipes.
@@ -441,16 +471,15 @@ it is upgrading from (§5a).
 
 **Id scheme: bigint by default, uuid as an option, decided 2026-10-18.**
 Every `id` column was `uuid PRIMARY KEY DEFAULT gen_random_uuid()`, unconditionally,
-since the first generator. Asked "why not integer, like Rails?", there was no
+since the first generator. Asked "why not integer?", there was no
 written answer — just a hardcoded literal in `migration.go`. The real
 tradeoff: uuid avoids leaking sequence information over a public API
 (`GET /orders/41` next to `/orders/42` says how many orders exist) and needs
 no coordination to generate, which matters for an API-only service; integer
-is what Rails itself defaults to, and is far friendlier in a book's or a
+is the common default, and is far friendlier in a book's or a
 reader's own examples (`/products/3` beats a 36-character id everywhere a
 human reads it). Both are legitimate, so both are offered: `bogie new NAME
---id=bigint` (the default, an auto-incrementing `bigserial`, Rails's own
-choice) or `--id=uuid`. The choice is app-wide, recorded in `bogie.toml`
+--id=bigint` (the default, an auto-incrementing `bigserial`) or `--id=uuid`. The choice is app-wide, recorded in `bogie.toml`
 (`id = "bigint"`) next to the version and module path, and read back by
 every later `g model`/`g scaffold`/`g authentication` and by `app:update`'s
 re-render — never per-model, since a `references` column has to match
@@ -461,11 +490,11 @@ as uuid, not the new default, since uuid is what it was always generated
 with. `IDScheme` (`internal/generate/attrs.go`) centralizes everything that
 differs: the id column's own SQL, what a `references` attribute becomes
 (`kindFor`, replacing the old hardcoded `kinds["references"]`), the domain
-type (`int64` vs `string`), the store's parse helper (`app/models/id.go`'s
+type (`int64` vs `string`), the store's parse helper (`db/adapter/id.go`'s
 `parseID` vs `uuid.go`'s `parseUUID`, each written only under its own
 scheme via a `{{if eq .IDScheme "..."}}` guard), and the golden tests' id
 literals (`IDScheme.testIDs`). One real bug surfaced building this: a
-scaffolded `Update` action built `domain.Post{ID: c.Param("id"), ...}`
+scaffolded `Update` action built `models.Post{ID: c.Param("id"), ...}`
 directly from the URL string, which only ever compiled because `ID` had
 always been exactly `string`. Under bigint it is not, so `Update` now loads
 the record first (`GetX`, which already resolves the id correctly) and
@@ -476,18 +505,17 @@ just a workaround.
 
 ## 5a. `bogie app:update`: moving an app to a newer layout
 
-Decided 2026-10-02. Rails has `rails app:update`: re-run the generator over the
-app for the files Rails owns, then prompt per conflicting file. Bogie does the
+Decided 2026-10-02. A generator can offer an update that re-runs it over the
+app for the files it owns, then prompts per conflicting file. Bogie does the
 same job, two differences in how.
 
-**The name is `app:update`, as in Rails.** An earlier draft chose `upgrade`
-on the grounds that the colon is Rake syntax and Bogie used spaces. That was
-reversed the same day when the command surface adopted Rails's spelling
-wholesale (§4): the rule that holds together is "spell it as Rails does", and
-`rails app:update` is what a Rails developer will type.
+**The name is `app:update`.** An earlier draft chose `upgrade` on the grounds
+that the colon is task syntax and Bogie used spaces. That was reversed the same
+day when the command surface adopted its colon-and-space spelling (§4): the
+rule that holds together is one spelling everywhere.
 
-**It is a three-way merge, not a two-way prompt.** `app:update` does not know
-what a file looked like when Rails generated it, so every edit the user ever
+**It is a three-way merge, not a two-way prompt.** A plain prompt does not know
+what a file looked like when the generator wrote it, so every edit the user ever
 made surfaces as a conflict. Bogie knows, because `bogie.toml` records the
 exact version that generated the app:
 
@@ -547,7 +575,7 @@ falls back to a two-way report with every differing file marked `conflict`.
 
 Both are carried over from kchat unchanged in shape:
 
-- Encrypted credentials, Rails pattern, via `bogie-go/credentials`. The
+- Encrypted credentials, via `bogie-go/credentials`. The
   `<NAME>_ENV` closed set controls behaviour; `<NAME>_CREDENTIALS` selects
   *which* credentials file, so staging is "production strictness, staging
   secrets"; `<NAME>_MASTER_KEY` carries the key into a container. Keys are
@@ -603,10 +631,10 @@ notes rather than reinventing.
    `/healthz`; later, `bogie g` of every generator followed by the same. This
    is what stops templates rotting.
 
-   **CI runs locally, not on a hosted runner.** Rails 8.1 moved CI to
+   **CI runs locally, not on a hosted runner.** CI is
    `bin/ci`, a script that runs every check on the developer's machine, with
    `gh signoff` recording a green run as a commit status that branch
-   protection can require. Bogie follows that: the tool has a `bin/ci`, every
+   protection can require. The tool has a `bin/ci`, every
    generated app ships one, and there is no `.github/workflows`. The one tool
    Go does not bring with it, golangci-lint, is looked for on PATH and its
    absence fails the step loudly rather than skipping it.
@@ -656,7 +684,7 @@ Extraction, in order:
    templates, ingest.
 3. ~~Keep one small example resource end to end — migration, query, model,
    service, controller, test — so a new app has a working shape to copy.~~
-   Reversed 2026-10-03: `bogie new` makes an empty app, as `rails new` does.
+   Reversed 2026-10-03: `bogie new` makes an empty app.
    The example made every new app start by deleting three things, and its
    seed outlived `d model post`, which broke `db:prepare` on the emptied
    app. The working shape now comes from the generators themselves, and
@@ -730,7 +758,7 @@ Extraction, in order:
   `worker`. The tool's `bin/ci` now builds the image from a fresh app and
   checks it carries the credentials and not the key.
 - **The logger names the service.** kchat's `.With("service", "kchat")` is
-  what tells its lines from the Rails app's in a shared shipper. Adopted.
+  what tells its lines from the main app's in a shared shipper. Adopted.
 - **The rest of the diff is what the extraction intended:** named fields
   and markers instead of positional wiring, seeds through the binary (a
   second goose provider with its own version table at the time of this
@@ -757,24 +785,23 @@ and details are as reported by GitHub and package pages at the time.
 
 | Project | Shape | Why not join it |
 | --- | --- | --- |
-| [Andurel](https://github.com/mbvlabs/andurel) | scaffold-only, v2, `new`/`generate`/`db`/`doctor`/`upgrade`/`skill`, JSON discovery, ships an `AGENTS.md`; MIT; 224 stars, one maintainer, five commits on 2026-09-29 alone | Full-stack and heavy: Echo, Uber Fx DI, Templ + Datastar or Inertia with React/Vue/Svelte, River, Tailwind, its own typed-SQL tool. Owns the "Rails-like Go framework for humans and agents" slot. A Rails shop that already has a Rails app does not want a second full-stack framework. |
+| [Andurel](https://github.com/mbvlabs/andurel) | scaffold-only, v2, `new`/`generate`/`db`/`doctor`/`upgrade`/`skill`, JSON discovery, ships an `AGENTS.md`; MIT; 224 stars, one maintainer, five commits on 2026-09-29 alone | Full-stack and heavy: Echo, Uber Fx DI, Templ + Datastar or Inertia with React/Vue/Svelte, River, Tailwind, its own typed-SQL tool. Owns the "full-stack Go framework for humans and agents" slot. A team that already has a web app does not want a second full-stack framework. |
 | [go-blueprint](https://github.com/Melkeydev/go-blueprint) | `create` only; 9,000 stars | Proves demand for `new`. No generators, no wiring, no agent layer. |
 | [goforge](https://github.com/VictorTarnovski/goforge) | `new` + `generate domain` with auto-wiring, `.agents/rules`, `AGENTS.md`; 0 stars, 4 commits | Nearly our thesis, `internal/` layout, Cobra, OIDC. Evidence the idea is in the air and that shipping it quietly gets nothing. |
 | [Buffalo](https://github.com/gobuffalo/buffalo) | full framework with its own runtime, ORM and templates | Wrong shape. |
 | [Goravel](https://github.com/goravel/goravel) | Laravel clone | Wrong audience. |
 | [Gon](https://github.com/mickamy/gon) | `g scaffold` only, clean architecture, Echo | Generators only; no `new`. |
 | geng | Nest-inspired generator for Gin apps | Same router, different model; **not yet read**. |
-| Autostrada, go-web-scaffold | project scaffolds | Not Rails-shaped; **not yet read**. |
+| Autostrada, go-web-scaffold | project scaffolds | Different shape; **not yet read**. |
 
 Worth borrowing from Andurel: `doctor`, `upgrade`, the agent skill, and a lock
 file recording the generator version (`bogie.toml`).
 
 Worth reading before building: geng, since it targets Gin, and Autostrada.
 
-Positioning: **the Go service next to your Rails app.** Not "a Rails-like Go
-framework"; Andurel holds that and does it well. Bogie competes on being thin,
-API-only, and on the mapping from what a Rails developer knows to what the Go
-code does (`docs/FROM_RAILS.md`). Every feature Andurel has and Bogie drops is
+Positioning: **a Go API service, from zero to production.** Not "a full-stack
+Go framework"; Andurel holds that and does it well. Bogie competes on being
+thin, API-only, and on decisions already made. Every feature Andurel has and Bogie drops is
 a point in Bogie's favour, not against it.
 
 ---
@@ -787,13 +814,13 @@ A bogie (pronounced "BOH-gee"; American English: *truck*) is the wheeled frame
 with axles and suspension under a locomotive, carriage or wagon. The car body
 sits on it and it carries the weight along the track, pivoting so a long car can
 follow a curve. That is the tool's job: the frame that lets a Go service run on
-Rails-shaped tracks. It also continues the railway naming of Cargo and Loco.
+a standard track. It also continues the railway naming of Cargo and Loco.
 
     bogie new blog
 
 Why it won
 
-- Five letters, distinctive, and the only candidate that literally "goes on rails".
+- Five letters, distinctive, and the only candidate that literally rides a track.
 - The registries were clear when checked on 2026-09-28: no Homebrew formula, and
   on pkg.go.dev only an abandoned 2017 CLI (`sethpollack/bogie`, v0.0.6) and
   unrelated packages.
@@ -813,7 +840,7 @@ Still to do before announcing
 - **Register the domain** before someone else does.
 - **RubyGems.** A gem named `bogie` exists (v0.1.0, May 2024, ~35k downloads,
   MIT; its repository returned 404 when checked, so what it does is unknown).
-  Not a conflict for a Go tool, but a Rails developer searching for "bogie" may
+  Not a conflict for a Go tool, but a Ruby developer searching for "bogie" may
   land on it. Look at what it is before the first release.
 
 Costs to accept
@@ -828,7 +855,7 @@ Rejected, with reasons
 
 | Name | Why |
 | --- | --- |
-| `gor` (working name) | GoReplay's binary is `gor`, and the project is commonly called "Gor"; GoRails (gorails.com, since 2014) is a well-known Rails screencast site |
+| `gor` (working name) | GoReplay's binary is `gor`, and the project is commonly called "Gor"; a well-known Ruby screencast site already uses a similar name |
 | Gauge | ThoughtWorks test-automation tool, binary `gauge` |
 | Gantry | an existing Go CLI |
 | Gails | an old Go package, one letter from Grails |
@@ -843,37 +870,37 @@ best metaphor for a scaffold, but a common word), **Ballast**, **Turnout**,
 
 ## 12. Open questions and risks
 
-1. **Views.** ~~Open~~ **Decided 2026-09-30: API-only.** No HTML in v1. The
-   Rails app renders; that is the whole premise.
+1. **Views.** ~~Open~~ **Decided 2026-09-30: API-only.** No HTML in v1. Whatever
+   renders calls the service; that is the whole premise.
 2. **Jobs.** ~~Open~~ **Decided 2026-09-30: River, opt-in via `--jobs`.**
    asynq (v0.26.0, 2026-02) and River (release 2026-08-31, 4.6k stars) are
    both maintained. River wins on the tool's own principles:
    - **Postgres-only is already decided (§12.4).** River uses the pgx/v5 pool
      the app already has. asynq adds Redis: a Kamal accessory, a URL in
      credentials, a second thing to be down.
-   - **Transactional enqueue** is what a Rails developer expects from
-     ActiveJob with Solid Queue: the job row commits with the business row or
+   - **Transactional enqueue** is what a Postgres-backed queue is for:
+     the job row commits with the business row or
      not at all. With Redis the enqueue can race the commit.
    - **Typed args via generics** (`river.Worker[SendWelcomeArgs]`) remove the
      marshal/unmarshal and interface-per-task boilerplate that line-connect's
      asynq layer needed (§9). Less code for an agent to get wrong.
    - Andurel chose River too. Weak evidence on its own, but it means the
-     ecosystem is converging and a Rails developer will find examples.
+     ecosystem is converging and examples are easy to find.
    Costs accepted: River is younger (2023); it needs its own tables, shipped
    as the scaffold's first goose migration; it polls Postgres, which is fine
-   at the scale a Rails shop's side service runs at; it has no asynqmon, but
+   at the scale a side service runs at; it has no asynqmon, but
    River UI exists. Revisit only if a deployment needs Redis-class throughput.
 3. **`bogie-go/credentials`.** ~~Open~~ **Decided 2026-10-02.** The library
    moved from `roonglit/credentials` into the `bogie-go` organisation and is
    public, tagged v1.5.0 under the new path with the code unchanged from
-   1.4.0. Named in the plural because Rails says `credentials:edit`,
-   `credentials.yml.enc`, and so does the package and command inside it.
+   1.4.0. Named in the plural because the task is `credentials:edit`
+   and the file is `credentials.yml.enc`, and so is the package and command inside it.
    `config.Load` already falls back to environment-only when no file exists,
    so credentials ship as the default and env-only is documented.
 4. **Postgres-only.** sqlc supports others, but goose dialects, type mapping and
    tests multiply. Postgres only in v1.
 
-   **SQLite, considered and declined 2026-10-03.** Rails 8 defaults to
+   **SQLite, considered and declined 2026-10-03.** Some frameworks default to
    SQLite, so the question will come up again; this is why the answer is
    still no. The database is wired in nine places, and SQLite changes every
    one: the driver (`modernc.org/sqlite` over `database/sql` instead of a
@@ -888,17 +915,17 @@ best metaphor for a scaffold, but a common word), **Ballast**, **Turnout**,
    is tractable. What decides it is jobs: River's SQLite driver, added in
    v0.23, is described by River as an early preview with little real-world
    use that wants a pool of one connection, so `--jobs` would have to
-   refuse SQLite or ship on a preview. Bogie's premise is the service next
-   to a Rails app that already runs Postgres, and the thing that service
+   refuse SQLite or ship on a preview. Bogie's premise is a service that runs next
+   to an app that already uses Postgres, and the thing that service
    most often exists for, a queue, a webhook receiver, a socket gateway, is
    the thing SQLite serves least well. So Postgres stays the only database
    until River calls its SQLite driver stable, and then it comes in as
-   `bogie new NAME --database=sqlite3`, Rails's spelling, with Postgres
+   `bogie new NAME --database=sqlite3`, with Postgres
    still the default. Not before.
 5. **Gin's future.** A single dependency behind the controller layer, and rule 5
    keeps it there, so swapping is contained. Confirm the layer holds in the scaffold.
 6. **Template drift.** Mitigated by §8.2; only if that job actually runs on every change.
-7. **Scope creep.** The list of missing Rails features is endless. Each addition
+7. **Scope creep.** The list of missing framework features is endless. Each addition
    should pass: is there an ecosystem tool? If yes, wire it; if no, is the gap
    large enough to be worth owning?
 8. **Telemetry.** None. State it in the README; an install-and-run tool that
@@ -908,6 +935,10 @@ best metaphor for a scaffold, but a common word), **Ballast**, **Turnout**,
     fixed.** kchat calls it `app/omnichat`, a product name no generated app
     would share. A fixed name is greppable, the templates never need the app
     name, and the generators always know where the domain lives.
+    **Renamed 2026-10-27: `app/models/`, still fixed.** It is the usual word for
+    the types and their `Validate`. The layer that used to be
+    `app/models` (the Store, between those types and sqlc) is now
+    `db/adapter`, and sqlc writes only `db/sqlc`.
 11. **Migrate at boot.** ~~Open~~ **Decided 2026-10-02: on by default,
     `<NAME>_MIGRATE_AT_BOOT=false` to disable.** kchat applies migrations
     before opening the pool. goose holds a Postgres advisory lock for the
@@ -916,8 +947,8 @@ best metaphor for a scaffold, but a common word), **Ballast**, **Turnout**,
     migrates from one place on purpose. The run is capped at two minutes so
     a stuck lock fails a deploy loudly instead of hanging it.
 12. **Live reload.** ~~Open~~ **Decided 2026-10-06: Air, in development
-    only, behind `bogie server` and `bogie worker`.** Rails has `bin/dev`;
-    Go's equivalent is a watcher that rebuilds and restarts. Air is the
+    only, behind `bogie server` and `bogie worker`.** A dev server
+    in Go is a watcher that rebuilds and restarts. Air is the
     ecosystem tool (`go get -tool github.com/air-verse/air`), so it is glue
     rather than a gap, pinned in the app's own `go.mod` next to goose and
     sqlc. `.air.toml` ships with the app; its presence is the switch, so
@@ -1006,7 +1037,7 @@ best metaphor for a scaffold, but a common word), **Ballast**, **Turnout**,
 - **M2 — generators.** `g migration`, `g model`, `g controller`,
   `g service`, `g job`, `d`, markers, `doctor`, golden tests, marker-removal
   tests, River behind `--jobs`. **Done 2026-10-02.**
-- **M3 — agent layer.** `AGENTS.md`, recipes, `docs/FROM_RAILS.md`, a lint rule
+- **M3 — agent layer.** `AGENTS.md`, recipes, a lint rule
   or test that catches an unregistered controller.
 - **M4 — dogfood.** Regenerate the kchat skeleton with the tool and diff (§9,
   "Done 2026-10-03"). It found the deploy half missing; fixed the same day.

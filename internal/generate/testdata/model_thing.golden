@@ -27,8 +27,8 @@ UPDATE things SET name = $2, updated_at = now() WHERE id = $1 RETURNING *;
 
 -- name: DeleteThing :execrows
 DELETE FROM things WHERE id = $1;
-==> app/domain/thing.go
-package domain
+==> app/models/thing.go
+package models
 
 import (
 	"time"
@@ -43,7 +43,7 @@ type Thing struct {
 	UpdatedAt time.Time
 }
 
-// Validate is the model's validations, as Rails would put them. Wrap every
+// Validate is the model's validations. Wrap every
 // failure in ErrInvalid so a controller can answer 422 without knowing the
 // rule:
 //
@@ -51,8 +51,45 @@ type Thing struct {
 func (t Thing) Validate() error {
 	return nil
 }
-==> app/models/things.go
-package models
+==> app/models/thing_test.go
+package models_test
+
+import (
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"example.com/blog/app/models"
+	"example.com/blog/test/factories"
+)
+
+var _ = Describe("Thing.Validate", func() {
+	Context("with the factory's defaults", func() {
+		var thing models.Thing
+
+		BeforeEach(func() {
+			thing = factories.NewThing()
+		})
+
+		It("is valid", func() {
+			Expect(thing.Validate()).To(Succeed())
+		})
+	})
+
+	// Add a Context for each rule you put in Validate, for example a
+	// required name:
+	//
+	//	Context("with a blank name", func() {
+	//		BeforeEach(func() {
+	//			thing.Name = ""
+	//		})
+	//
+	//		It("is refused", func() {
+	//			Expect(thing.Validate()).To(MatchError(models.ErrInvalid))
+	//		})
+	//	})
+})
+==> db/adapter/things.go
+package adapter
 
 import (
 	"context"
@@ -62,53 +99,54 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"example.com/blog/app/domain"
+	"example.com/blog/app/models"
+	"example.com/blog/db/sqlc"
 )
 
-// Things, as the domain sees them. Each method converts domain.Thing to and from
-// the row type sqlc generated, and maps pgx's "no rows" to domain.ErrNotFound
+// Things, as the models see them. Each method converts models.Thing to and from
+// the row type sqlc generated, and maps pgx's "no rows" to models.ErrNotFound
 // so callers never import pgx to ask a question.
 //
 // Written by `bogie g model`: overwritten whole on the next run. A
 // hand-written addition goes in things_extra.go, not here.
 
 // CreateThing validates a thing, inserts it, and returns it with its id and
-// timestamps. Validation runs on save, as Rails's does, so every caller
+// timestamps. Validation runs on save, so every caller
 // gets it and none can forget it.
-func (s *Store) CreateThing(ctx context.Context, t domain.Thing) (domain.Thing, error) {
+func (s *Store) CreateThing(ctx context.Context, t models.Thing) (models.Thing, error) {
 	if err := t.Validate(); err != nil {
-		return domain.Thing{}, err
+		return models.Thing{}, err
 	}
 	row, err := s.q.CreateThing(ctx, t.Name)
 	if err != nil {
-		return domain.Thing{}, fmt.Errorf("models: create thing: %w", err)
+		return models.Thing{}, fmt.Errorf("store: create thing: %w", err)
 	}
 	return thingFromRow(row), nil
 }
 
 // GetThing finds one thing. An id that is not a valid id is simply not found.
-func (s *Store) GetThing(ctx context.Context, id string) (domain.Thing, error) {
+func (s *Store) GetThing(ctx context.Context, id string) (models.Thing, error) {
 	pk, err := parseID(id)
 	if err != nil {
-		return domain.Thing{}, domain.ErrNotFound
+		return models.Thing{}, models.ErrNotFound
 	}
 	row, err := s.q.GetThing(ctx, pk)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		return domain.Thing{}, domain.ErrNotFound
+		return models.Thing{}, models.ErrNotFound
 	case err != nil:
-		return domain.Thing{}, fmt.Errorf("models: get thing %s: %w", id, err)
+		return models.Thing{}, fmt.Errorf("store: get thing %s: %w", id, err)
 	}
 	return thingFromRow(row), nil
 }
 
 // ListThings returns the newest things first, at most limit of them.
-func (s *Store) ListThings(ctx context.Context, limit int32) ([]domain.Thing, error) {
+func (s *Store) ListThings(ctx context.Context, limit int32) ([]models.Thing, error) {
 	rows, err := s.q.ListThings(ctx, limit)
 	if err != nil {
-		return nil, fmt.Errorf("models: list things: %w", err)
+		return nil, fmt.Errorf("store: list things: %w", err)
 	}
-	out := make([]domain.Thing, 0, len(rows))
+	out := make([]models.Thing, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, thingFromRow(r))
 	}
@@ -116,17 +154,17 @@ func (s *Store) ListThings(ctx context.Context, limit int32) ([]domain.Thing, er
 }
 
 // UpdateThing validates a thing, writes its columns, and returns the stored row.
-func (s *Store) UpdateThing(ctx context.Context, t domain.Thing) (domain.Thing, error) {
+func (s *Store) UpdateThing(ctx context.Context, t models.Thing) (models.Thing, error) {
 	if err := t.Validate(); err != nil {
-		return domain.Thing{}, err
+		return models.Thing{}, err
 	}
 	pk := t.ID
-	row, err := s.q.UpdateThing(ctx, UpdateThingParams{ID: pk, Name: t.Name})
+	row, err := s.q.UpdateThing(ctx, sqlc.UpdateThingParams{ID: pk, Name: t.Name})
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		return domain.Thing{}, domain.ErrNotFound
+		return models.Thing{}, models.ErrNotFound
 	case err != nil:
-		return domain.Thing{}, fmt.Errorf("models: update thing %v: %w", t.ID, err)
+		return models.Thing{}, fmt.Errorf("store: update thing %v: %w", t.ID, err)
 	}
 	return thingFromRow(row), nil
 }
@@ -135,60 +173,176 @@ func (s *Store) UpdateThing(ctx context.Context, t domain.Thing) (domain.Thing, 
 func (s *Store) DeleteThing(ctx context.Context, id string) error {
 	pk, err := parseID(id)
 	if err != nil {
-		return domain.ErrNotFound
+		return models.ErrNotFound
 	}
 	n, err := s.q.DeleteThing(ctx, pk)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
-			return fmt.Errorf("%w: thing is still in use", domain.ErrInvalid)
+			return fmt.Errorf("%w: thing is still in use", models.ErrInvalid)
 		}
-		return fmt.Errorf("models: delete thing %s: %w", id, err)
+		return fmt.Errorf("store: delete thing %s: %w", id, err)
 	}
 	if n == 0 {
-		return domain.ErrNotFound
+		return models.ErrNotFound
 	}
 	return nil
 }
 
-func thingFromRow(r Thing) domain.Thing {
-	return domain.Thing{
+func thingFromRow(r sqlc.Thing) models.Thing {
+	return models.Thing{
 		ID:        r.ID,
 		Name:      r.Name,
 		CreatedAt: r.CreatedAt.Time,
 		UpdatedAt: r.UpdatedAt.Time,
 	}
 }
-==> app/models/things_test.go
-package models
+==> db/adapter/things_test.go
+package adapter_test
+
+import (
+	"strconv"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"example.com/blog/app/models"
+	"example.com/blog/test/factories"
+)
+
+var _ = Describe("Things", func() {
+	Describe("GetThing", func() {
+		DescribeTable("returns ErrNotFound",
+			func(id string) {
+				_, err := store.GetThing(GinkgoT().Context(), id)
+				Expect(err).To(MatchError(models.ErrNotFound))
+			},
+			Entry("when the id is not a number", "nope"),
+			Entry("when the id is empty", ""),
+			Entry("when no thing has that id", "999999999"),
+		)
+
+		Context("with a saved thing", func() {
+			var record models.Thing
+
+			BeforeEach(func() {
+				record = factories.Thing(GinkgoT(), store)
+			})
+
+			It("finds the thing by id", func() {
+				Expect(store.GetThing(GinkgoT().Context(), strconv.FormatInt(record.ID, 10))).To(Equal(record))
+			})
+		})
+	})
+
+	Describe("ListThings", func() {
+		Context("with a saved thing", func() {
+			var record models.Thing
+
+			BeforeEach(func() {
+				record = factories.Thing(GinkgoT(), store)
+			})
+
+			It("includes the saved thing", func() {
+				all, err := store.ListThings(GinkgoT().Context(), 10)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(all).To(HaveLen(1))
+				Expect(all[0].ID).To(Equal(record.ID))
+			})
+		})
+	})
+
+	Describe("UpdateThing", func() {
+		Context("with a saved thing", func() {
+			var record models.Thing
+
+			BeforeEach(func() {
+				record = factories.Thing(GinkgoT(), store)
+			})
+
+			It("stores the change", func() {
+				record.Name = "Edited"
+				updated, err := store.UpdateThing(GinkgoT().Context(), record)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(updated.ID).To(Equal(record.ID))
+				Expect(updated.Name).To(BeEquivalentTo("Edited"))
+			})
+		})
+
+		Context("when the thing is not there", func() {
+			var missing models.Thing
+
+			BeforeEach(func() {
+				missing = factories.NewThing()
+				missing.ID = 999999999
+			})
+
+			It("is not found", func() {
+				_, err := store.UpdateThing(GinkgoT().Context(), missing)
+				Expect(err).To(MatchError(models.ErrNotFound))
+			})
+		})
+	})
+
+	Describe("DeleteThing", func() {
+		DescribeTable("returns ErrNotFound",
+			func(id string) {
+				Expect(store.DeleteThing(GinkgoT().Context(), id)).To(MatchError(models.ErrNotFound))
+			},
+			Entry("when the id is not a number", "nope"),
+			Entry("when the id is empty", ""),
+			Entry("when no thing has that id", "999999999"),
+		)
+
+		Context("with a saved thing", func() {
+			var record models.Thing
+
+			BeforeEach(func() {
+				record = factories.Thing(GinkgoT(), store)
+			})
+
+			It("removes the thing", func() {
+				id := strconv.FormatInt(record.ID, 10)
+				Expect(store.DeleteThing(GinkgoT().Context(), id)).To(Succeed())
+				_, err := store.GetThing(GinkgoT().Context(), id)
+				Expect(err).To(MatchError(models.ErrNotFound))
+			})
+		})
+	})
+})
+==> test/factories/things.go
+package factories
 
 import (
 	"context"
-	"errors"
-	"testing"
 
-	"example.com/blog/app/domain"
+	"example.com/blog/app/models"
+	"example.com/blog/db/adapter"
 )
 
-// Whatever the id looks like, a thing that is not there is ErrNotFound, and a
-// caller cannot tell a malformed id from a well-formed one that names nothing.
-func TestUnknownThingsAreNotFound(t *testing.T) {
-	store := testStore(t)
-	ctx := context.Background()
-
-	for _, id := range []string{"nope", "", "999999999"} {
-		if _, err := store.GetThing(ctx, id); !errors.Is(err, domain.ErrNotFound) {
-			t.Errorf("GetThing(%q): err = %v, want ErrNotFound", id, err)
-		}
-		if err := store.DeleteThing(ctx, id); !errors.Is(err, domain.ErrNotFound) {
-			t.Errorf("DeleteThing(%q): err = %v, want ErrNotFound", id, err)
-		}
+// NewThing is a valid thing that is not saved: every attribute has a default,
+// and "with" overrides what the spec cares about.
+//
+// Written once by `bogie g model` and yours to edit: add an attribute's
+// default here when you add the column. Running the generator again leaves a
+// changed file alone unless --force.
+func NewThing(with ...func(*models.Thing)) models.Thing {
+	record := models.Thing{
+		Name: Sequence("name "),
 	}
-
-	if _, err := store.UpdateThing(ctx, domain.Thing{ID: 999999999}); !errors.Is(err, domain.ErrNotFound) {
-		t.Errorf("UpdateThing(%d): err = %v, want ErrNotFound", 999999999, err)
+	for _, f := range with {
+		f(&record)
 	}
+	return record
 }
 
-// TODO: a round trip. Create a thing with real values, Get it, List it,
-// Update it, Delete it; see posts_test.go for the shape.
+// Thing saves a NewThing through the real store and fails the spec if it
+// cannot, so a spec reads as its arrangement and nothing else.
+func Thing(t T, s *adapter.Store, with ...func(*models.Thing)) models.Thing {
+	t.Helper()
+	created, err := s.CreateThing(context.Background(), NewThing(with...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return created
+}

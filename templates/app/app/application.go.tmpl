@@ -14,10 +14,10 @@ import (
 {{end}}
 	"{{.Module}}/app/controllers"{{if .Jobs}}
 	"{{.Module}}/app/jobs"{{end}}
-	"{{.Module}}/app/models"
 	"{{.Module}}/app/services/database"
 	"{{.Module}}/app/services/migrate"
 	"{{.Module}}/config"
+	"{{.Module}}/db/adapter"
 	"{{.Module}}/lib/logger"
 )
 
@@ -25,7 +25,7 @@ import (
 type Application struct {
 	Config config.Config
 	Log    *slog.Logger
-	Store  *models.Store
+	Store  *adapter.Store
 	Server *controllers.Server{{if .Jobs}}
 
 	// Jobs enqueues background jobs from anywhere and, in the worker
@@ -66,7 +66,7 @@ func NewApplication(ctx context.Context) (*Application, error) {
 		}
 	}
 
-	store, err := models.Open(ctx, cfg.Database.URL)
+	store, err := adapter.Open(ctx, cfg.Database.URL)
 	if err != nil {
 		return nil, database.Hint(err, cfg.Database.URL)
 	}

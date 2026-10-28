@@ -164,7 +164,7 @@ func TestOutputPath(t *testing.T) {
 		"main.go.tmpl":           "main.go",
 		"dot_gitignore.tmpl":     "/.gitignore"[1:],
 		"dot_github/ci.yml":      ".github/ci.yml",
-		"app/models/store.go":    "app/models/store.go",
+		"db/adapter/store.go":    "db/adapter/store.go",
 		"config/dot_env.example": "config/.env.example",
 	}
 	for in, want := range cases {

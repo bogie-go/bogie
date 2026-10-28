@@ -4,13 +4,13 @@ package seeds
 import (
 	"context"
 
-	"example.com/blog/app/models"
+	"example.com/blog/db/adapter"
 )
 
 // SeedDemoPosts seeds demo_posts. db seed can run this any number of times, so
 // make it safe to run twice: insert with ON CONFLICT DO NOTHING, or
 // check before creating.
-func SeedDemoPosts(ctx context.Context, s *models.Store) error {
+func SeedDemoPosts(ctx context.Context, s *adapter.Store) error {
 	// TODO: s.Create...(ctx, ...), written so a second run does nothing new.
 	return nil
 }

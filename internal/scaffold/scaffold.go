@@ -1,5 +1,5 @@
-// Package scaffold renders an embedded template tree onto disk the way Rails
-// generators do: one line per file saying what happened, nothing overwritten
+// Package scaffold renders an embedded template tree onto disk the way a generator
+// does: one line per file saying what happened, nothing overwritten
 // without --force, and --pretend to see the plan without writing anything.
 package scaffold
 
@@ -28,7 +28,7 @@ type Vars struct {
 	// Jobs adds River: the worker role, app/jobs, the schema at boot.
 	Jobs bool
 	// IDScheme is "bigint" or "uuid" (generate.IDScheme as a plain string,
-	// so this package need not import generate): which app/models/*.go id
+	// so this package need not import generate): which db/adapter/*.go id
 	// helper gets written, uuid.go or id.go.
 	IDScheme string
 	// Mascot is the welcome page's image as a data URI (templates.MascotDataURI).

@@ -1,7 +1,7 @@
 # Status
 
 Where Bogie stands, for whoever picks it up next, on whatever machine. Updated
-2026-10-22, at v0.3.2. `docs/DESIGN.md` is the design and the
+2026-10-27, at v0.5.1. `docs/DESIGN.md` is the design and the
 reasoning; this file is the state.
 
 ## Milestones
@@ -11,7 +11,7 @@ reasoning; this file is the state.
 | M0 decide | done, except: edit the launch essay (see Loose ends). `bogie-go.com` registered 2026-10-03 |
 | M1 skeleton: `new`, database, credentials, seeds, `bin/ci` | **done** |
 | M2 generators: `g`/`d` for migration, model, controller, service, job; markers; `doctor`; golden and marker-removal tests; `--jobs` with River | **done**; `g`/`d seed` added 2026-10-16, replacing versioned goose seeds with plain Go (DESIGN.md §4.1) |
-| M3 agent layer: fuller `AGENTS.md`, `docs/FROM_RAILS.md`, a test that catches an unregistered controller | **done** 2026-10-03: `g scaffold`, `FROM_RAILS.md`, `doctor` as the registration check, and `AGENTS.md` with recipes for a dependency, a query, tests and troubleshooting |
+| M3 agent layer: fuller `AGENTS.md`, a test that catches an unregistered controller | **done** 2026-10-03: `g scaffold`, `doctor` as the registration check, and `AGENTS.md` with recipes for a dependency, a query, tests and troubleshooting |
 | M4 dogfood: regenerate kchat's skeleton and diff | **done** 2026-10-03; found the Dockerfile and Kamal config missing, added them |
 | M5 publish: version from the git tag, first release, launch | **v0.1.0 tagged 2026-10-03** with `bin/release`. No Homebrew tap, decided the same day: `go install` is the one install. The launch essay remains |
 | M6 `app:update`: three-way merge against the version in `bogie.toml` | **done** 2026-10-03; tested across two of the day's commits |
@@ -20,10 +20,10 @@ reasoning; this file is the state.
 
 Install: `go install github.com/bogie-go/bogie@latest` for the newest tag,
 `@main` for main, `go install .` from a clone. First release: v0.1.0,
-2026-10-03; latest: v0.3.2, 2026-10-22.
+2026-10-03; latest: v0.5.1, 2026-10-27.
 
     bogie new NAME [--module=PATH] [--id=bigint|uuid] [--jobs]
-                                                 an empty service, as rails new makes: it
+                                                 an empty service: it
                                                  builds, migrates, reads its credentials,
                                                  serves /healthz and passes its own bin/ci
     bogie s | server, t | test, lint, ci, worker
@@ -71,7 +71,7 @@ Install: `go install github.com/bogie-go/bogie@latest` for the newest tag,
     bogie app:update [--pretend]                      three-way merge to this Bogie's layout,
                                                       base rendered by the recorded version
 
-Every command is spelled as Rails spells it; the app's own binary uses spaces
+Commands that name a task use a colon (`db:migrate`); the app's own binary uses spaces
 (`blog db prepare`) and the tool accepts that too. `bogie help` is the
 authoritative list.
 
@@ -102,7 +102,7 @@ resource (removed 2026-10-03; the generators are the shape to copy).
    Green in about a minute: it scaffolds two apps, one with `--jobs`, runs
    every generator and destroy into them, and runs their pipelines.
 
-There is no hosted CI, by design (Rails 8.1's `bin/ci`). Run `bin/ci` before
+There is no hosted CI, by design. Run `bin/ci` before
 pushing; on a clean tree a green run signs off the commit.
 
 ## How to work on it
@@ -126,7 +126,7 @@ pushing; on a clean tree a green run signs off the commit.
   file formatted with `go/format`; every marker checked before any file is
   written. A namespace package carries its own `controllers` and `routes`
   markers, nested one level under the root's.
-- A Rails controller is a Go type in one file; a Rails namespace is a Go
+- A controller is a Go type in one file; a namespace is a Go
   package (`admin_controller/`). Decided 2026-10-03, DESIGN.md §5; the first
   cut had a package per controller, which is not what kchat has.
 - `bin/ci` here is the test of record for templates. A failed run leaves the
@@ -135,7 +135,7 @@ pushing; on a clean tree a green run signs off the commit.
 
 ## Decisions that are easy to undo by accident
 
-- Rails layout and underscored package names on purpose; ST1003 is off and
+- The layout by role and underscored package names on purpose; ST1003 is off and
   nothing else is.
 - Test never reads a credentials file. Development reads the shared file,
   staging and production their own.
@@ -148,8 +148,18 @@ pushing; on a clean tree a green run signs off the commit.
   as long as River's SQLite driver is a preview (DESIGN.md §12.4).
 - Tasks that destroy pass `--yes` through the tool; the binary in a container
   keeps asking.
-- `domain.ErrNotFound` and `ErrInvalid` live in `domain.go`, not with a model.
-- A hand-written store method goes in a sibling file (`app/models/<table>_extra.go`),
+- `models.ErrNotFound` and `ErrInvalid` live in `models.go`, not with a model.
+- `g model` writes a spec for the model too (`app/models/<name>_test.go`): a plain call to `Validate` on the factory's defaults, plus where the next rule's Context goes. The app ships `app/models/models_suite_test.go` so it runs. `destroy` removes it with the model.
+- **Layout, v0.5.0 (2026-10-27).** The types and their `Validate` are
+  `app/models` (they were `app/domain`). sqlc writes only `db/sqlc`
+  (`package sqlc`). The Store, `withTx` and the row <-> models conversion are
+  `db/adapter` (`package adapter`; they were `app/models`). `withTx` hands its
+  closure the `pgx.Tx` as well as the bound `*sqlc.Queries`. `bogie app:update`
+  cannot make this move for an existing app, because it renames two packages:
+  do it by hand (point `db/sqlc.yaml` at `package: "sqlc"`, `out: "sqlc"`,
+  regenerate, move the hand-written files to `db/adapter`, then rename the
+  imports) or keep the old layout.
+- A hand-written store method goes in a sibling file (`db/adapter/<table>_extra.go`),
   not inside the generated `<table>.go`: that file is regenerated whole on
   the next `g model`, and a hand-written addition inside it is reported
   `conflict` instead of kept.

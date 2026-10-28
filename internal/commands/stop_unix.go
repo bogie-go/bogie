@@ -11,7 +11,7 @@ import (
 
 // runStoppable runs a long-lived command (`go run . serve`, or Air) in a
 // process group of its own and passes SIGINT, SIGTERM and SIGHUP on to the
-// whole group, the way `rails s` stops when it is told to.
+// whole group, the way a foreground server stops when it is told to.
 //
 // Without this, only the direct child hears a signal sent to `bogie server`.
 // `go run` dies on SIGTERM without telling the app it started, so the app

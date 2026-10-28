@@ -15,10 +15,9 @@ import (
 //go:embed app
 var App embed.FS
 
-// mascot is Bogie's mascot, a gopher and a ruby sharing a mine cart, sized
-// for the welcome page. It travels inline as a data URI, the way Rails ships
-// its own logo on its welcome page: no request leaves the page, and it works
-// before the app has a static file in it.
+// mascot is Bogie's mascot, a gopher and a red gem sharing a mine cart,
+// sized for the welcome page. It travels inline as a data URI: no request
+// leaves the page, and it works before the app has a static file in it.
 //
 //go:embed mascot.webp
 var mascot []byte

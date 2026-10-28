@@ -21,7 +21,7 @@ func (e *ExitError) Error() string { return fmt.Sprintf("exit status %d", e.Code
 
 // Proxy runs one of the generated app's own commands. The runtime commands
 // belong to the app's binary, which also runs in the deployed container; the
-// tool adds the Rails spelling and finds the app from any subdirectory.
+// tool adds the colon spelling and finds the app from any subdirectory.
 func Proxy(command string, args []string, out io.Writer) error {
 	root, err := appRoot(".")
 	if err != nil {
@@ -63,14 +63,12 @@ func Proxy(command string, args []string, out io.Writer) error {
 	return nil
 }
 
-// Rails spells its Rake-derived tasks with colons (db:migrate,
-// credentials:edit) and its commands with spaces (server, generate, new).
-// Bogie spells each one exactly as Rails does, so nothing has to be
-// translated. The app's own binary stays a plain Go CLI with spaces
+// Tasks are spelled with colons (db:migrate, credentials:edit) and commands
+// with spaces (server, generate, new), so nothing has to be translated. The app's own binary stays a plain Go CLI with spaces
 // (`blog db prepare`), and that form is accepted here too.
 //
-// Tasks that destroy pass --yes on the developer's behalf: rails db:rollback
-// does not ask either, and this tool runs on a laptop. The binary that runs in
+// Tasks that destroy pass --yes on the developer's behalf: this tool runs on
+// a laptop. The binary that runs in
 // a container keeps asking, because there a mistake is not undoable.
 var tasks = map[string][][]string{
 	"db:create":         {{"go", "run", ".", "db", "create"}},
@@ -105,7 +103,7 @@ func plan(command string, args []string) ([][]string, error) {
 	case "worker":
 		argv = []string{"go", "run", ".", "worker"}
 	case "test":
-		argv = []string{"go", "test", "-race", "-cover"}
+		argv = []string{"go", "test", "-p", "1", "-race", "-cover"}
 		if len(args) == 0 {
 			args = []string{"./..."}
 		}
@@ -123,7 +121,7 @@ func plan(command string, args []string) ([][]string, error) {
 		// A colon task in a family Bogie spells itself (db:, credentials:)
 		// that is not one of them is a typo, and the nearest is named. Any
 		// other colon task is one of the app binary's own subcommands spelled
-		// the Rails way: api_keys:create is `blog api_keys create`, and the
+		// with a colon: api_keys:create is `blog api_keys create`, and the
 		// binary says so if it has no such command.
 		if strings.Contains(command, ":") && !knownFamily(command) {
 			argv = append([]string{"go", "run", "."}, strings.Split(command, ":")...)
@@ -145,7 +143,7 @@ func withArgs(steps [][]string, args []string) [][]string {
 	return out
 }
 
-// unknown names the nearest Rails task when someone types one Bogie does not
+// unknown names the nearest task when someone types one Bogie does not
 // have, so `bogie db:migrate:up` points at db:migrate rather than at nothing.
 // knownFamily reports whether a colon task starts like one Bogie spells
 // itself, db: or credentials:.
@@ -187,7 +185,7 @@ func sorted(s []string) []string {
 }
 
 // appRoot walks up from dir to the directory holding bogie.toml, the way
-// Rails finds config/application.rb, so a command works from any
+// git finds .git, so a command works from any
 // subdirectory of the app.
 func appRoot(dir string) (string, error) {
 	dir, err := filepath.Abs(dir)
@@ -221,7 +219,7 @@ const airModule = "github.com/air-verse/air"
 // when reload does not apply and the plain `go run` should stand. The second
 // result is a line to print first when reload was wanted but unavailable.
 //
-// Reload is development-only, like Rails's own: production runs the compiled
+// Reload is development-only: production runs the compiled
 // binary, and a container never rebuilds itself. It is also skipped when args
 // were given, because those are one-off questions (`bogie server --help`)
 // rather than the long-running loop reload exists for.

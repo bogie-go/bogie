@@ -1,198 +1,168 @@
-package config
+package config_test
 
 import (
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
-	"testing"
 
 	"github.com/bogie-go/credentials/pkg/credentials"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"{{.Module}}/config"
 )
 
-func TestLoadDefaults(t *testing.T) {
-	t.Setenv(EnvVar, "test")
-	// Defaults are what an unset environment gets. A developer on their own
-	// Postgres exports the test URL to run the suite, so clear it here.
-	t.Setenv(TestDatabaseURLVar, "")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	sv, db := cfg.Server, cfg.Database
-	if cfg.Env != EnvTest || sv.Addr != ":8080" || sv.LogLevel != "info" || sv.ShutdownGrace.Seconds() != 10 {
-		t.Errorf("defaults = %+v", sv)
-	}
-	if db.URL != "postgres://postgres:postgres@localhost:5440/{{.Name}}_test?sslmode=disable" {
-		t.Errorf("test database = %q; want the compose stack's {{.Name}}_test", db.URL)
-	}
-	if !db.MigrateAtBoot {
-		t.Error("MigrateAtBoot defaults to false; want true")
-	}
-}
-
-// The suite truncates every table and bin/ci drops the database, so test must
-// never follow a DATABASE_URL exported for development (or by another
-// app in the same shell); it
-// moves only with its own variable.
-func TestTestIgnoresTheSharedDatabaseURL(t *testing.T) {
-	t.Setenv(EnvVar, "test")
-	t.Setenv("DATABASE_URL", "postgres://postgres:postgres@localhost:5440/{{.Name}}_development?sslmode=disable")
-	t.Setenv(TestDatabaseURLVar, "")
-	cfg, err := Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := "postgres://postgres:postgres@localhost:5440/{{.Name}}_test?sslmode=disable"; cfg.Database.URL != want {
-		t.Errorf("test database = %q; want %q, whatever DATABASE_URL says", cfg.Database.URL, want)
-	}
-
-	t.Setenv(TestDatabaseURLVar, "postgres://ci:ci@db:5432/{{.Name}}_test")
-	if cfg, err = Load(); err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Database.URL != "postgres://ci:ci@db:5432/{{.Name}}_test" {
-		t.Errorf("test database = %q; want the one %s names", cfg.Database.URL, TestDatabaseURLVar)
-	}
-}
-
-// The set is closed on purpose: staging reads perfectly naturally and would
-// otherwise fall through to production behaviour silently.
-func TestLoadRefusesUnknownEnv(t *testing.T) {
-	for _, env := range []string{"staging", "prod", "Production"} {
-		t.Setenv(EnvVar, env)
-		if _, err := Load(); err == nil {
-			t.Errorf("%s=%q accepted; want a refusal to boot", EnvVar, env)
-		}
-	}
-}
-
-func TestLoadRefusesBadValues(t *testing.T) {
-	t.Setenv(EnvVar, "test")
-	t.Setenv("SERVER_SHUTDOWN_GRACE", "soon")
-	if _, err := Load(); err == nil {
-		t.Error("SHUTDOWN_GRACE=soon accepted")
-	}
-	t.Setenv("SERVER_SHUTDOWN_GRACE", "5s")
-	t.Setenv("DATABASE_MIGRATE_AT_BOOT", "maybe")
-	if _, err := Load(); err == nil {
-		t.Error("MIGRATE_AT_BOOT=maybe accepted")
-	}
-}
-
-// Production carries a real password in its URL, so there is no default to
-// fall through to: the setting is required and its absence refuses to boot.
-func TestLoadRequiresADatabaseInProduction(t *testing.T) {
-	t.Setenv(EnvVar, "production")
-	t.Setenv(ConfigDirVar, t.TempDir()) // no credentials file anywhere
-	t.Setenv("DATABASE_URL", "")
-	if _, err := Load(); err == nil {
-		t.Error("production booted without DATABASE_URL")
-	}
-}
-
 // writeCredentials seals yaml into a fresh config dir and returns the dir.
-func writeCredentials(t *testing.T, yaml string) string {
-	t.Helper()
-	dir := t.TempDir()
+func writeCredentials(yaml string) string {
+	dir := GinkgoT().TempDir()
 	key, err := credentials.GenerateMasterKey(filepath.Join(dir, "master.key"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	Expect(err).NotTo(HaveOccurred())
 	ed := credentials.NewConfigEditor(dir, "credentials.yml.enc", "master.key", "")
-	if err := ed.EncryptAndSave([]byte(yaml), hexOf(key)); err != nil {
-		t.Fatal(err)
-	}
+	Expect(ed.EncryptAndSave([]byte(yaml), hex.EncodeToString(key))).To(Succeed())
 	return dir
 }
 
-func hexOf(key []byte) string {
-	const digits = "0123456789abcdef"
-	out := make([]byte, 0, len(key)*2)
-	for _, b := range key {
-		out = append(out, digits[b>>4], digits[b&0x0f])
-	}
-	return string(out)
-}
+var _ = Describe("Load", func() {
+	var t GinkgoTInterface
 
-// Development reads the shared file. A key the file names is taken from it, a
-// key it omits keeps its default, and the environment beats both.
-func TestLoadReadsTheSharedFile(t *testing.T) {
-	dir := writeCredentials(t, "server:\n  addr: \":9999\"\n  log_level: debug\n")
-	t.Setenv(EnvVar, "development")
-	t.Setenv(ConfigDirVar, dir)
-	t.Setenv("SERVER_LOG_LEVEL", "warn")
+	BeforeEach(func() {
+		t = GinkgoT()
+	})
 
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if cfg.Server.Addr != ":9999" {
-		t.Errorf("addr = %q; want the file's :9999", cfg.Server.Addr)
-	}
-	if cfg.Server.LogLevel != "warn" {
-		t.Errorf("log_level = %q; want the environment's warn over the file's debug", cfg.Server.LogLevel)
-	}
-	if cfg.Server.ShutdownGrace.Seconds() != 10 || !cfg.Database.MigrateAtBoot {
-		t.Errorf("a key absent from the file lost its default: %+v", cfg)
-	}
-	if cfg.Source != filepath.Join(dir, "credentials.yml.enc") {
-		t.Errorf("source = %q", cfg.Source)
-	}
-}
+	Context("in the test environment", func() {
+		BeforeEach(func() {
+			t.Setenv(config.EnvVar, "test")
+			// Defaults are what an unset environment gets. A developer on their own
+			// Postgres exports the test URL to run the suite, so clear it here.
+			t.Setenv(config.TestDatabaseURLVar, "")
+		})
 
-// Test never reads a file, even when one is right there.
-func TestTestEnvironmentIgnoresCredentials(t *testing.T) {
-	dir := writeCredentials(t, "server:\n  addr: \":9999\"\n")
-	t.Setenv(EnvVar, "test")
-	t.Setenv(ConfigDirVar, dir)
+		It("uses the defaults", func() {
+			cfg, err := config.Load()
+			Expect(err).NotTo(HaveOccurred())
 
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if cfg.Server.Addr != ":8080" {
-		t.Errorf("addr = %q; test read the credentials file", cfg.Server.Addr)
-	}
-}
+			Expect(cfg.Env).To(Equal(config.EnvTest))
+			Expect(cfg.Server.Addr).To(Equal(":8080"))
+			Expect(cfg.Server.LogLevel).To(Equal("info"))
+			Expect(cfg.Server.ShutdownGrace.Seconds()).To(BeNumerically("==", 10))
+			Expect(cfg.Database.URL).To(Equal("postgres://postgres:postgres@localhost:5440/{{.Name}}_test?sslmode=disable"),
+				"the compose stack's {{.Name}}_test")
+			Expect(cfg.Database.MigrateAtBoot).To(BeTrue())
+		})
 
-// A deployment hands the key over in the environment and ships no key file.
-func TestMasterKeyFromTheEnvironment(t *testing.T) {
-	dir := writeCredentials(t, "server:\n  addr: \":7777\"\n")
-	key, err := os.ReadFile(filepath.Join(dir, "master.key"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Remove(filepath.Join(dir, "master.key")); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv(EnvVar, "development")
-	t.Setenv(ConfigDirVar, dir)
-	t.Setenv(MasterKeyVar, string(key))
-	t.Setenv(credentials.EnvKeyVar, "")
+		// The suite truncates every table and bin/ci drops the database, so test must
+		// never follow a DATABASE_URL exported for development (or by another
+		// app in the same shell); it moves only with its own variable.
+		It("ignores the shared DATABASE_URL", func() {
+			t.Setenv("DATABASE_URL", "postgres://postgres:postgres@localhost:5440/{{.Name}}_development?sslmode=disable")
 
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load without a key file: %v", err)
-	}
-	if cfg.Server.Addr != ":7777" || !strings.Contains(cfg.KeyFile, MasterKeyVar) {
-		t.Errorf("cfg = %+v", cfg)
-	}
-}
+			cfg, err := config.Load()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cfg.Database.URL).To(Equal("postgres://postgres:postgres@localhost:5440/{{.Name}}_test?sslmode=disable"))
+		})
 
-func TestPrintToRedactsThePassword(t *testing.T) {
-	t.Setenv(EnvVar, "test")
-	t.Setenv(TestDatabaseURLVar, "postgres://app:hunter2@db:5432/{{.Name}}")
-	cfg, err := Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out strings.Builder
-	cfg.PrintTo(&out)
-	if strings.Contains(out.String(), "hunter2") {
-		t.Errorf("boot log leaks the password: %s", out.String())
-	}
-	if !strings.Contains(out.String(), "app:xxxxx@db") {
-		t.Errorf("boot log does not show the redacted url: %s", out.String())
-	}
-}
+		It("follows its own database variable", func() {
+			t.Setenv("DATABASE_URL", "postgres://postgres:postgres@localhost:5440/{{.Name}}_development?sslmode=disable")
+			t.Setenv(config.TestDatabaseURLVar, "postgres://ci:ci@db:5432/{{.Name}}_test")
+
+			cfg, err := config.Load()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cfg.Database.URL).To(Equal("postgres://ci:ci@db:5432/{{.Name}}_test"))
+		})
+
+		It("never reads a credentials file, even when one is right there", func() {
+			t.Setenv(config.ConfigDirVar, writeCredentials("server:\n  addr: \":9999\"\n"))
+
+			cfg, err := config.Load()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cfg.Server.Addr).To(Equal(":8080"))
+		})
+
+		It("redacts the database password when printed", func() {
+			t.Setenv(config.TestDatabaseURLVar, "postgres://app:hunter2@db:5432/{{.Name}}")
+			cfg, err := config.Load()
+			Expect(err).NotTo(HaveOccurred())
+
+			var out strings.Builder
+			cfg.PrintTo(&out)
+			Expect(out.String()).NotTo(ContainSubstring("hunter2"))
+			Expect(out.String()).To(ContainSubstring("app:xxxxx@db"))
+		})
+
+		It("refuses a bad shutdown grace", func() {
+			t.Setenv("SERVER_SHUTDOWN_GRACE", "soon")
+			_, err := config.Load()
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("refuses a bad migrate-at-boot flag", func() {
+			t.Setenv("SERVER_SHUTDOWN_GRACE", "5s")
+			t.Setenv("DATABASE_MIGRATE_AT_BOOT", "maybe")
+			_, err := config.Load()
+			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	// The set is closed on purpose: staging reads perfectly naturally and would
+	// otherwise fall through to production behaviour silently.
+	DescribeTable("refuses an unknown environment",
+		func(env string) {
+			t.Setenv(config.EnvVar, env)
+			_, err := config.Load()
+			Expect(err).To(HaveOccurred())
+		},
+		Entry("staging", "staging"),
+		Entry("prod", "prod"),
+		Entry("Production", "Production"),
+	)
+
+	// Development reads the shared file. A key the file names is taken from it, a
+	// key it omits keeps its default, and the environment beats both.
+	Context("in development with a shared credentials file", func() {
+		It("reads the file, keeps defaults for absent keys, and lets the environment win", func() {
+			dir := writeCredentials("server:\n  addr: \":9999\"\n  log_level: debug\n")
+			t.Setenv(config.EnvVar, "development")
+			t.Setenv(config.ConfigDirVar, dir)
+			t.Setenv("SERVER_LOG_LEVEL", "warn")
+
+			cfg, err := config.Load()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cfg.Server.Addr).To(Equal(":9999"), "the file's addr")
+			Expect(cfg.Server.LogLevel).To(Equal("warn"), "the environment's value over the file's debug")
+			Expect(cfg.Server.ShutdownGrace.Seconds()).To(BeNumerically("==", 10))
+			Expect(cfg.Database.MigrateAtBoot).To(BeTrue())
+			Expect(cfg.Source).To(Equal(filepath.Join(dir, "credentials.yml.enc")))
+		})
+
+		// A deployment hands the key over in the environment and ships no key file.
+		It("takes the master key from the environment when there is no key file", func() {
+			dir := writeCredentials("server:\n  addr: \":7777\"\n")
+			key, err := os.ReadFile(filepath.Join(dir, "master.key"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(os.Remove(filepath.Join(dir, "master.key"))).To(Succeed())
+			t.Setenv(config.EnvVar, "development")
+			t.Setenv(config.ConfigDirVar, dir)
+			t.Setenv(config.MasterKeyVar, string(key))
+			t.Setenv(credentials.EnvKeyVar, "")
+
+			cfg, err := config.Load()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cfg.Server.Addr).To(Equal(":7777"))
+			Expect(cfg.KeyFile).To(ContainSubstring(config.MasterKeyVar))
+		})
+	})
+
+	// Production carries a real password in its URL, so there is no default to
+	// fall through to: the setting is required and its absence refuses to boot.
+	Context("in production", func() {
+		It("requires a database", func() {
+			t.Setenv(config.EnvVar, "production")
+			t.Setenv(config.ConfigDirVar, t.TempDir()) // no credentials file anywhere
+			t.Setenv("DATABASE_URL", "")
+
+			_, err := config.Load()
+			Expect(err).To(HaveOccurred())
+		})
+	})
+})

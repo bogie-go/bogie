@@ -5,7 +5,7 @@ package generate
 
 import "strings"
 
-// A small inflector, enough for the names a Rails developer reaches for. It
+// A small inflector, enough for the names a model gets. It
 // is deliberately not clever: the common rules, a short irregular list, and
 // no attempt at Latin. A name it gets wrong is spelled out in full instead.
 var irregulars = map[string]string{
@@ -79,7 +79,7 @@ func Camel(s string) string {
 	return strings.Join(parts, "")
 }
 
-// Snake turns a name as a Rails developer might type it, Post, BlogPost or
+// Snake turns a name as it might be typed, Post, BlogPost or
 // AddSlugToPosts, into the snake_case every generator works in. Already
 // snake_case input comes back unchanged.
 func Snake(s string) string {
@@ -110,8 +110,8 @@ func lowerCamel(s string) string {
 // model's first letter, as Go prefers, but the method it lands in already has
 // a variable of its own: s for a *Store receiver, c for the *gin.Context an
 // action handles, f for a test's fake store. A model whose first letter is
-// that one takes its name in full instead — session domain.Session, comment
-// domain.Comment — which reads no worse and cannot collide. The generated
+// that one takes its name in full instead — session models.Session, comment
+// models.Comment — which reads no worse and cannot collide. The generated
 // files parse either way, so only the compiler catches this; see the golden
 // tests for one model per taken letter.
 func paramName(name, taken string) string {
