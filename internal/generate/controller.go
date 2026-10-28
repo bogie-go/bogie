@@ -276,7 +276,7 @@ func (ctl *%[1]s) SetupRoutes(router *gin.RouterGroup) {
 		fmt.Fprintf(&b, `
 // %[1]s handles %[2]s %[3]s%[4]s.
 //
-// A handler converts HTTP into domain values, calls one service function,
+// A handler converts HTTP into models, calls one service function,
 // and converts the result back. Nothing below app/controllers sees
 // *gin.Context.
 func (ctl *%[5]s) %[1]s(c *gin.Context) {

@@ -401,8 +401,8 @@ type adminProductsStore interface {
 const adminProductsListLimit = 100
 
 // ProductsController is the HTTP surface of products: a JSON resource over the store. A
-// handler converts HTTP into domain values, calls one store method, and
-// converts the result back. Validation is the domain's and runs on save,
+// handler converts HTTP into models, calls one store method, and
+// converts the result back. Validation is the model's and runs on save,
 // which is why a bad value is a 422 from the store and not a binding rule
 // here. Nothing below app/controllers sees *gin.Context.
 type ProductsController struct {
@@ -494,7 +494,7 @@ func (ctl *ProductsController) Destroy(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// fail maps a domain error to a status, the one place that mapping lives:
+// fail maps a model error to a status, the one place that mapping lives:
 // not found is 404, a validation failure is 422, and anything
 // else is logged and answered 500 without leaking its text.
 func (ctl *ProductsController) fail(c *gin.Context, err error) {
@@ -510,8 +510,8 @@ func (ctl *ProductsController) fail(c *gin.Context, err error) {
 	}
 }
 
-// The controller converts between the domain and the wire. views never
-// imports domain, so this is where AdminProductResponse is built.
+// The controller converts between the models and the wire. views never
+// imports models, so this is where AdminProductResponse is built.
 
 func adminProductView(a models.AdminProduct) views.AdminProductResponse {
 	return views.AdminProductResponse{

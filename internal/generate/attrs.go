@@ -101,7 +101,7 @@ func (s IDScheme) parseFunc() string {
 	return "parseID"
 }
 
-// idFromRow converts a scanned row's ID (expr) to the domain's id type.
+// idFromRow converts a scanned row's ID (expr) to the model's id type.
 func (s IDScheme) idFromRow(expr string) string {
 	if s == IDUUID {
 		return "uuidString(" + expr + ")"

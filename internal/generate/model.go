@@ -9,7 +9,7 @@ import (
 
 // Model writes what `bogie generate model post title:string body:text`
 // produces: the create_<table> migration, a starter db/queries/<table>.sql,
-// the domain type, the hand-written half of the store that converts sqlc's
+// the model type, the hand-written half of the store that converts sqlc's
 // row type to it, its spec and its test factory. Running sqlc afterwards is the caller's job; the files here
 // are written to match what it will generate.
 func Model(module, name string, attrs []Attr, scheme IDScheme, now time.Time) ([]File, error) {
@@ -536,11 +536,11 @@ func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 	fmt.Fprintf(&b, "func (s *Store) Update%s(ctx context.Context, %s models.%s) (models.%s, error) {\n", typ, recv, typ, typ)
 	fmt.Fprintf(&b, "\tif err := %s.Validate(); err != nil {\n\t\treturn models.%s{}, err\n\t}\n", recv, typ)
 	if scheme == IDUUID {
-		// The domain's id is a string here too, so it gets the same
+		// The model's id is a string here too, so it gets the same
 		// malformed-id-is-not-found treatment a URL-sourced id gets.
 		fmt.Fprintf(&b, "\tpk, err := parseUUID(%s.ID)\n\tif err != nil {\n\t\treturn models.%s{}, models.ErrNotFound\n\t}\n", recv, typ)
 	} else {
-		// Nothing to parse: the domain's id is already this scheme's type.
+		// Nothing to parse: the model's id is already this scheme's type.
 		fmt.Fprintf(&b, "\tpk := %s.ID\n", recv)
 	}
 	b.WriteString(referenceChecks(recv, typ, attrs, scheme))

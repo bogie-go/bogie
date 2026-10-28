@@ -622,7 +622,7 @@ func (r *Request) As(subject string) *Request {
 }
 
 // fakeIDAssign is a Go expression the api_keys service's fake store uses to
-// make up an id for a key it "creates", in the domain's id type: a string
+// make up an id for a key it "creates", in the model's id type: a string
 // derived from the prefix under the uuid scheme (any string compiles,
 // whether or not it looks like a uuid), or a counter under bigint.
 func fakeIDAssign(scheme IDScheme) string {

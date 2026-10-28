@@ -106,7 +106,7 @@ func lowerCamel(s string) string {
 	return strings.ToLower(c[:1]) + c[1:]
 }
 
-// paramName names the domain value a generated method takes. Normally the
+// paramName names the model value a generated method takes. Normally the
 // model's first letter, as Go prefers, but the method it lands in already has
 // a variable of its own: s for a *Store receiver, c for the *gin.Context an
 // action handles, f for a test's fake store. A model whose first letter is

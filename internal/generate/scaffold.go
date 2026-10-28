@@ -279,7 +279,7 @@ type viewType struct {
 
 // viewTypes are the wire shapes the actions asked for need: the request body
 // for create and update, one response for anything that returns a record, and
-// the listing for index. Nothing here imports the domain; the controller
+// the listing for index. Nothing here imports models; the controller
 // converts. Destroy alone answers with no body, so it needs none.
 func (s scaffold) viewTypes() []viewType {
 	attrImports := map[string]bool{}
@@ -443,7 +443,7 @@ func addImport(src, path string) string {
 
 // controller is app/controllers/<table>_controller.go: the store interface
 // it consumes, the type, its routes, the resourceful actions, the
-// error mapping, and the domain-to-wire conversions. Only the actions asked
+// error mapping, and the model-to-wire conversions. Only the actions asked
 // for are written, and with them only the store methods, routes and
 // conversions they use.
 func (s scaffold) controller() string {
@@ -496,8 +496,8 @@ const %[1]sListLimit = 100
 `, lowerCamel(s.table))
 	}
 	w(`// %[1]s is the HTTP surface of %[2]s: a JSON resource over the store. A
-// handler converts HTTP into domain values, calls one store method, and
-// converts the result back. Validation is the domain's and runs on save,
+// handler converts HTTP into models, calls one store method, and
+// converts the result back. Validation is the model's and runs on save,
 // which is why a bad value is a 422 from the store and not a binding rule
 // here. Nothing below app/controllers sees *gin.Context.
 type %[1]s struct {
@@ -566,7 +566,7 @@ func (ctl *%[2]s) Show(c *gin.Context) {
 		w("// Update handles PATCH %s/:id.", s.url())
 		if len(s.attrs) == 0 {
 			// Nothing to bind, but the id still has to be resolved to the
-			// domain's id type (not every scheme's id is a string), so this
+			// model's id type (not every scheme's id is a string), so this
 			// loads the record the same way the attributed case does and saves
 			// it back unchanged but for updated_at.
 			w("\nfunc (ctl *%s) Update(c *gin.Context) {\n", ctl)
@@ -577,7 +577,7 @@ func (ctl *%[2]s) Show(c *gin.Context) {
 			// Find, then update: load the record, decode the body
 			// over its current values so a key left out keeps its value, then
 			// save, so validation sees the whole record. The id comes from the
-			// loaded record, not the URL, so it is already the domain's id type.
+			// loaded record, not the URL, so it is already the model's id type.
 			w(" Only the fields in the body change: the %s is loaded,\n", s.name)
 			b.WriteString("// the body is decoded over its current values,\n")
 			b.WriteString("// so a key left out keeps its value, and the result is saved and validated\n// whole.\n")
@@ -604,7 +604,7 @@ func (ctl *%[2]s) Destroy(c *gin.Context) {
 `, s.url(), ctl, typ)
 	}
 
-	w(`// fail maps a domain error to a status, the one place that mapping lives:
+	w(`// fail maps a model error to a status, the one place that mapping lives:
 // not found is 404, a validation failure is 422, and anything
 // else is logged and answered 500 without leaking its text.
 func (ctl *%[2]s) fail(c *gin.Context, err error) {
@@ -625,8 +625,8 @@ func (ctl *%[2]s) fail(c *gin.Context, err error) {
 		return b.String()
 	}
 	w(`
-// The controller converts between the domain and the wire. views never
-// imports domain, so this is where %[1]sResponse is built.
+// The controller converts between the models and the wire. views never
+// imports models, so this is where %[1]sResponse is built.
 
 `, typ)
 	// One record on the wire: index builds a listing out of them.
@@ -660,7 +660,7 @@ func (s scaffold) bind() string {
 	return fmt.Sprintf("\tvar req views.%sRequest\n\tif err := c.ShouldBindJSON(&req); err != nil {\n\t\tc.JSON(http.StatusBadRequest, views.Error(err))\n\t\treturn\n\t}\n", s.typ())
 }
 
-// fromRequest is the domain value built from the bound request, with the
+// fromRequest is the model built from the bound request, with the
 // id when there is one.
 func (s scaffold) fromRequest(id string) string {
 	var parts []string

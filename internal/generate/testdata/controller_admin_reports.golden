@@ -99,7 +99,7 @@ func (ctl *ReportsController) SetupRoutes(router *gin.RouterGroup) {
 
 // Index handles GET /admin/reports.
 //
-// A handler converts HTTP into domain values, calls one service function,
+// A handler converts HTTP into models, calls one service function,
 // and converts the result back. Nothing below app/controllers sees
 // *gin.Context.
 func (ctl *ReportsController) Index(c *gin.Context) {
@@ -108,7 +108,7 @@ func (ctl *ReportsController) Index(c *gin.Context) {
 
 // Show handles GET /admin/reports/:id.
 //
-// A handler converts HTTP into domain values, calls one service function,
+// A handler converts HTTP into models, calls one service function,
 // and converts the result back. Nothing below app/controllers sees
 // *gin.Context.
 func (ctl *ReportsController) Show(c *gin.Context) {

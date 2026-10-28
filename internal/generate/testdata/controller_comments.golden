@@ -41,7 +41,7 @@ func (ctl *CommentsController) SetupRoutes(router *gin.RouterGroup) {
 
 // Index handles GET /comments.
 //
-// A handler converts HTTP into domain values, calls one service function,
+// A handler converts HTTP into models, calls one service function,
 // and converts the result back. Nothing below app/controllers sees
 // *gin.Context.
 func (ctl *CommentsController) Index(c *gin.Context) {
@@ -50,7 +50,7 @@ func (ctl *CommentsController) Index(c *gin.Context) {
 
 // Show handles GET /comments/:id.
 //
-// A handler converts HTTP into domain values, calls one service function,
+// A handler converts HTTP into models, calls one service function,
 // and converts the result back. Nothing below app/controllers sees
 // *gin.Context.
 func (ctl *CommentsController) Show(c *gin.Context) {
@@ -59,7 +59,7 @@ func (ctl *CommentsController) Show(c *gin.Context) {
 
 // Create handles POST /comments.
 //
-// A handler converts HTTP into domain values, calls one service function,
+// A handler converts HTTP into models, calls one service function,
 // and converts the result back. Nothing below app/controllers sees
 // *gin.Context.
 func (ctl *CommentsController) Create(c *gin.Context) {
@@ -68,7 +68,7 @@ func (ctl *CommentsController) Create(c *gin.Context) {
 
 // Search handles GET /comments/search.
 //
-// A handler converts HTTP into domain values, calls one service function,
+// A handler converts HTTP into models, calls one service function,
 // and converts the result back. Nothing below app/controllers sees
 // *gin.Context.
 func (ctl *CommentsController) Search(c *gin.Context) {

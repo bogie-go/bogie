@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -51,6 +52,9 @@ func Proxy(command string, args []string, out io.Writer) error {
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = out
 		cmd.Stderr = os.Stderr
+		if argv[0] == "go" && len(argv) > 1 && argv[1] == "run" {
+			cmd.Stderr = goRunStderr{os.Stderr}
+		}
 		err := run(cmd)
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {
@@ -269,4 +273,20 @@ func hasModule(root, module string) bool {
 		return false
 	}
 	return strings.Contains(string(b), module)
+}
+
+// goRunStderr passes a child's stderr through, minus the line `go run` adds
+// itself when the program exits non-zero ("exit status 1"). The app already
+// said what went wrong, and Proxy returns its status to main, so the line only
+// repeats it. go run writes it as one write of its own, so only a write that is
+// exactly that line is dropped.
+type goRunStderr struct{ w io.Writer }
+
+var goRunExit = regexp.MustCompile(`^exit status \d+\n$`)
+
+func (g goRunStderr) Write(p []byte) (int, error) {
+	if goRunExit.Match(p) {
+		return len(p), nil
+	}
+	return g.w.Write(p)
 }
