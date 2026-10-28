@@ -70,13 +70,13 @@ import (
 )
 
 var _ = Describe("ApiKey.Validate", func() {
+	var apiKey models.ApiKey
+
+	BeforeEach(func() {
+		apiKey = factories.NewApiKey()
+	})
+
 	Context("with the factory's defaults", func() {
-		var apiKey models.ApiKey
-
-		BeforeEach(func() {
-			apiKey = factories.NewApiKey()
-		})
-
 		It("is valid", func() {
 			Expect(apiKey.Validate()).To(Succeed())
 		})

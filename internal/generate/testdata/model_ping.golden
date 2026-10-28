@@ -61,13 +61,13 @@ import (
 )
 
 var _ = Describe("Ping.Validate", func() {
+	var ping models.Ping
+
+	BeforeEach(func() {
+		ping = factories.NewPing()
+	})
+
 	Context("with the factory's defaults", func() {
-		var ping models.Ping
-
-		BeforeEach(func() {
-			ping = factories.NewPing()
-		})
-
 		It("is valid", func() {
 			Expect(ping.Validate()).To(Succeed())
 		})

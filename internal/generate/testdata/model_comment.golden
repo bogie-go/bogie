@@ -73,13 +73,13 @@ import (
 )
 
 var _ = Describe("Comment.Validate", func() {
+	var comment models.Comment
+
+	BeforeEach(func() {
+		comment = factories.NewComment()
+	})
+
 	Context("with the factory's defaults", func() {
-		var comment models.Comment
-
-		BeforeEach(func() {
-			comment = factories.NewComment()
-		})
-
 		It("is valid", func() {
 			Expect(comment.Validate()).To(Succeed())
 		})

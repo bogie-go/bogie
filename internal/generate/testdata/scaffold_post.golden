@@ -72,13 +72,13 @@ import (
 )
 
 var _ = Describe("Post.Validate", func() {
+	var post models.Post
+
+	BeforeEach(func() {
+		post = factories.NewPost()
+	})
+
 	Context("with the factory's defaults", func() {
-		var post models.Post
-
-		BeforeEach(func() {
-			post = factories.NewPost()
-		})
-
 		It("is valid", func() {
 			Expect(post.Validate()).To(Succeed())
 		})

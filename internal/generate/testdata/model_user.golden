@@ -65,13 +65,13 @@ import (
 )
 
 var _ = Describe("User.Validate", func() {
+	var user models.User
+
+	BeforeEach(func() {
+		user = factories.NewUser()
+	})
+
 	Context("with the factory's defaults", func() {
-		var user models.User
-
-		BeforeEach(func() {
-			user = factories.NewUser()
-		})
-
 		It("is valid", func() {
 			Expect(user.Validate()).To(Succeed())
 		})

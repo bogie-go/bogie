@@ -63,13 +63,13 @@ import (
 )
 
 var _ = Describe("Thing.Validate", func() {
+	var thing models.Thing
+
+	BeforeEach(func() {
+		thing = factories.NewThing()
+	})
+
 	Context("with the factory's defaults", func() {
-		var thing models.Thing
-
-		BeforeEach(func() {
-			thing = factories.NewThing()
-		})
-
 		It("is valid", func() {
 			Expect(thing.Validate()).To(Succeed())
 		})
