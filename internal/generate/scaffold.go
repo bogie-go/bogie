@@ -50,19 +50,42 @@ func ParseOnly(spec string) ([]string, error) {
 // validates on save, and a controller talks to the model (docs/DESIGN.md
 // §5). The model is named in the singular and the rest in the plural.
 //
+// ns and res place the controller: the namespace to mount it under ("" for the
+// root) and its resource name, plural ("" for the table's own). A namespaced
+// scaffold is a model of its own, named with the namespace (admin_product, table
+// admin_products) as Rails prefixes it, whose controller keeps the short name
+// (ProductsController, at /admin/products).
+//
 // only limits the HTTP half to those actions (nil is all five): their routes,
 // handlers, views and request specs. The model half is written in full either
 // way.
-func Scaffold(module, name string, attrs []Attr, scheme IDScheme, now time.Time, only []string) ([]File, []Wire, error) {
+func Scaffold(module, ns, res, name string, attrs []Attr, scheme IDScheme, now time.Time, only []string) ([]File, []Wire, error) {
 	files, err := Model(module, name, attrs, scheme, now)
 	if err != nil {
 		return nil, nil, err
 	}
-	httpFiles, wires, err := ScaffoldController(module, "", name, attrs, scheme, only)
+	httpFiles, wires, err := ScaffoldController(module, ns, res, name, attrs, scheme, only)
 	if err != nil {
 		return nil, nil, err
 	}
 	return append(files, httpFiles...), wires, nil
+}
+
+// ParseScaffoldName splits what `g scaffold` accepts, post or admin/posts, into
+// the namespace ("" for none), the controller's resource name (the plural of
+// the last segment) and the model's name. A namespace is part of the model's
+// name, as Rails prefixes it: admin/posts is the model admin_post with the
+// table admin_posts, and its controller is PostsController in the admin
+// namespace.
+func ParseScaffoldName(spec string) (ns, res, model string, err error) {
+	ns, name, err := ParseControllerName(spec)
+	if err != nil {
+		return "", "", "", err
+	}
+	if ns == "" {
+		return "", "", name, nil
+	}
+	return ns, Plural(Singular(name)), ns + "_" + Singular(name), nil
 }
 
 // ScaffoldController writes the HTTP half of a scaffold for a model that
@@ -71,18 +94,17 @@ func Scaffold(module, name string, attrs []Attr, scheme IDScheme, now time.Time,
 // (admin) to mount it under, or "" for the root. The model is never
 // namespaced, only its controller is, so the model and its table are named by
 // name alone.
-func ScaffoldController(module, ns, name string, attrs []Attr, scheme IDScheme, only []string) ([]File, []Wire, error) {
-	s, err := newScaffold(module, ns, name, attrs, scheme, only)
+func ScaffoldController(module, ns, res, name string, attrs []Attr, scheme IDScheme, only []string) ([]File, []Wire, error) {
+	s, err := newScaffold(module, ns, res, name, attrs, scheme, only)
 	if err != nil {
 		return nil, nil, err
 	}
-	table := s.table
 	// Struct fields and tags are aligned by gofmt rather than by hand, since
 	// the attributes decide the widths.
 	sources := []struct{ path, src string }{
 		{s.viewsPath(), s.views()},
-		{s.dir() + table + "_controller.go", s.controller()},
-		{s.dir() + table + "_controller_test.go", s.controllerTest()},
+		{s.dir() + s.res + "_controller.go", s.controller()},
+		{s.dir() + s.res + "_controller_test.go", s.controllerTest()},
 	}
 	var files []File
 	for _, f := range sources {
@@ -95,19 +117,19 @@ func ScaffoldController(module, ns, name string, attrs []Attr, scheme IDScheme, 
 		}
 		files = append(files, File{Path: f.path, Content: string(out)})
 	}
-	c := controller{module: module, ns: ns, name: table}
+	c := controller{module: module, ns: ns, name: s.res}
 	wires := c.wires()
 	if ns == "" {
-		wires[1].Line = fmt.Sprintf("server.%s = controllers.New%s(store, log)", Camel(table), c.typeName())
+		wires[1].Line = fmt.Sprintf("server.%s = controllers.New%s(store, log)", Camel(s.res), c.typeName())
 	} else {
-		wires[1].Line = fmt.Sprintf("server.%s.%s = %s.New%s(store, log)", Camel(ns), Camel(table), c.pkg(), c.typeName())
+		wires[1].Line = fmt.Sprintf("server.%s.%s = %s.New%s(store, log)", Camel(ns), Camel(s.res), c.pkg(), c.typeName())
 	}
 	return files, wires, nil
 }
 
 // newScaffold names what a scaffold of name writes: the actions among only
 // (nil is all five), in the namespace ns ("" for the root).
-func newScaffold(module, ns, name string, attrs []Attr, scheme IDScheme, only []string) (scaffold, error) {
+func newScaffold(module, ns, res, name string, attrs []Attr, scheme IDScheme, only []string) (scaffold, error) {
 	if ns != "" {
 		if err := checkNamespace(ns); err != nil {
 			return scaffold{}, err
@@ -125,7 +147,10 @@ func newScaffold(module, ns, name string, attrs []Attr, scheme IDScheme, only []
 			actions[a] = true
 		}
 	}
-	return scaffold{module: module, ns: ns, name: name, table: Plural(name), attrs: attrs, scheme: scheme, actions: actions}, nil
+	if res == "" {
+		res = Plural(name)
+	}
+	return scaffold{module: module, ns: ns, res: res, name: name, table: Plural(name), attrs: attrs, scheme: scheme, actions: actions}, nil
 }
 
 // ViewsPath is the file of a model's wire shapes, which a namespaced
@@ -134,8 +159,8 @@ func ViewsPath(name string) string { return "app/views/" + Plural(name) + ".go" 
 
 // ScaffoldFiles are the paths Scaffold writes for name, for destroy, which
 // cannot know the attributes it was given. Model's files are included.
-func ScaffoldFiles(module, name string, scheme IDScheme) ([]File, error) {
-	files, _, err := Scaffold(module, name, nil, scheme, time.Time{}, nil)
+func ScaffoldFiles(module, ns, res, name string, scheme IDScheme) ([]File, error) {
+	files, _, err := Scaffold(module, ns, res, name, nil, scheme, time.Time{}, nil)
 	return files, err
 }
 
@@ -212,10 +237,10 @@ func fieldColumn(field string) string {
 }
 
 type scaffold struct {
-	module, ns, name, table string
-	attrs                   []Attr
-	scheme                  IDScheme
-	actions                 map[string]bool // the actions written; never empty
+	module, ns, res, name, table string
+	attrs                        []Attr
+	scheme                       IDScheme
+	actions                      map[string]bool // the actions written; never empty
 }
 
 // has reports whether the action is among those written.
@@ -234,14 +259,14 @@ func (s scaffold) pkg() string { return controller{ns: s.ns}.pkg() }
 func (s scaffold) dir() string { return controller{ns: s.ns}.dir() }
 
 // url is the path the resource answers at: /posts, or /admin/posts.
-func (s scaffold) url() string { return controller{ns: s.ns, name: s.table}.prefix() }
+func (s scaffold) url() string { return controller{ns: s.ns, name: s.res}.prefix() }
 
 // viewsPath is the file of the wire shapes.
 func (s scaffold) viewsPath() string { return ViewsPath(s.name) }
 
 func (s scaffold) typ() string  { return Camel(s.name) }  // Post
 func (s scaffold) many() string { return Camel(s.table) } // Posts
-func (s scaffold) ctl() string  { return s.many() + "Controller" }
+func (s scaffold) ctl() string  { return Camel(s.res) + "Controller" }
 func (s scaffold) storeIface() string {
 	return lowerCamel(s.table) + "Store"
 }
@@ -289,11 +314,11 @@ func (s scaffold) viewTypes() []viewType {
 		var of string
 		switch {
 		case s.has("create") && s.has("update"):
-			of = fmt.Sprintf("POST /%s and PATCH /%s/:id", s.table, s.table)
+			of = fmt.Sprintf("POST /%s and PATCH /%s/:id", s.res, s.res)
 		case s.has("create"):
-			of = "POST /" + s.table
+			of = "POST /" + s.res
 		default:
-			of = fmt.Sprintf("PATCH /%s/:id", s.table)
+			of = fmt.Sprintf("PATCH /%s/:id", s.res)
 		}
 		var b strings.Builder
 		fmt.Fprintf(&b, "// %sRequest is the body of %s.\n", s.typ(), of)
@@ -371,7 +396,7 @@ func MergeViews(existing []byte, module, name string, attrs []Attr, scheme IDSch
 			}
 		}
 	}
-	s, err := newScaffold(module, "", name, attrs, scheme, only)
+	s, err := newScaffold(module, "", "", name, attrs, scheme, only)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -490,13 +515,13 @@ func New%[1]s(store %[3]s, log *slog.Logger) *%[1]s {
 // exposed, is decided by routes.go, which calls this.
 func (ctl *%[1]s) SetupRoutes(router *gin.RouterGroup) {
 	%[2]s := router.Group("/%[2]s")
-`, ctl, s.table, iface)
+`, ctl, s.res, iface)
 	for _, a := range []string{"index", "create", "show", "update", "destroy"} {
 		if !s.has(a) {
 			continue
 		}
 		r := resourceful[a]
-		w("\t%s.%s(%q, ctl.%s)\n", s.table, r.method, r.path, Camel(a))
+		w("\t%s.%s(%q, ctl.%s)\n", s.res, r.method, r.path, Camel(a))
 	}
 	w("}\n\n")
 
@@ -799,7 +824,7 @@ func (s scaffold) controllerTest() string {
 						names[i] = a.Name
 					}
 					w(`
-	Context("when a %[1]s with the same %[2]s exists", func() {
+	Context("when %[1]s with the same %[2]s exists", func() {
 		BeforeEach(func() {
 			body = %[3]sRequest(%[4]s)
 		})
@@ -808,7 +833,7 @@ func (s scaffold) controllerTest() string {
 			app.Post("%[5]s", body).Do().Status(http.StatusUnprocessableEntity)
 		})
 	})
-`, s.name, strings.Join(names, " and "), lowerCamel(s.name), factory, url)
+`, withArticle(s.name), strings.Join(names, " and "), lowerCamel(s.name), factory, url)
 				}
 				w("\n")
 			}
@@ -919,10 +944,10 @@ func (s scaffold) controllerTest() string {
 
 	if hasRefs {
 		w(`
-// The specs that save a %[1]s are left out: it belongs to a parent that has to
+// The specs that save %[1]s are left out: it belongs to a parent that has to
 // be saved first. Make the parent with its factory, set the reference in the
 // "with" function of factories.%[2]s, and add them.
-`, s.name, typ)
+`, withArticle(s.name), typ)
 	} else if len(s.attrs) > 0 && s.has("create") {
 		w("\n// %[1]sRequest is the body that creates a record like this one.\nfunc %[1]sRequest(record models.%[2]s) views.%[2]sRequest {\n\treturn views.%[2]sRequest{", lowerCamel(s.name), typ)
 		for i, a := range s.attrs {

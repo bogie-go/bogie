@@ -111,7 +111,7 @@ docs/                   DESIGN.md (the why), STATUS.md (the state)
 Please don't "fix" these. Each one is a decision recorded in DESIGN.md or STATUS.md:
 
 - The layout by role (`app/controllers`, `db/migrate`) and underscored package names
-  (`admin_controller`). ST1003 is off for that reason, and nothing else is.
+  (`admin_controllers`). ST1003 is off for that reason, and nothing else is.
 - No `spec/` directory. Go tests sit beside the code, stdlib `testing` only.
 - Every generated column is `NOT NULL` with a default, so sqlc emits no pointers.
 - Test never reads a credentials file.

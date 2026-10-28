@@ -1,8 +1,8 @@
-==> app/controllers/admin_controller/server.go
-// Package admin_controller is the admin namespace: the controllers mounted under
+==> app/controllers/admin_controllers/server.go
+// Package admin_controllers is the admin namespace: the controllers mounted under
 // /admin. One file per
 // controller; the group and its shared middleware in routes.go.
-package admin_controller
+package admin_controllers
 
 import (
 	"log/slog"
@@ -22,8 +22,8 @@ type Server struct {
 func NewServer(log *slog.Logger) *Server {
 	return &Server{Log: log}
 }
-==> app/controllers/admin_controller/routes.go
-package admin_controller
+==> app/controllers/admin_controllers/routes.go
+package admin_controllers
 
 import "github.com/gin-gonic/gin"
 
@@ -34,8 +34,8 @@ func (s *Server) SetupRoutes(router *gin.RouterGroup) {
 	admin := router.Group("/admin")
 	// bogie:routes
 }
-==> app/controllers/admin_controller/admin_controller_suite_test.go
-package admin_controller_test
+==> app/controllers/admin_controllers/admin_controllers_suite_test.go
+package admin_controllers_test
 
 import (
 	"testing"
@@ -58,8 +58,8 @@ func TestAdmin(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Admin")
 }
-==> app/controllers/admin_controller/reports_controller.go
-package admin_controller
+==> app/controllers/admin_controllers/reports_controller.go
+package admin_controllers
 
 import (
 	"log/slog"
@@ -114,8 +114,8 @@ func (ctl *ReportsController) Index(c *gin.Context) {
 func (ctl *ReportsController) Show(c *gin.Context) {
 	c.JSON(http.StatusNotImplemented, views.ErrorMessage("reports#show is not implemented yet"))
 }
-==> app/controllers/admin_controller/reports_controller_test.go
-package admin_controller_test
+==> app/controllers/admin_controllers/reports_controller_test.go
+package admin_controllers_test
 
 import (
 	"net/http"

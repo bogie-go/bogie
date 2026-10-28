@@ -94,7 +94,7 @@ func Doctor(out io.Writer) error {
 
 	// Every controller must be constructed in app/application.go and
 	// mounted: a plain one (app/controllers/<name>_controller.go) on the root
-	// Server, a namespace package (app/controllers/<ns>_controller/) on the
+	// Server, a namespace package (app/controllers/<ns>_controllers/) on the
 	// root too, and a controller inside a namespace on that namespace's
 	// Server, in its routes.go. A mount with no construction is a nil
 	// controller whose first request panics; a construction with no mount
@@ -113,7 +113,7 @@ func Doctor(out io.Writer) error {
 		regs = append(regs, registration{"controller " + name, field, "app/controllers/routes.go", field})
 	}
 	for _, d := range namespaceDirs(root) {
-		ns := strings.TrimSuffix(filepath.Base(d), "_controller")
+		ns := strings.TrimSuffix(filepath.Base(d), "_controllers")
 		nsField := camelField(ns)
 		regs = append(regs, registration{"namespace " + ns, nsField, "app/controllers/routes.go", nsField})
 		inner, _ := filepath.Glob(filepath.Join(d, "*_controller.go"))
@@ -143,9 +143,9 @@ func Doctor(out io.Writer) error {
 	return nil
 }
 
-// namespaceDirs are the namespace packages, app/controllers/<ns>_controller/.
+// namespaceDirs are the namespace packages, app/controllers/<ns>_controllers/.
 func namespaceDirs(root string) []string {
-	dirs, _ := filepath.Glob(filepath.Join(root, "app", "controllers", "*_controller"))
+	dirs, _ := filepath.Glob(filepath.Join(root, "app", "controllers", "*_controllers"))
 	return dirs
 }
 

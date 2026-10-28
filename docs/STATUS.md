@@ -38,7 +38,9 @@ Install: `go install github.com/bogie-go/bogie@latest` for the newest tag,
     bogie g scaffold post title:string body:text      the model, app/views/posts.go and a
                                                       PostsController with real handlers over
                                                       the store, registered; no service layer
-                                                      --only index,show writes just those
+                                                      --only index,show writes just those;
+                                                      admin/posts is the model admin_post
+                                                      with its controller in the namespace
     bogie g scaffold_controller admin/categories      the HTTP half over an existing model,
                                                       mounted in a namespace; attributes read
                                                       from app/models; --only too
@@ -131,7 +133,7 @@ pushing; on a clean tree a green run signs off the commit.
   written. A namespace package carries its own `controllers` and `routes`
   markers, nested one level under the root's.
 - A controller is a Go type in one file; a namespace is a Go
-  package (`admin_controller/`). Decided 2026-10-03, DESIGN.md §5; the first
+  package (`admin_controllers/`). Decided 2026-10-03, DESIGN.md §5; the first
   cut had a package per controller, which is not what kchat has.
 - `bin/ci` here is the test of record for templates. A failed run leaves the
   scaffolded app under `/tmp/tmp.*` for a look; a green run removes it.

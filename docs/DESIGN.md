@@ -105,7 +105,7 @@ app/
     public.go                 no-route fallback: a file in public/, else public/404.html (§5)
     welcome.go                the development page at /; gone once a route claims /
     <name>_controller.go      one file per controller: a <Name>Controller type, its routes, its actions
-    <ns>_controller/          one package per namespace: server.go · routes.go · <name>_controller.go …
+    <ns>_controllers/          one package per namespace: server.go · routes.go · <name>_controller.go …
   middlewares/                request id · logging · recover
   services/<name>/            ctx first, knows nothing about HTTP
   views/                      wire contracts; model structs never double as wire structs
@@ -291,7 +291,7 @@ line above each of three markers (`bogie:controllers`, `bogie:wire`,
 checked before any file is written, so a missing one means nothing changed.
 `d controller` removes the files and the lines and prunes imports the removal
 left unused. `doctor` checks each marker appears exactly once and that every
-`*_controller` package is mounted. The tool's `bin/ci` generates a controller
+`*_controllers` package is mounted. The tool's `bin/ci` generates a controller
 and a service into a fresh app, runs that app's pipeline, destroys them, and
 runs it again.
 
@@ -313,7 +313,7 @@ proves common.
 
 **Controllers and namespaces, decided 2026-10-03.** The first cut made every
 controller a Go package (`posts_controller/`, one file per action). That
-is not what kchat has: its `internal_controller` holds conversations, inboxes,
+is not what kchat has: its `internal_controllers` holds conversations, inboxes,
 messages and tags, so the package is the namespace and the file is the
 controller. Bogie now maps those two things to Go's two things, and in
 `g controller` a slash (or `::`) means a namespace:
@@ -329,7 +329,7 @@ controller. Bogie now maps those two things to Go's two things, and in
   for one and says what the file is in a directory that also holds
   `application.go`, `routes.go` and `welcome.go`.
 - **A namespace is a Go package.** `bogie g controller internal/conversations
-  index show` writes `app/controllers/internal_controller/conversations_controller.go`
+  index show` writes `app/controllers/internal_controllers/conversations_controller.go`
   with `type ConversationsController`. If the package does not exist, the
   generator first writes its `server.go` (the namespace `Server`, one named
   field per controller above its own `// bogie:controllers`) and `routes.go`
@@ -339,7 +339,7 @@ controller. Bogie now maps those two things to Go's two things, and in
   the namespace's markers in the content it is about to write.
 - **All construction stays in `app/application.go`.** The namespace `Server`
   is a holder plus routes. The controller's wire line is
-  `server.Internal.Conversations = internal_controller.NewConversationsController(log)`,
+  `server.Internal.Conversations = internal_controllers.NewConversationsController(log)`,
   inserted after the namespace's own `server.Internal = ...`, so a dependency
   is never threaded through a namespace constructor.
 - **The namespace lives for its controllers.** `d controller internal/conversations`
@@ -347,7 +347,7 @@ controller. Bogie now maps those two things to Go's two things, and in
   holding only `server.go` and `routes.go`, it removes those and the root
   registration too, since an empty namespace is an unused group variable
   that does not compile.
-- **The `_controller` suffix stays on namespace packages**, the one place the
+- **The `_controllers` suffix stays on namespace packages**, the one place the
   folder name departs from the namespace name (`admin/`). Considered and
   rejected on 2026-10-03: a plain `admin/` package is imported into
   `app/application.go` beside every service and layout package, so a
@@ -388,6 +388,19 @@ are the model's, shared by every controller over it, so an existing
 controller lacks. `bogie d scaffold_controller` removes the controller and its
 spec, never the model, store or views.
 
+**A namespaced scaffold, and `admin_controllers`, built 2026-10-28.** The
+namespace package is plural, `app/controllers/admin_controllers/`, as every
+other directory is; the singular was an inconsistency. `g scaffold admin/pages`
+follows Rails: the namespace is part of the model's name, so it makes the model
+`admin_page` (`app/models/admin_page.go`, table `admin_pages`, store, views and
+factory all flat), and its controller is `PagesController` in the admin
+package at `/admin/pages`. Only the controller gets a package, because only it
+carries something the namespace owns: the route group and its middleware, which
+a prefix on a file name cannot guard. A model, store or view namespaced by
+folder would only duplicate the type under two names (`admin_models.Page` over
+`sqlc.AdminPage`), so the prefix does that job. For the same model shared with
+the public side, `g scaffold_controller admin/pages` is the command.
+
 **`g authentication`, built 2026-10-03.** It takes a
 shape, because the two reference services
 needed three different things and all of them were a middleware on a route
@@ -415,7 +428,7 @@ boundary and belongs in `routes.go` where it can be read.
 The file rule is one sentence: one file per controller, one package per
 namespace. kchat's `conversations.go` already obeys it; "one file per
 action" is gone. `doctor` checks that every `*Controller` type is constructed
-and mounted, in the root or in its namespace, and that every `*_controller`
+and mounted, in the root or in its namespace, and that every `*_controllers`
 package is.
 
 **`public/` and the no-route chain, decided 2026-10-17.** A web app serves
@@ -784,7 +797,7 @@ Extraction, in order:
   helpers (product-specific), and its `spec/` (§3).
 - **What kchat would gain from the tool**, for when it is regenerated for
   real: the markers and `doctor`, `db seed` through the binary, pinned
-  sqlc, River in place of asynq (§12.2), and the `internal_controller`
+  sqlc, River in place of asynq (§12.2), and the `internal_controllers`
   namespace maps straight onto `g controller internal/...` with one file
   per controller, which its `conversations.go` already is.
    Where they disagree, one of them is wrong.

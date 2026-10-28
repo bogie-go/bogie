@@ -82,6 +82,9 @@ generators() {
   "$b" g scaffold_controller admin/tags || return 1
   "$b" g scaffold_controller admin/sessions --only index,show || return 1
   "$b" g scaffold_controller admin/categories --only create,destroy || return 1
+  # A scaffold in a namespace is a model of its own (admin_page, table
+  # admin_pages), with its controller in the namespace under the short name.
+  "$b" g scaffold admin/pages title:string body:text || return 1
   "$b" g migration add_slug_to_posts slug:string:index || return 1
   "$b" g controller comments index show create update destroy search || return 1
   # A namespace: the first controller writes the package, the second joins it.
@@ -132,6 +135,7 @@ generators() {
   "$b" d scaffold_controller admin/categories || return 1
   "$b" d scaffold_controller admin/sessions || return 1
   "$b" d scaffold_controller admin/tags || return 1
+  "$b" d scaffold admin/pages || return 1
   "$b" d scaffold tag || return 1
   "$b" d scaffold category || return 1
   "$b" d model session || return 1

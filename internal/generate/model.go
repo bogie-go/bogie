@@ -180,10 +180,10 @@ func storeTest(module, name, table string, attrs []Attr, scheme IDScheme) string
 	Describe("Update%[1]s", func() {
 %[4]s	})
 
-	// No round trip here: a %[5]s belongs to a parent that has to be saved
+	// No round trip here: %[5]s belongs to a parent that has to be saved
 	// first. Make the parent with its factory and add the specs, with the
 	// reference set in the factory's "with" function.
-`, typ, getNotFound, deleteNotFound, updateMissing, word)
+`, typ, getNotFound, deleteNotFound, updateMissing, withArticle(word))
 	} else {
 		idExpr := "record.ID"
 		if scheme != IDUUID {
@@ -434,7 +434,7 @@ func domainType(name string, attrs []Attr, scheme IDScheme) string {
 		fmt.Fprintf(&b, "\t%q\n", imp)
 	}
 	b.WriteString(")\n\n")
-	fmt.Fprintf(&b, "// %s is a %s. Imports nothing third-party: ids are %ss here and\n", typ, name, scheme.idDomain())
+	fmt.Fprintf(&b, "// %s is %s. Imports nothing third-party: ids are %ss here and\n", typ, withArticle(name), scheme.idDomain())
 	fmt.Fprintf(&b, "// become %s at the store boundary.\n", scheme)
 	fmt.Fprintf(&b, "type %s struct {\n", typ)
 	width := len("CreatedAt")
@@ -494,7 +494,7 @@ func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 	}
 
 	// Create
-	fmt.Fprintf(&b, "// Create%s validates a %s, inserts it, and returns it with its id and\n", typ, name)
+	fmt.Fprintf(&b, "// Create%s validates %s, inserts it, and returns it with its id and\n", typ, withArticle(name))
 	b.WriteString("// timestamps. Validation runs on save, so every caller\n")
 	b.WriteString("// gets it and none can forget it.\n")
 	fmt.Fprintf(&b, "func (s *Store) Create%s(ctx context.Context, %s models.%s) (models.%s, error) {\n", typ, recv, typ, typ)
@@ -532,7 +532,7 @@ func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 	fmt.Fprintf(&b, "\tout := make([]models.%s, 0, len(rows))\n\tfor _, r := range rows {\n\t\tout = append(out, %sFromRow(r))\n\t}\n\treturn out, nil\n}\n\n", typ, name)
 
 	// Update
-	fmt.Fprintf(&b, "// Update%s validates a %s, writes its columns, and returns the stored row.\n", typ, name)
+	fmt.Fprintf(&b, "// Update%s validates %s, writes its columns, and returns the stored row.\n", typ, withArticle(name))
 	fmt.Fprintf(&b, "func (s *Store) Update%s(ctx context.Context, %s models.%s) (models.%s, error) {\n", typ, recv, typ, typ)
 	fmt.Fprintf(&b, "\tif err := %s.Validate(); err != nil {\n\t\treturn models.%s{}, err\n\t}\n", recv, typ)
 	if scheme == IDUUID {
@@ -560,7 +560,7 @@ func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 	fmt.Fprintf(&b, "\treturn %sFromRow(row), nil\n}\n\n", name)
 
 	// Delete
-	fmt.Fprintf(&b, "// Delete%s removes a %s, and says so if there was none.\n", typ, name)
+	fmt.Fprintf(&b, "// Delete%s removes %s, and says so if there was none.\n", typ, withArticle(name))
 	fmt.Fprintf(&b, "func (s *Store) Delete%s(ctx context.Context, id string) error {\n", typ)
 	fmt.Fprintf(&b, "\tpk, err := %s(id)\n\tif err != nil {\n\t\treturn models.ErrNotFound\n\t}\n", scheme.parseFunc())
 	fmt.Fprintf(&b, "\tn, err := s.q.Delete%s(ctx, pk)\n\tif err != nil {\n\t\tvar pgErr *pgconn.PgError\n\t\tif errors.As(err, &pgErr) && pgErr.Code == \"23503\" {\n\t\t\treturn fmt.Errorf(\"%%w: %s is still in use\", models.ErrInvalid)\n\t\t}\n\t\treturn fmt.Errorf(\"store: delete %s %%s: %%w\", id, err)\n\t}\n", typ, name, name)

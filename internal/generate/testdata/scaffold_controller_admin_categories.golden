@@ -22,8 +22,8 @@ type CategoryResponse struct {
 type CategoriesResponse struct {
 	Categories []CategoryResponse `json:"categories"`
 }
-==> app/controllers/admin_controller/categories_controller.go
-package admin_controller
+==> app/controllers/admin_controllers/categories_controller.go
+package admin_controllers
 
 import (
 	"context"
@@ -181,8 +181,8 @@ func categoriesView(categories []models.Category) views.CategoriesResponse {
 	}
 	return out
 }
-==> app/controllers/admin_controller/categories_controller_test.go
-package admin_controller_test
+==> app/controllers/admin_controllers/categories_controller_test.go
+package admin_controllers_test
 
 import (
 	"fmt"

@@ -220,13 +220,13 @@ func TestControllerInANamespace(t *testing.T) {
 	}
 	golden(t, "controller_admin_reports", append(nsFiles, files...))
 
-	if nsWires[0].Line != "Admin *admin_controller.Server" || nsWires[1].Line != "server.Admin = admin_controller.NewServer(log)" || nsWires[2].Line != "s.Admin.SetupRoutes(&r.RouterGroup)" {
+	if nsWires[0].Line != "Admin *admin_controllers.Server" || nsWires[1].Line != "server.Admin = admin_controllers.NewServer(log)" || nsWires[2].Line != "s.Admin.SetupRoutes(&r.RouterGroup)" {
 		t.Errorf("namespace wires = %+v", nsWires)
 	}
 	want := []Wire{
-		{File: "app/controllers/admin_controller/server.go", Marker: "controllers", Line: "Reports *ReportsController"},
-		{File: "app/application.go", Marker: "wire", Line: "server.Admin.Reports = admin_controller.NewReportsController(log)", Import: "example.com/blog/app/controllers/admin_controller"},
-		{File: "app/controllers/admin_controller/routes.go", Marker: "routes", Line: "s.Reports.SetupRoutes(admin)"},
+		{File: "app/controllers/admin_controllers/server.go", Marker: "controllers", Line: "Reports *ReportsController"},
+		{File: "app/application.go", Marker: "wire", Line: "server.Admin.Reports = admin_controllers.NewReportsController(log)", Import: "example.com/blog/app/controllers/admin_controllers"},
+		{File: "app/controllers/admin_controllers/routes.go", Marker: "routes", Line: "s.Reports.SetupRoutes(admin)"},
 	}
 	for i, w := range want {
 		if wires[i] != w {
@@ -254,7 +254,7 @@ func TestParseControllerName(t *testing.T) {
 	for spec, want := range map[string][2]string{
 		"posts": {"", "posts"}, "Posts": {"", "posts"}, "blog_posts": {"", "blog_posts"},
 		"admin/posts": {"admin", "posts"}, "Admin::Posts": {"admin", "posts"}, "Admin/BlogPosts": {"admin", "blog_posts"},
-		"internal/reports": {"internal", "reports"}, // the package is internal_controller, so Go's internal rule never applies
+		"internal/reports": {"internal", "reports"}, // the package is internal_controllers, so Go's internal rule never applies
 	} {
 		ns, name, err := ParseControllerName(spec)
 		if err != nil || ns != want[0] || name != want[1] {
@@ -299,7 +299,7 @@ func TestControllerWithNoActions(t *testing.T) {
 }
 
 func TestScaffold(t *testing.T) {
-	files, wires, err := Scaffold("example.com/blog", "post", attrs(t, "title:string", "body:text", "score:integer", "published_at:datetime", "author:references"), IDBigint, at, nil)
+	files, wires, err := Scaffold("example.com/blog", "", "", "post", attrs(t, "title:string", "body:text", "score:integer", "published_at:datetime", "author:references"), IDBigint, at, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -308,7 +308,7 @@ func TestScaffold(t *testing.T) {
 		t.Errorf("wires = %+v", wires)
 	}
 	// destroy removes by the same paths, whatever the attributes were
-	paths, err := ScaffoldFiles("example.com/blog", "post", IDBigint)
+	paths, err := ScaffoldFiles("example.com/blog", "", "", "post", IDBigint)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,13 +317,13 @@ func TestScaffold(t *testing.T) {
 			t.Errorf("file %d: %s vs %s", i, files[i].Path, paths[i].Path)
 		}
 	}
-	if _, _, err := Scaffold("m", "posts", nil, IDBigint, at, nil); err == nil {
+	if _, _, err := Scaffold("m", "", "", "posts", nil, IDBigint, at, nil); err == nil {
 		t.Error("plural model name accepted")
 	}
 }
 
 func TestScaffoldWithNoAttributes(t *testing.T) {
-	files, _, err := Scaffold("example.com/blog", "ping", nil, IDBigint, at, nil)
+	files, _, err := Scaffold("example.com/blog", "", "", "ping", nil, IDBigint, at, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -591,7 +591,7 @@ func TestGeneratedParamDoesNotShadow(t *testing.T) {
 			if c.generator == "model" {
 				files, err = Model("example.com/blog", c.name, nil, IDBigint, at)
 			} else {
-				files, _, err = Scaffold("example.com/blog", c.name, nil, IDBigint, at, nil)
+				files, _, err = Scaffold("example.com/blog", "", "", c.name, nil, IDBigint, at, nil)
 			}
 			if err != nil {
 				t.Fatal(err)
@@ -656,7 +656,7 @@ func TestScaffoldOnly(t *testing.T) {
 		{[]string{"destroy"}, []string{"DeleteCategory", "func (ctl *CategoriesController) Destroy"}, []string{"GetCategory", "CreateCategory", "views.CategoryResponse", "categoryView", "categoriesView"}},
 	}
 	for _, c := range cases {
-		files, _, err := ScaffoldController("example.com/blog", "", "category", attrs(t, "name:string"), IDBigint, c.only)
+		files, _, err := ScaffoldController("example.com/blog", "", "", "category", attrs(t, "name:string"), IDBigint, c.only)
 		if err != nil {
 			t.Fatalf("only %v: %v", c.only, err)
 		}
@@ -676,7 +676,7 @@ func TestScaffoldOnly(t *testing.T) {
 		}
 	}
 	// Destroy answers with no body, so there is no views file for it.
-	files, _, _ := ScaffoldController("example.com/blog", "", "category", nil, IDBigint, []string{"destroy"})
+	files, _, _ := ScaffoldController("example.com/blog", "", "", "category", nil, IDBigint, []string{"destroy"})
 	for _, f := range files {
 		if strings.HasPrefix(f.Path, "app/views/") {
 			t.Errorf("destroy alone wrote %s", f.Path)
@@ -685,11 +685,11 @@ func TestScaffoldOnly(t *testing.T) {
 }
 
 func TestScaffoldWithOnlyKeepsTheModelWhole(t *testing.T) {
-	all, _, err := Scaffold("example.com/blog", "tag", attrs(t, "name:string"), IDBigint, at, nil)
+	all, _, err := Scaffold("example.com/blog", "", "", "tag", attrs(t, "name:string"), IDBigint, at, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	some, _, err := Scaffold("example.com/blog", "tag", attrs(t, "name:string"), IDBigint, at, []string{"index"})
+	some, _, err := Scaffold("example.com/blog", "", "", "tag", attrs(t, "name:string"), IDBigint, at, []string{"index"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -704,19 +704,56 @@ func TestScaffoldWithOnlyKeepsTheModelWhole(t *testing.T) {
 }
 
 func TestScaffoldControllerInANamespace(t *testing.T) {
-	files, wires, err := ScaffoldController("example.com/blog", "admin", "category", attrs(t, "name:string"), IDBigint, nil)
+	files, wires, err := ScaffoldController("example.com/blog", "admin", "categories", "category", attrs(t, "name:string"), IDBigint, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	golden(t, "scaffold_controller_admin_categories", files)
-	want := []string{"app/views/categories.go", "app/controllers/admin_controller/categories_controller.go", "app/controllers/admin_controller/categories_controller_test.go"}
+	want := []string{"app/views/categories.go", "app/controllers/admin_controllers/categories_controller.go", "app/controllers/admin_controllers/categories_controller_test.go"}
 	for i, f := range files {
 		if f.Path != want[i] {
 			t.Errorf("file %d = %s, want %s", i, f.Path, want[i])
 		}
 	}
-	if len(wires) != 3 || wires[1].Line != "server.Admin.Categories = admin_controller.NewCategoriesController(store, log)" || wires[2].Line != "s.Categories.SetupRoutes(admin)" {
+	if len(wires) != 3 || wires[1].Line != "server.Admin.Categories = admin_controllers.NewCategoriesController(store, log)" || wires[2].Line != "s.Categories.SetupRoutes(admin)" {
 		t.Errorf("wires = %+v", wires)
+	}
+}
+
+// A namespaced scaffold is a model of its own, named with the namespace as Rails
+// prefixes it (admin_product, table admin_products), whose controller keeps the
+// short name in the namespace's package.
+func TestScaffoldInANamespace(t *testing.T) {
+	ns, res, model, err := ParseScaffoldName("admin/products")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ns != "admin" || res != "products" || model != "admin_product" {
+		t.Fatalf("ParseScaffoldName = %q %q %q", ns, res, model)
+	}
+	files, wires, err := Scaffold("example.com/blog", ns, res, model, attrs(t, "name:string"), IDBigint, at, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden(t, "scaffold_admin_product", files)
+	var paths []string
+	for _, f := range files {
+		paths = append(paths, f.Path)
+	}
+	for _, want := range []string{"app/models/admin_product.go", "db/adapter/admin_products.go", "app/views/admin_products.go", "app/controllers/admin_controllers/products_controller.go", "app/controllers/admin_controllers/products_controller_test.go"} {
+		found := false
+		for _, p := range paths {
+			found = found || p == want
+		}
+		if !found {
+			t.Errorf("no %s among %v", want, paths)
+		}
+	}
+	if len(wires) != 3 || wires[1].Line != "server.Admin.Products = admin_controllers.NewProductsController(store, log)" || wires[2].Line != "s.Products.SetupRoutes(admin)" {
+		t.Errorf("wires = %+v", wires)
+	}
+	if _, _, m, err := ParseScaffoldName("post"); err != nil || m != "post" {
+		t.Errorf("a plain scaffold name keeps its model: %q %v", m, err)
 	}
 }
 

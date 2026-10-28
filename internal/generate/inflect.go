@@ -125,3 +125,14 @@ func paramName(name, taken string) string {
 	// so make it obviously its own thing.
 	return name + "Val"
 }
+
+// withArticle puts "a" or "an" before a name for the comments a generator
+// writes: an admin_product, a post.
+func withArticle(name string) string {
+	// user, uuid and unit begin with a vowel and sound like a "y".
+	yoo := strings.HasPrefix(name, "us") || strings.HasPrefix(name, "uni") || strings.HasPrefix(name, "uu")
+	if strings.ContainsRune("aeiou", rune(name[0])) && !yoo {
+		return "an " + name
+	}
+	return "a " + name
+}

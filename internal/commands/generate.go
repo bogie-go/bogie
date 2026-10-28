@@ -31,13 +31,18 @@ Generators:
                                     singular, the rest plural. --only
                                     index,show writes just those actions,
                                     with their routes, views and specs
-                                    (the model half is written in full)
+                                    (the model half is written in full).
+                                    admin/NAME is a model of its own, as in
+                                    Rails: admin_page, table admin_pages,
+                                    its controller PagesController in the
+                                    admin namespace at /admin/pages
   scaffold_controller [NS/]RESOURCE the HTTP half of a scaffold for a model
                                     that already exists, read from
                                     app/models: admin/categories mounts the
                                     five actions over the category store
-                                    under /admin/categories. Models are
-                                    never namespaced; --only works here too
+                                    under /admin/categories. The model is
+                                    the last segment, not namespaced;
+                                    --only works here too
   controller NAME [action ...]      app/controllers/<name>_controller.go, one
                                     controller in one file, REGISTERED:
                                     a field, a wire line and a mount above
@@ -45,7 +50,7 @@ Generators:
                                     plural: posts answers at
                                     /posts, post at /post. admin/NAME puts it
                                     in the admin namespace, the package
-                                    app/controllers/admin_controller/, made
+                                    app/controllers/admin_controllers/, made
                                     on first use and registered the same way
   service NAME                      app/services/<name>/, ctx first, no HTTP
   job NAME                          app/jobs/<name>.go, a River job, REGISTERED
@@ -196,7 +201,7 @@ func generateIn(root string, args []string, out io.Writer) error {
 		// root lines that register it; after that only the controller's
 		// own lines are inserted.
 		if ns != "" {
-			if _, err := os.Stat(filepath.Join(root, "app", "controllers", ns+"_controller", "server.go")); err != nil {
+			if _, err := os.Stat(filepath.Join(root, "app", "controllers", ns+"_controllers", "server.go")); err != nil {
 				files, wires, err = generate.Namespace(module, ns)
 				if err != nil {
 					return fmt.Errorf("generate controller: %w", err)
@@ -238,14 +243,14 @@ func generateIn(root string, args []string, out io.Writer) error {
 			return fmt.Errorf("generate scaffold_controller: app/models/%s.go: %w", model, err)
 		}
 		if ns != "" {
-			if _, err := os.Stat(filepath.Join(root, "app", "controllers", ns+"_controller", "server.go")); err != nil {
+			if _, err := os.Stat(filepath.Join(root, "app", "controllers", ns+"_controllers", "server.go")); err != nil {
 				files, wires, err = generate.Namespace(module, ns)
 				if err != nil {
 					return fmt.Errorf("generate scaffold_controller: %w", err)
 				}
 			}
 		}
-		ctlFiles, ctlWires, err := generate.ScaffoldController(module, ns, model, modelAttrs, scheme, only)
+		ctlFiles, ctlWires, err := generate.ScaffoldController(module, ns, generate.Plural(model), model, modelAttrs, scheme, only)
 		if err != nil {
 			return fmt.Errorf("generate scaffold_controller: %w", err)
 		}
@@ -367,10 +372,29 @@ func generateIn(root string, args []string, out io.Writer) error {
 			return fmt.Errorf("generate model: %w", err)
 		}
 	case "scaffold":
-		files, wires, err = generate.Scaffold(module, name, attrs, scheme, now, only)
+		// admin/products is a model of its own, as in Rails: admin_product,
+		// table admin_products, with its controller in the admin namespace
+		// under the short name. The existing model's controller is
+		// scaffold_controller.
+		ns, res, model, err := generate.ParseScaffoldName(positional[0])
 		if err != nil {
 			return fmt.Errorf("generate scaffold: %w", err)
 		}
+		if ns != "" {
+			name = model
+			if _, err := os.Stat(filepath.Join(root, "app", "controllers", ns+"_controllers", "server.go")); err != nil {
+				files, wires, err = generate.Namespace(module, ns)
+				if err != nil {
+					return fmt.Errorf("generate scaffold: %w", err)
+				}
+			}
+			defer say("%12s  model %s is %s.go, table %s; its controller is %s/%s, at /%s/%s\n", "note", model, model, generate.Plural(model), ns+"_controllers", res, ns, res)
+		}
+		scaffoldFiles, scaffoldWires, err := generate.Scaffold(module, ns, res, name, attrs, scheme, now, only)
+		if err != nil {
+			return fmt.Errorf("generate scaffold: %w", err)
+		}
+		files, wires = append(files, scaffoldFiles...), append(wires, scaffoldWires...)
 	}
 
 	toWrite := make([]scaffold.File, len(files))

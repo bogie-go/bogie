@@ -39,7 +39,7 @@ import (
 	"time"
 )
 
-// ApiKey is a api_key. Imports nothing third-party: ids are int64s here and
+// ApiKey is an api_key. Imports nothing third-party: ids are int64s here and
 // become bigint at the store boundary.
 type ApiKey struct {
 	ID        int64
@@ -117,7 +117,7 @@ import (
 // Written by `bogie g model`: overwritten whole on the next run. A
 // hand-written addition goes in api_keys_extra.go, not here.
 
-// CreateApiKey validates a api_key, inserts it, and returns it with its id and
+// CreateApiKey validates an api_key, inserts it, and returns it with its id and
 // timestamps. Validation runs on save, so every caller
 // gets it and none can forget it.
 func (s *Store) CreateApiKey(ctx context.Context, a models.ApiKey) (models.ApiKey, error) {
@@ -164,7 +164,7 @@ func (s *Store) ListApiKeys(ctx context.Context, limit int32) ([]models.ApiKey, 
 	return out, nil
 }
 
-// UpdateApiKey validates a api_key, writes its columns, and returns the stored row.
+// UpdateApiKey validates an api_key, writes its columns, and returns the stored row.
 func (s *Store) UpdateApiKey(ctx context.Context, a models.ApiKey) (models.ApiKey, error) {
 	if err := a.Validate(); err != nil {
 		return models.ApiKey{}, err
@@ -183,7 +183,7 @@ func (s *Store) UpdateApiKey(ctx context.Context, a models.ApiKey) (models.ApiKe
 	return api_keyFromRow(row), nil
 }
 
-// DeleteApiKey removes a api_key, and says so if there was none.
+// DeleteApiKey removes an api_key, and says so if there was none.
 func (s *Store) DeleteApiKey(ctx context.Context, id string) error {
 	pk, err := parseID(id)
 	if err != nil {

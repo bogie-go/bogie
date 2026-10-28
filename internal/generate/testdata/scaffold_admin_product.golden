@@ -1,0 +1,675 @@
+==> db/migrate/20261002093000_create_admin_products.sql
+-- +goose Up
+CREATE TABLE admin_products (
+    id         bigserial   PRIMARY KEY,
+    name       varchar     NOT NULL DEFAULT '',
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- +goose Down
+DROP TABLE admin_products;
+==> db/queries/admin_products.sql
+-- Written by `bogie g model`: overwritten whole on the next run. A
+-- hand-written query goes in admin_products_extra.sql, not here.
+
+-- name: GetAdminProduct :one
+SELECT * FROM admin_products WHERE id = $1;
+
+-- name: ListAdminProducts :many
+SELECT * FROM admin_products ORDER BY created_at DESC, id DESC LIMIT $1;
+
+-- name: CreateAdminProduct :one
+INSERT INTO admin_products (name) VALUES ($1) RETURNING *;
+
+-- name: UpdateAdminProduct :one
+UPDATE admin_products SET name = $2, updated_at = now() WHERE id = $1 RETURNING *;
+
+-- name: DeleteAdminProduct :execrows
+DELETE FROM admin_products WHERE id = $1;
+==> app/models/admin_product.go
+package models
+
+import (
+	"time"
+)
+
+// AdminProduct is an admin_product. Imports nothing third-party: ids are int64s here and
+// become bigint at the store boundary.
+type AdminProduct struct {
+	ID        int64
+	Name      string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// Validate is the model's validations. Wrap every
+// failure in ErrInvalid so a controller can answer 422 without knowing the
+// rule:
+//
+//	return fmt.Errorf("%w: title is required", ErrInvalid)
+func (a AdminProduct) Validate() error {
+	return nil
+}
+==> app/models/admin_product_test.go
+package models_test
+
+import (
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"example.com/blog/app/models"
+	"example.com/blog/test/factories"
+)
+
+var _ = Describe("AdminProduct.Validate", func() {
+	var adminProduct models.AdminProduct
+
+	BeforeEach(func() {
+		adminProduct = factories.NewAdminProduct()
+	})
+
+	Context("with the factory's defaults", func() {
+		It("is valid", func() {
+			Expect(adminProduct.Validate()).To(Succeed())
+		})
+	})
+
+	// Add a Context for each rule you put in Validate, for example a
+	// required name:
+	//
+	//	Context("with a blank name", func() {
+	//		BeforeEach(func() {
+	//			adminProduct.Name = ""
+	//		})
+	//
+	//		It("is refused", func() {
+	//			Expect(adminProduct.Validate()).To(MatchError(models.ErrInvalid))
+	//		})
+	//	})
+})
+==> db/adapter/admin_products.go
+package adapter
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+
+	"example.com/blog/app/models"
+	"example.com/blog/db/sqlc"
+)
+
+// AdminProducts, as the models see them. Each method converts models.AdminProduct to and from
+// the row type sqlc generated, and maps pgx's "no rows" to models.ErrNotFound
+// so callers never import pgx to ask a question.
+//
+// Written by `bogie g model`: overwritten whole on the next run. A
+// hand-written addition goes in admin_products_extra.go, not here.
+
+// CreateAdminProduct validates an admin_product, inserts it, and returns it with its id and
+// timestamps. Validation runs on save, so every caller
+// gets it and none can forget it.
+func (s *Store) CreateAdminProduct(ctx context.Context, a models.AdminProduct) (models.AdminProduct, error) {
+	if err := a.Validate(); err != nil {
+		return models.AdminProduct{}, err
+	}
+	row, err := s.q.CreateAdminProduct(ctx, a.Name)
+	if err != nil {
+		return models.AdminProduct{}, fmt.Errorf("store: create admin_product: %w", err)
+	}
+	return admin_productFromRow(row), nil
+}
+
+// GetAdminProduct finds one admin_product. An id that is not a valid id is simply not found.
+func (s *Store) GetAdminProduct(ctx context.Context, id string) (models.AdminProduct, error) {
+	pk, err := parseID(id)
+	if err != nil {
+		return models.AdminProduct{}, models.ErrNotFound
+	}
+	row, err := s.q.GetAdminProduct(ctx, pk)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return models.AdminProduct{}, models.ErrNotFound
+	case err != nil:
+		return models.AdminProduct{}, fmt.Errorf("store: get admin_product %s: %w", id, err)
+	}
+	return admin_productFromRow(row), nil
+}
+
+// ListAdminProducts returns the newest admin_products first, at most limit of them.
+func (s *Store) ListAdminProducts(ctx context.Context, limit int32) ([]models.AdminProduct, error) {
+	rows, err := s.q.ListAdminProducts(ctx, limit)
+	if err != nil {
+		return nil, fmt.Errorf("store: list admin_products: %w", err)
+	}
+	out := make([]models.AdminProduct, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, admin_productFromRow(r))
+	}
+	return out, nil
+}
+
+// UpdateAdminProduct validates an admin_product, writes its columns, and returns the stored row.
+func (s *Store) UpdateAdminProduct(ctx context.Context, a models.AdminProduct) (models.AdminProduct, error) {
+	if err := a.Validate(); err != nil {
+		return models.AdminProduct{}, err
+	}
+	pk := a.ID
+	row, err := s.q.UpdateAdminProduct(ctx, sqlc.UpdateAdminProductParams{ID: pk, Name: a.Name})
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return models.AdminProduct{}, models.ErrNotFound
+	case err != nil:
+		return models.AdminProduct{}, fmt.Errorf("store: update admin_product %v: %w", a.ID, err)
+	}
+	return admin_productFromRow(row), nil
+}
+
+// DeleteAdminProduct removes an admin_product, and says so if there was none.
+func (s *Store) DeleteAdminProduct(ctx context.Context, id string) error {
+	pk, err := parseID(id)
+	if err != nil {
+		return models.ErrNotFound
+	}
+	n, err := s.q.DeleteAdminProduct(ctx, pk)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			return fmt.Errorf("%w: admin_product is still in use", models.ErrInvalid)
+		}
+		return fmt.Errorf("store: delete admin_product %s: %w", id, err)
+	}
+	if n == 0 {
+		return models.ErrNotFound
+	}
+	return nil
+}
+
+func admin_productFromRow(r sqlc.AdminProduct) models.AdminProduct {
+	return models.AdminProduct{
+		ID:        r.ID,
+		Name:      r.Name,
+		CreatedAt: r.CreatedAt.Time,
+		UpdatedAt: r.UpdatedAt.Time,
+	}
+}
+==> db/adapter/admin_products_test.go
+package adapter_test
+
+import (
+	"strconv"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"example.com/blog/app/models"
+	"example.com/blog/test/factories"
+)
+
+var _ = Describe("AdminProducts", func() {
+	Describe("GetAdminProduct", func() {
+		DescribeTable("returns ErrNotFound",
+			func(id string) {
+				_, err := store.GetAdminProduct(GinkgoT().Context(), id)
+				Expect(err).To(MatchError(models.ErrNotFound))
+			},
+			Entry("when the id is not a number", "nope"),
+			Entry("when the id is empty", ""),
+			Entry("when no admin product has that id", "999999999"),
+		)
+
+		Context("with a saved admin product", func() {
+			var record models.AdminProduct
+
+			BeforeEach(func() {
+				record = factories.AdminProduct(GinkgoT(), store)
+			})
+
+			It("finds the admin product by id", func() {
+				Expect(store.GetAdminProduct(GinkgoT().Context(), strconv.FormatInt(record.ID, 10))).To(Equal(record))
+			})
+		})
+	})
+
+	Describe("ListAdminProducts", func() {
+		Context("with a saved admin product", func() {
+			var record models.AdminProduct
+
+			BeforeEach(func() {
+				record = factories.AdminProduct(GinkgoT(), store)
+			})
+
+			It("includes the saved admin product", func() {
+				all, err := store.ListAdminProducts(GinkgoT().Context(), 10)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(all).To(HaveLen(1))
+				Expect(all[0].ID).To(Equal(record.ID))
+			})
+		})
+	})
+
+	Describe("UpdateAdminProduct", func() {
+		Context("with a saved admin product", func() {
+			var record models.AdminProduct
+
+			BeforeEach(func() {
+				record = factories.AdminProduct(GinkgoT(), store)
+			})
+
+			It("stores the change", func() {
+				record.Name = "Edited"
+				updated, err := store.UpdateAdminProduct(GinkgoT().Context(), record)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(updated.ID).To(Equal(record.ID))
+				Expect(updated.Name).To(BeEquivalentTo("Edited"))
+			})
+		})
+
+		Context("when the admin product is not there", func() {
+			var missing models.AdminProduct
+
+			BeforeEach(func() {
+				missing = factories.NewAdminProduct()
+				missing.ID = 999999999
+			})
+
+			It("is not found", func() {
+				_, err := store.UpdateAdminProduct(GinkgoT().Context(), missing)
+				Expect(err).To(MatchError(models.ErrNotFound))
+			})
+		})
+	})
+
+	Describe("DeleteAdminProduct", func() {
+		DescribeTable("returns ErrNotFound",
+			func(id string) {
+				Expect(store.DeleteAdminProduct(GinkgoT().Context(), id)).To(MatchError(models.ErrNotFound))
+			},
+			Entry("when the id is not a number", "nope"),
+			Entry("when the id is empty", ""),
+			Entry("when no admin product has that id", "999999999"),
+		)
+
+		Context("with a saved admin product", func() {
+			var record models.AdminProduct
+
+			BeforeEach(func() {
+				record = factories.AdminProduct(GinkgoT(), store)
+			})
+
+			It("removes the admin product", func() {
+				id := strconv.FormatInt(record.ID, 10)
+				Expect(store.DeleteAdminProduct(GinkgoT().Context(), id)).To(Succeed())
+				_, err := store.GetAdminProduct(GinkgoT().Context(), id)
+				Expect(err).To(MatchError(models.ErrNotFound))
+			})
+		})
+	})
+})
+==> test/factories/admin_products.go
+package factories
+
+import (
+	"context"
+
+	"example.com/blog/app/models"
+	"example.com/blog/db/adapter"
+)
+
+// NewAdminProduct is a valid admin_product that is not saved: every attribute has a default,
+// and "with" overrides what the spec cares about.
+//
+// Written once by `bogie g model` and yours to edit: add an attribute's
+// default here when you add the column. Running the generator again leaves a
+// changed file alone unless --force.
+func NewAdminProduct(with ...func(*models.AdminProduct)) models.AdminProduct {
+	record := models.AdminProduct{
+		Name: Sequence("name "),
+	}
+	for _, f := range with {
+		f(&record)
+	}
+	return record
+}
+
+// AdminProduct saves a NewAdminProduct through the real store and fails the spec if it
+// cannot, so a spec reads as its arrangement and nothing else.
+func AdminProduct(t T, s *adapter.Store, with ...func(*models.AdminProduct)) models.AdminProduct {
+	t.Helper()
+	created, err := s.CreateAdminProduct(context.Background(), NewAdminProduct(with...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return created
+}
+==> app/views/admin_products.go
+package views
+
+import (
+	"time"
+)
+
+// AdminProductRequest is the body of POST /products and PATCH /products/:id.
+type AdminProductRequest struct {
+	Name string `json:"name"`
+}
+
+// AdminProductResponse is one admin_product on the wire.
+type AdminProductResponse struct {
+	ID        int64     `json:"id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// AdminProductsResponse is a listing.
+type AdminProductsResponse struct {
+	AdminProducts []AdminProductResponse `json:"admin_products"`
+}
+==> app/controllers/admin_controllers/products_controller.go
+package admin_controllers
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+
+	"example.com/blog/app/models"
+	"example.com/blog/app/views"
+)
+
+// adminProductsStore is the slice of the store this controller uses, declared next to
+// its caller and holding only the methods the actions call.
+// *adapter.Store satisfies it, and app/application.go passes it in.
+type adminProductsStore interface {
+	CreateAdminProduct(ctx context.Context, a models.AdminProduct) (models.AdminProduct, error)
+	GetAdminProduct(ctx context.Context, id string) (models.AdminProduct, error)
+	ListAdminProducts(ctx context.Context, limit int32) ([]models.AdminProduct, error)
+	UpdateAdminProduct(ctx context.Context, a models.AdminProduct) (models.AdminProduct, error)
+	DeleteAdminProduct(ctx context.Context, id string) error
+}
+
+// adminProductsListLimit is how many a listing returns, newest first. Paging is
+// yours to add when a client needs more.
+const adminProductsListLimit = 100
+
+// ProductsController is the HTTP surface of products: a JSON resource over the store. A
+// handler converts HTTP into domain values, calls one store method, and
+// converts the result back. Validation is the domain's and runs on save,
+// which is why a bad value is a 422 from the store and not a binding rule
+// here. Nothing below app/controllers sees *gin.Context.
+type ProductsController struct {
+	Store adminProductsStore
+	Log   *slog.Logger
+}
+
+// NewProductsController builds the controller.
+func NewProductsController(store adminProductsStore, log *slog.Logger) *ProductsController {
+	return &ProductsController{Store: store, Log: log}
+}
+
+// SetupRoutes mounts the resource under its own prefix. Middleware the whole
+// controller needs goes here; which group it sits in, and so how it is
+// exposed, is decided by routes.go, which calls this.
+func (ctl *ProductsController) SetupRoutes(router *gin.RouterGroup) {
+	products := router.Group("/products")
+	products.GET("", ctl.Index)
+	products.POST("", ctl.Create)
+	products.GET("/:id", ctl.Show)
+	products.PATCH("/:id", ctl.Update)
+	products.DELETE("/:id", ctl.Destroy)
+}
+
+// Index handles GET /admin/products.
+func (ctl *ProductsController) Index(c *gin.Context) {
+	admin_products, err := ctl.Store.ListAdminProducts(c.Request.Context(), adminProductsListLimit)
+	if err != nil {
+		ctl.fail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, adminProductsView(admin_products))
+}
+
+// Show handles GET /admin/products/:id.
+func (ctl *ProductsController) Show(c *gin.Context) {
+	a, err := ctl.Store.GetAdminProduct(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		ctl.fail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, adminProductView(a))
+}
+
+// Create handles POST /admin/products.
+func (ctl *ProductsController) Create(c *gin.Context) {
+	var req views.AdminProductRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, views.Error(err))
+		return
+	}
+	a, err := ctl.Store.CreateAdminProduct(c.Request.Context(), models.AdminProduct{Name: req.Name})
+	if err != nil {
+		ctl.fail(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, adminProductView(a))
+}
+
+// Update handles PATCH /admin/products/:id. Only the fields in the body change: the admin_product is loaded,
+// the body is decoded over its current values,
+// so a key left out keeps its value, and the result is saved and validated
+// whole.
+func (ctl *ProductsController) Update(c *gin.Context) {
+	a, err := ctl.Store.GetAdminProduct(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		ctl.fail(c, err)
+		return
+	}
+	req := views.AdminProductRequest{Name: a.Name}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, views.Error(err))
+		return
+	}
+	a, err = ctl.Store.UpdateAdminProduct(c.Request.Context(), models.AdminProduct{ID: a.ID, Name: req.Name})
+	if err != nil {
+		ctl.fail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, adminProductView(a))
+}
+
+// Destroy handles DELETE /admin/products/:id.
+func (ctl *ProductsController) Destroy(c *gin.Context) {
+	if err := ctl.Store.DeleteAdminProduct(c.Request.Context(), c.Param("id")); err != nil {
+		ctl.fail(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// fail maps a domain error to a status, the one place that mapping lives:
+// not found is 404, a validation failure is 422, and anything
+// else is logged and answered 500 without leaking its text.
+func (ctl *ProductsController) fail(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, models.ErrNotFound):
+		c.JSON(http.StatusNotFound, views.ErrorMessage("no such admin_product"))
+	case errors.Is(err, models.ErrInvalid):
+		c.JSON(http.StatusUnprocessableEntity, views.Error(err))
+	default:
+		ctl.Log.ErrorContext(c.Request.Context(), "admin_products: request failed",
+			"path", c.FullPath(), "err", err, "request_id", c.GetString("request_id"))
+		c.JSON(http.StatusInternalServerError, views.ErrorMessage("internal error"))
+	}
+}
+
+// The controller converts between the domain and the wire. views never
+// imports domain, so this is where AdminProductResponse is built.
+
+func adminProductView(a models.AdminProduct) views.AdminProductResponse {
+	return views.AdminProductResponse{
+		ID:        a.ID,
+		Name:      a.Name,
+		CreatedAt: a.CreatedAt,
+		UpdatedAt: a.UpdatedAt,
+	}
+}
+
+func adminProductsView(admin_products []models.AdminProduct) views.AdminProductsResponse {
+	out := views.AdminProductsResponse{AdminProducts: make([]views.AdminProductResponse, 0, len(admin_products))}
+	for _, a := range admin_products {
+		out.AdminProducts = append(out.AdminProducts, adminProductView(a))
+	}
+	return out
+}
+==> app/controllers/admin_controllers/products_controller_test.go
+package admin_controllers_test
+
+import (
+	"fmt"
+	"net/http"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"example.com/blog/app/models"
+	"example.com/blog/app/views"
+	"example.com/blog/test/factories"
+)
+
+var _ = Describe("GET /admin/products", func() {
+	Context("with no admin_products", func() {
+		It("is an empty list", func() {
+			app.Get("/admin/products").Do().Status(http.StatusOK).Contains("\"admin_products\":[]")
+		})
+	})
+
+	Context("with admin_products", func() {
+		var first, second models.AdminProduct
+
+		BeforeEach(func() {
+			first = factories.AdminProduct(GinkgoT(), app.Store)
+			second = factories.AdminProduct(GinkgoT(), app.Store)
+		})
+
+		It("lists them, newest first", func() {
+			var list views.AdminProductsResponse
+			app.Get("/admin/products").Do().Status(http.StatusOK).JSON(&list)
+
+			Expect(list.AdminProducts).To(HaveLen(2))
+			Expect(list.AdminProducts[0].ID).To(Equal(second.ID))
+			Expect(list.AdminProducts[1].ID).To(Equal(first.ID))
+		})
+	})
+})
+
+var _ = Describe("GET /admin/products/:id", func() {
+	Context("when the admin_product exists", func() {
+		var record models.AdminProduct
+
+		BeforeEach(func() {
+			record = factories.AdminProduct(GinkgoT(), app.Store)
+		})
+
+		It("shows it", func() {
+			var shown views.AdminProductResponse
+			app.Get("/admin/products/" + fmt.Sprint(record.ID)).Do().Status(http.StatusOK).JSON(&shown)
+
+			Expect(shown.ID).To(Equal(record.ID))
+		})
+	})
+
+	Context("when the admin_product does not exist", func() {
+		It("is not found", func() {
+			app.Get("/admin/products/999999999").Do().Status(http.StatusNotFound)
+		})
+	})
+})
+
+var _ = Describe("POST /admin/products", func() {
+	var body views.AdminProductRequest
+
+	Context("with a valid body", func() {
+		BeforeEach(func() {
+			body = adminProductRequest(factories.NewAdminProduct())
+		})
+
+		It("creates it", func() {
+			var created views.AdminProductResponse
+			app.Post("/admin/products", body).Do().Status(http.StatusCreated).JSON(&created)
+
+			Expect(created.ID).NotTo(BeZero())
+			_, err := app.Store.GetAdminProduct(GinkgoT().Context(), fmt.Sprint(created.ID))
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
+	Context("with a malformed body", func() {
+		It("is a bad request", func() {
+			app.Post("/admin/products", "{\"nope\":").Do().Status(http.StatusBadRequest)
+		})
+	})
+})
+
+var _ = Describe("PATCH /admin/products/:id", func() {
+	Context("when the admin_product exists", func() {
+		var record models.AdminProduct
+
+		BeforeEach(func() {
+			record = factories.AdminProduct(GinkgoT(), app.Store)
+		})
+
+		It("changes only the fields sent", func() {
+			var updated views.AdminProductResponse
+			app.Patch("/admin/products/"+fmt.Sprint(record.ID), map[string]any{"name": "Edited"}).Do().Status(http.StatusOK).JSON(&updated)
+
+			Expect(updated.Name).To(BeEquivalentTo("Edited"))
+		})
+
+		Context("with a malformed body", func() {
+			It("is a bad request", func() {
+				app.Patch("/admin/products/"+fmt.Sprint(record.ID), "{\"nope\":").Do().Status(http.StatusBadRequest)
+			})
+		})
+	})
+
+	Context("when the admin_product does not exist", func() {
+		It("is not found", func() {
+			app.Patch("/admin/products/999999999", map[string]any{}).Do().Status(http.StatusNotFound)
+		})
+	})
+})
+
+var _ = Describe("DELETE /admin/products/:id", func() {
+	Context("when the admin_product exists", func() {
+		var record models.AdminProduct
+
+		BeforeEach(func() {
+			record = factories.AdminProduct(GinkgoT(), app.Store)
+		})
+
+		It("deletes it", func() {
+			app.Delete("/admin/products/" + fmt.Sprint(record.ID)).Do().Status(http.StatusNoContent)
+
+			app.Get("/admin/products/" + fmt.Sprint(record.ID)).Do().Status(http.StatusNotFound)
+		})
+	})
+
+	Context("when the admin_product does not exist", func() {
+		It("is not found", func() {
+			app.Delete("/admin/products/999999999").Do().Status(http.StatusNotFound)
+		})
+	})
+})
+
+// adminProductRequest is the body that creates a record like this one.
+func adminProductRequest(record models.AdminProduct) views.AdminProductRequest {
+	return views.AdminProductRequest{Name: record.Name}
+}

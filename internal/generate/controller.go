@@ -58,7 +58,7 @@ func ParseControllerName(spec string) (ns, name string, err error) {
 // type holding its dependencies, SetupRoutes, one method per action, and a
 // test that every route is mounted. With no namespace it goes in the
 // controllers package as app/controllers/<name>_controller.go; with one, in
-// app/controllers/<ns>_controller/<name>_controller.go, the package Namespace
+// app/controllers/<ns>_controllers/<name>_controller.go, the package Namespace
 // writes. Either way it returns the three lines that register it
 // (docs/DESIGN.md §5).
 func Controller(module, ns, name string, actions []string) ([]File, []Wire, error) {
@@ -100,7 +100,7 @@ func checkNamespace(ns string) error {
 }
 
 // Namespace writes the package a namespaced controller lives in:
-// app/controllers/<ns>_controller/ (the namespace admin, with the
+// app/controllers/<ns>_controllers/ (the namespace admin, with the
 // suffix Go needs so that admin never collides with another import in
 // app/application.go, and internal is not Go's internal) with server.go
 // (the namespace Server, one named field per controller above its own
@@ -111,7 +111,7 @@ func Namespace(module, ns string) ([]File, []Wire, error) {
 	if err := checkNamespace(ns); err != nil {
 		return nil, nil, err
 	}
-	pkg := ns + "_controller"
+	pkg := ns + "_controllers"
 	dir := "app/controllers/" + pkg + "/"
 	field := Camel(ns)
 	importPath := module + "/app/controllers/" + pkg
@@ -153,7 +153,7 @@ func WirePrefixes(ns, name string) []Wire {
 func NamespaceWirePrefixes(ns string) []Wire {
 	field := Camel(ns)
 	return []Wire{
-		{File: "app/controllers/application.go", Line: field + " *" + ns + "_controller.Server"},
+		{File: "app/controllers/application.go", Line: field + " *" + ns + "_controllers.Server"},
 		{File: "app/application.go", Line: "server." + field + " ="},
 		{File: "app/controllers/routes.go", Line: "s." + field + ".SetupRoutes("},
 	}
@@ -186,14 +186,14 @@ func (c controller) pkg() string {
 	if c.ns == "" {
 		return "controllers"
 	}
-	return c.ns + "_controller"
+	return c.ns + "_controllers"
 }
 
 func (c controller) dir() string {
 	if c.ns == "" {
 		return "app/controllers/"
 	}
-	return "app/controllers/" + c.ns + "_controller/"
+	return "app/controllers/" + c.ns + "_controllers/"
 }
 
 func (c controller) typeName() string { return Camel(c.name) + "Controller" }
@@ -330,7 +330,7 @@ func (c controller) test() string {
 // namespaceSuite is the Ginkgo suite of a namespace's package: the app every
 // spec in it uses, rebuilt before each, as the controllers package has.
 func namespaceSuite(module, ns string) string {
-	return fmt.Sprintf(`package %[1]s_controller_test
+	return fmt.Sprintf(`package %[1]s_controllers_test
 
 import (
 	"testing"
@@ -359,7 +359,7 @@ func Test%[2]s(t *testing.T) {
 // NamespaceSuitePath is the suite file of a namespace's package, which
 // Namespace writes and destroy removes with the last controller in it.
 func NamespaceSuitePath(ns string) string {
-	return "app/controllers/" + ns + "_controller/" + ns + "_controller_suite_test.go"
+	return "app/controllers/" + ns + "_controllers/" + ns + "_controllers_suite_test.go"
 }
 
 func namespaceServer(pkg, ns string) string {
