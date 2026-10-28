@@ -1,7 +1,7 @@
 # Status
 
 Where Bogie stands, for whoever picks it up next, on whatever machine. Updated
-2026-10-27, at v0.5.2. `docs/DESIGN.md` is the design and the
+2026-10-28, at v0.5.2. `docs/DESIGN.md` is the design and the
 reasoning; this file is the state.
 
 ## Milestones
