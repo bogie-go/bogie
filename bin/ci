@@ -75,6 +75,13 @@ generators() {
   # not compile. Only building the generated code catches that.
   "$b" g model session body:text post:references score:integer published_at:datetime meta:jsonb || return 1
   "$b" g scaffold category name:string || return 1
+  # Only some actions; then the HTTP half over an existing model, in a
+  # namespace, read back from the model (session has every attribute type),
+  # one of them completing the views a --only scaffold left short.
+  "$b" g scaffold tag name:string:uniq --only index,show || return 1
+  "$b" g scaffold_controller admin/tags || return 1
+  "$b" g scaffold_controller admin/sessions --only index,show || return 1
+  "$b" g scaffold_controller admin/categories --only create,destroy || return 1
   "$b" g migration add_slug_to_posts slug:string:index || return 1
   "$b" g controller comments index show create update destroy search || return 1
   # A namespace: the first controller writes the package, the second joins it.
@@ -122,6 +129,10 @@ generators() {
   "$b" d controller admin/audits || return 1
   "$b" d service publish_post || return 1
   "$b" d migration add_slug_to_posts || return 1
+  "$b" d scaffold_controller admin/categories || return 1
+  "$b" d scaffold_controller admin/sessions || return 1
+  "$b" d scaffold_controller admin/tags || return 1
+  "$b" d scaffold tag || return 1
   "$b" d scaffold category || return 1
   "$b" d model session || return 1
   "$b" d scaffold post || return 1

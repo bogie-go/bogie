@@ -373,6 +373,21 @@ service is for logic that is not CRUD, and `g service` is there when a
 resource outgrows the store. One level: no namespace in v1, and a scaffold
 over an existing model is reported as a conflict rather than merged.
 
+**`--only` and `g scaffold_controller`, built 2026-10-28.** A scaffold takes
+`--only index,show` to write just those actions: their routes, handlers,
+store methods, wire shapes and request specs, and nothing another action
+would need. The name follows Rails routes' `only:`. The model half is
+written in full either way. `g scaffold_controller [NS/]RESOURCE` is the HTTP
+half alone, for a model that already exists: the model is the last segment,
+singular (`admin/categories` is the category model's controller), and its
+attributes are read back from `app/models/<name>.go`, since a model is never
+namespaced and the migration is no longer the source of truth once it is
+edited. Types `g model` does not write are refused by name. The wire shapes
+are the model's, shared by every controller over it, so an existing
+`app/views/<table>.go` is kept as it is and only gains the types the new
+controller lacks. `bogie d scaffold_controller` removes the controller and its
+spec, never the model, store or views.
+
 **`g authentication`, built 2026-10-03.** It takes a
 shape, because the two reference services
 needed three different things and all of them were a middleware on a route

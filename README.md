@@ -145,7 +145,8 @@ One command surface, spelled the same everywhere:
 | --- | --- |
 | `bogie new blog` | an empty API service (`--jobs` adds River, `--id=uuid` swaps the default bigint id scheme for uuid) |
 | `bogie g model post title:string` | migration, queries, model type, store, then sqlc |
-| `bogie g scaffold post …` | the model, JSON views and a wired controller |
+| `bogie g scaffold post …` | the model, JSON views and a wired controller; `--only index,show` writes just those actions |
+| `bogie g scaffold_controller admin/categories` | the HTTP half over a model that already exists, mounted under a namespace; the attributes are read from the model |
 | `bogie g controller posts index show` | a controller, registered as it is written |
 | `bogie g controller admin/reports` | a namespace is a package |
 | `bogie g job send_welcome` | a River worker on the same Postgres |

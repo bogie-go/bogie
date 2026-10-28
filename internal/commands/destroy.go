@@ -21,12 +21,14 @@ controller the three lines that registered it. For a config group, its file
 and its lines in config/config.go; the group's lines in the development
 credentials stay, harmless. A namespaced controller's
 package goes too once it holds no controller, with the three lines that
-registered the namespace. Nothing else is touched; a file you added to a
+registered the namespace. A scaffold_controller leaves the model, its store
+and its views, which other controllers may use. Nothing else is touched; a file you added to a
 package by hand stays.
 
   bogie d scaffold post
   bogie d controller comments
   bogie d controller admin/reports
+  bogie d scaffold_controller admin/categories
   bogie d service publish_post
   bogie d job send_welcome
   bogie d seed demo_posts
@@ -103,10 +105,15 @@ func destroyIn(root string, args []string, out io.Writer) error {
 	var wires []generate.Wire
 	runSqlc := false
 	switch generator {
-	case "controller":
-		// The same two files whatever actions generate was given.
+	case "controller", "scaffold_controller":
+		// The same two files whatever actions generate was given. A scaffold
+		// controller is a controller named for its model's table, and leaves
+		// the model, its store and its views, which other controllers use.
 		var ns, ctl string
 		ns, ctl, err = generate.ParseControllerName(positional[0])
+		if err == nil && generator == "scaffold_controller" {
+			ctl = generate.Plural(generate.Singular(ctl))
+		}
 		if err == nil {
 			files, _, err = generate.Controller(module, ns, ctl, nil)
 			wires = generate.WirePrefixes(ns, ctl)
@@ -216,7 +223,7 @@ func destroyIn(root string, args []string, out io.Writer) error {
 		}
 		// A controller or service package directory goes once it is empty.
 		// The layout's own directories (db/migrate, app/models, ...) stay.
-		if generator == "controller" || generator == "service" {
+		if generator == "controller" || generator == "scaffold_controller" || generator == "service" {
 			_ = os.Remove(filepath.Dir(abs))
 		}
 	}

@@ -38,6 +38,10 @@ Install: `go install github.com/bogie-go/bogie@latest` for the newest tag,
     bogie g scaffold post title:string body:text      the model, app/views/posts.go and a
                                                       PostsController with real handlers over
                                                       the store, registered; no service layer
+                                                      --only index,show writes just those
+    bogie g scaffold_controller admin/categories      the HTTP half over an existing model,
+                                                      mounted in a namespace; attributes read
+                                                      from app/models; --only too
     bogie g migration add_slug_to_posts slug:string:uniq
     bogie g controller comments index show create     one file, a <Name>Controller type with
                                                       its routes and actions, a test, and the

@@ -299,7 +299,7 @@ func TestControllerWithNoActions(t *testing.T) {
 }
 
 func TestScaffold(t *testing.T) {
-	files, wires, err := Scaffold("example.com/blog", "post", attrs(t, "title:string", "body:text", "score:integer", "published_at:datetime", "author:references"), IDBigint, at)
+	files, wires, err := Scaffold("example.com/blog", "post", attrs(t, "title:string", "body:text", "score:integer", "published_at:datetime", "author:references"), IDBigint, at, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,13 +317,13 @@ func TestScaffold(t *testing.T) {
 			t.Errorf("file %d: %s vs %s", i, files[i].Path, paths[i].Path)
 		}
 	}
-	if _, _, err := Scaffold("m", "posts", nil, IDBigint, at); err == nil {
+	if _, _, err := Scaffold("m", "posts", nil, IDBigint, at, nil); err == nil {
 		t.Error("plural model name accepted")
 	}
 }
 
 func TestScaffoldWithNoAttributes(t *testing.T) {
-	files, _, err := Scaffold("example.com/blog", "ping", nil, IDBigint, at)
+	files, _, err := Scaffold("example.com/blog", "ping", nil, IDBigint, at, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -591,7 +591,7 @@ func TestGeneratedParamDoesNotShadow(t *testing.T) {
 			if c.generator == "model" {
 				files, err = Model("example.com/blog", c.name, nil, IDBigint, at)
 			} else {
-				files, _, err = Scaffold("example.com/blog", c.name, nil, IDBigint, at)
+				files, _, err = Scaffold("example.com/blog", c.name, nil, IDBigint, at, nil)
 			}
 			if err != nil {
 				t.Fatal(err)
@@ -626,5 +626,154 @@ func TestParamName(t *testing.T) {
 		if got := paramName(c.name, c.taken); got != c.want {
 			t.Errorf("paramName(%q, %q) = %q, want %q", c.name, c.taken, got, c.want)
 		}
+	}
+}
+
+func TestParseOnly(t *testing.T) {
+	got, err := ParseOnly("destroy, index,index show")
+	if err != nil || strings.Join(got, ",") != "index,show,destroy" {
+		t.Errorf("ParseOnly = %v, %v; want index,show,destroy in the order of a resource", got, err)
+	}
+	for _, bad := range []string{"", "edit", "new", "list", "index,fetch"} {
+		if _, err := ParseOnly(bad); err == nil {
+			t.Errorf("ParseOnly(%q) accepted", bad)
+		}
+	}
+}
+
+// --only writes the actions asked for and nothing of the others, and what it
+// writes still compiles: every file is gofmt-clean Go (Scaffold checks that),
+// and none carries a store method, route, handler or wire shape that only
+// another action needs.
+func TestScaffoldOnly(t *testing.T) {
+	cases := []struct {
+		only         []string
+		has, missing []string
+	}{
+		{[]string{"index"}, []string{"ListCategories", "func (ctl *CategoriesController) Index", "type CategoriesResponse", "categoriesView"}, []string{"GetCategory", "CreateCategory", "UpdateCategory", "DeleteCategory", "Show(", "Create(", "Update(", "Destroy(", "CategoryRequest"}},
+		{[]string{"show"}, []string{"GetCategory", "type CategoryResponse", "categoryView"}, []string{"ListCategories", "CreateCategory", "DeleteCategory", "CategoryRequest", "CategoriesResponse", "categoriesView", "ListLimit"}},
+		{[]string{"create"}, []string{"CreateCategory", "type CategoryRequest", "type CategoryResponse"}, []string{"ListCategories", "UpdateCategory", "DeleteCategory", "CategoriesResponse"}},
+		{[]string{"destroy"}, []string{"DeleteCategory", "func (ctl *CategoriesController) Destroy"}, []string{"GetCategory", "CreateCategory", "views.CategoryResponse", "categoryView", "categoriesView"}},
+	}
+	for _, c := range cases {
+		files, _, err := ScaffoldController("example.com/blog", "", "category", attrs(t, "name:string"), IDBigint, c.only)
+		if err != nil {
+			t.Fatalf("only %v: %v", c.only, err)
+		}
+		var all strings.Builder
+		for _, f := range files {
+			all.WriteString(f.Content)
+		}
+		for _, w := range c.has {
+			if !strings.Contains(all.String(), w) {
+				t.Errorf("only %v: output lacks %q", c.only, w)
+			}
+		}
+		for _, w := range c.missing {
+			if strings.Contains(all.String(), w) {
+				t.Errorf("only %v: output has %q", c.only, w)
+			}
+		}
+	}
+	// Destroy answers with no body, so there is no views file for it.
+	files, _, _ := ScaffoldController("example.com/blog", "", "category", nil, IDBigint, []string{"destroy"})
+	for _, f := range files {
+		if strings.HasPrefix(f.Path, "app/views/") {
+			t.Errorf("destroy alone wrote %s", f.Path)
+		}
+	}
+}
+
+func TestScaffoldWithOnlyKeepsTheModelWhole(t *testing.T) {
+	all, _, err := Scaffold("example.com/blog", "tag", attrs(t, "name:string"), IDBigint, at, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	some, _, err := Scaffold("example.com/blog", "tag", attrs(t, "name:string"), IDBigint, at, []string{"index"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, f := range all {
+		if strings.HasPrefix(f.Path, "app/controllers/") || f.Path == "app/views/tags.go" {
+			continue
+		}
+		if some[i].Path != f.Path || some[i].Content != f.Content {
+			t.Errorf("--only changed the model half: %s", f.Path)
+		}
+	}
+}
+
+func TestScaffoldControllerInANamespace(t *testing.T) {
+	files, wires, err := ScaffoldController("example.com/blog", "admin", "category", attrs(t, "name:string"), IDBigint, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden(t, "scaffold_controller_admin_categories", files)
+	want := []string{"app/views/categories.go", "app/controllers/admin_controller/categories_controller.go", "app/controllers/admin_controller/categories_controller_test.go"}
+	for i, f := range files {
+		if f.Path != want[i] {
+			t.Errorf("file %d = %s, want %s", i, f.Path, want[i])
+		}
+	}
+	if len(wires) != 3 || wires[1].Line != "server.Admin.Categories = admin_controller.NewCategoriesController(store, log)" || wires[2].Line != "s.Categories.SetupRoutes(admin)" {
+		t.Errorf("wires = %+v", wires)
+	}
+}
+
+// A model is read back from its source: each Go type to the attribute that
+// made it, ...ID fields to references, and ImageUrl to image_url.
+func TestModelAttrs(t *testing.T) {
+	files, err := Model("example.com/blog", "session", attrs(t, "body:text", "post:references", "score:integer", "big:bigint", "published_at:datetime", "meta:jsonb", "live:boolean", "image_url"), IDBigint, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var src string
+	for _, f := range files {
+		if f.Path == "app/models/session.go" {
+			src = f.Content
+		}
+	}
+	got, err := ModelAttrs([]byte(src), "session", IDBigint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, a := range got {
+		names = append(names, a.Name+":"+a.Type)
+	}
+	want := "body:string post_id:references score:integer big:bigint published_at:datetime meta:jsonb live:boolean image_url:string"
+	if strings.Join(names, " ") != want {
+		t.Errorf("ModelAttrs = %v\nwant %s", names, want)
+	}
+	if _, err := ModelAttrs([]byte("package models\n\ntype Session struct{ Tags []string }\n"), "session", IDBigint); err == nil {
+		t.Error("a slice field was accepted")
+	}
+	if _, err := ModelAttrs([]byte("package models\n"), "session", IDBigint); err == nil {
+		t.Error("a file with no struct was accepted")
+	}
+}
+
+// A namespaced controller shares the model's views with the root one. The
+// file grows by the types it lacks and keeps every one it has, edits and all.
+func TestMergeViews(t *testing.T) {
+	const existing = "package views\n\nimport \"time\"\n\n// Mine, hand-edited.\ntype CategoryResponse struct {\n\tID int64 `json:\"id\"`\n\tName string `json:\"name\"`\n\tProductCount int64 `json:\"product_count\"`\n\tAt time.Time `json:\"at\"`\n}\n"
+	out, added, err := MergeViews([]byte(existing), "example.com/blog", "category", attrs(t, "name:string"), IDBigint, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(added, ",") != "CategoryRequest,CategoriesResponse" {
+		t.Errorf("added %v", added)
+	}
+	if !strings.Contains(string(out), "ProductCount") || !strings.Contains(string(out), "Mine, hand-edited") {
+		t.Errorf("the existing type was changed:\n%s", out)
+	}
+	again, none, err := MergeViews(out, "example.com/blog", "category", attrs(t, "name:string"), IDBigint, nil)
+	if err != nil || len(none) != 0 || string(again) != string(out) {
+		t.Errorf("a second merge changed the file: %v %v", none, err)
+	}
+	// A file with no imports gets the one a new type needs.
+	bare, _, err := MergeViews([]byte("package views\n"), "example.com/blog", "category", attrs(t, "name:string"), IDBigint, []string{"show"})
+	if err != nil || !strings.Contains(string(bare), `"time"`) {
+		t.Errorf("no time import added: %v\n%s", err, bare)
 	}
 }
