@@ -788,6 +788,28 @@ func TestScaffoldNamesAreCamelCase(t *testing.T) {
 	}
 }
 
+// The same for the route group variable of a plain controller and of a
+// namespace, whose path stays snake_case.
+func TestControllerGroupVariablesAreCamelCase(t *testing.T) {
+	files, wires, err := Controller("example.com/blog", "admin_panel", "cart_items", []string{"index"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if src := files[0].Content; !strings.Contains(src, `cartItems := router.Group("/cart_items")`) || !strings.Contains(src, "cartItems.GET(") {
+		t.Errorf("controller group variable is not camelCase:\n%s", src)
+	}
+	if wires[2].Line != "s.CartItems.SetupRoutes(adminPanel)" {
+		t.Errorf("route wire = %s", wires[2].Line)
+	}
+	nsFiles, _, err := Namespace("example.com/blog", "admin_panel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if src := nsFiles[1].Content; !strings.Contains(src, `adminPanel := router.Group("/admin_panel")`) {
+		t.Errorf("namespace group variable is not camelCase:\n%s", src)
+	}
+}
+
 // A model is read back from its source: each Go type to the attribute that
 // made it, ...ID fields to references, and ImageUrl to image_url.
 func TestModelAttrs(t *testing.T) {

@@ -225,7 +225,7 @@ func (c controller) wires() []Wire {
 	return []Wire{
 		{File: c.dir() + "server.go", Marker: "controllers", Line: c.typeField()},
 		{File: "app/application.go", Marker: "wire", Line: fmt.Sprintf("server.%s.%s = %s.New%s(log)", nsField, field, c.pkg(), c.typeName()), Import: c.module + "/app/controllers/" + c.pkg()},
-		{File: c.dir() + "routes.go", Marker: "routes", Line: fmt.Sprintf("s.%s.SetupRoutes(%s)", field, c.ns)},
+		{File: c.dir() + "routes.go", Marker: "routes", Line: fmt.Sprintf("s.%s.SetupRoutes(%s)", field, lowerCamel(c.ns))},
 	}
 }
 
@@ -260,14 +260,14 @@ func New%[1]s(log *slog.Logger) *%[1]s {
 // whole controller needs goes here; which group it sits in, and so how it is
 // exposed, is decided by the routes.go that calls this.
 func (ctl *%[1]s) SetupRoutes(router *gin.RouterGroup) {
-	%[2]s := router.Group("/%[2]s")
+	%[3]s := router.Group("/%[2]s")
 `, c.typeName(), c.name, lowerCamel(c.name))
 	if len(c.actions) == 0 {
-		fmt.Fprintf(&b, "\t_ = %s // no actions yet; add them below and mount them here\n", c.name)
+		fmt.Fprintf(&b, "\t_ = %s // no actions yet; add them below and mount them here\n", lowerCamel(c.name))
 	}
 	for _, a := range c.actions {
 		method, path := routeFor(a)
-		fmt.Fprintf(&b, "\t%s.%s(%q, ctl.%s)\n", c.name, method, path, Camel(a))
+		fmt.Fprintf(&b, "\t%s.%s(%q, ctl.%s)\n", lowerCamel(c.name), method, path, Camel(a))
 	}
 	b.WriteString("}\n")
 
@@ -400,8 +400,8 @@ import "github.com/gin-gonic/gin"
 // Middleware the whole namespace shares, an auth check or a shared secret,
 // goes on the group here, so the exposure boundary is visible in one place.
 func (s *Server) SetupRoutes(router *gin.RouterGroup) {
-	%[2]s := router.Group("/%[2]s")
+	%[3]s := router.Group("/%[2]s")
 	// bogie:routes
 }
-`, pkg, ns)
+`, pkg, ns, lowerCamel(ns))
 }
