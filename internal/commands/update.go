@@ -34,6 +34,9 @@ templates never produced are not touched: everything bogie g and you wrote
 is safe by construction. Afterwards bogie.toml records the new version,
 the credentials module is raised if the app's is older, go mod tidy runs, and bogie doctor checks the markers.
 
+Moving across v0.5.0, which moved the app's layers, prints a warning first
+(also with --pretend): the per-file merge cannot follow that move.
+
   --pretend   the report only; nothing written
 `
 
@@ -125,6 +128,13 @@ func Update(args []string, out io.Writer) error {
 		if dirty, err := gitDirty(root); err == nil && dirty {
 			return fmt.Errorf("app:update: the git tree has uncommitted changes; commit or stash them so the update is one reviewable diff (or --pretend)")
 		}
+	}
+
+	// A layout move app:update cannot follow: say so before anything runs,
+	// and in --pretend too, so the conflict that follows is no surprise.
+	crossed := crossesLayoutBreak(settings.Version, current)
+	if crossed {
+		say("%s", layoutBreakNotice(root, settings, current))
 	}
 
 	// theirs: this version's templates, rendered as `new` would.
@@ -234,6 +244,9 @@ func Update(args []string, out io.Writer) error {
 	warnStale()
 	if conflicts > 0 {
 		say("\n%d file(s) have conflict markers; resolve them, then run bogie doctor and bin/ci.\n", conflicts)
+		if crossed {
+			say("This is the %s layout move; the steps are at %s\n", layoutBreakVersion, layoutBreakGuide)
+		}
 		return fmt.Errorf("app:update: %d conflict(s)", conflicts)
 	}
 	say("\n")
@@ -263,6 +276,93 @@ func warnRetired(out io.Writer, results []result, ours, base map[string][]byte, 
 	if n > 0 {
 		_, _ = fmt.Fprintf(out, "%12s  nothing was removed; review the file(s) above, and any *_test.go that depends on them (scaffolded model tests may need regenerating), before deleting\n", "hint")
 	}
+}
+
+// layoutBreakVersion is the first Bogie whose app layout app:update cannot
+// merge its way into. v0.5.0 moved app/domain to app/models and the old
+// app/models (Store, ids, sqlc output) to db/adapter and db/sqlc, so the
+// per-file merge sees retired files and a conflict in app/models/models.go
+// (sqlc's output in v0.4, the package doc and errors in v0.5).
+const (
+	layoutBreakVersion = "v0.5.0"
+	layoutBreakGuide   = "https://bogie-go.com/docs/upgrading.html#v0-5"
+)
+
+// crossesLayoutBreak reports whether an app recorded at old, moved to
+// current, passes layoutBreakVersion. A version it cannot read, such as a
+// development build, never counts.
+func crossesLayoutBreak(old, current string) bool {
+	if _, ok := parseVersion(current); !ok {
+		return false
+	}
+	return versionBefore(old, layoutBreakVersion) && !versionBefore(current, layoutBreakVersion)
+}
+
+// layoutBreakNotice is the warning printed before app:update changes
+// anything. A uuid app also has app/models/uuid.go, which no template
+// produces in either version, so the merge cannot list it as retired; the
+// notice does.
+func layoutBreakNotice(root string, s Settings, current string) string {
+	var b strings.Builder
+	f := func(format string, a ...any) { _, _ = fmt.Fprintf(&b, format, a...) }
+	f("%12s  %s moved the app's layers, and app:update merges file by file, so it cannot follow:\n", "warning", layoutBreakVersion)
+	f("%12s  app/domain becomes app/models; the old app/models becomes db/adapter and db/sqlc.\n", "")
+	f("%12s  bogie.toml says %s and this is %s. Expect retired files, a conflict in\n", "", s.Version, current)
+	f("%12s  app/models/models.go, and a build that fails until it is resolved.\n", "")
+	if s.IDScheme == generate.IDUUID {
+		if _, err := os.Stat(filepath.Join(root, "app", "models", "uuid.go")); err == nil {
+			f("%12s  app/models/uuid.go (now db/adapter/uuid.go)\n", "retired")
+		}
+	}
+	f("%12s  Steps: %s\n", "", layoutBreakGuide)
+	f("%12s  --pretend writes nothing; without it the update goes on in a few seconds (Ctrl-C stops it).\n\n", "")
+	return b.String()
+}
+
+// versionBefore reports whether version a is older than b, comparing
+// major.minor.patch and ranking a pre-release (v0.5.0-rc1, or a pseudo-version
+// like v0.4.2-0.2026...) below its release. Build metadata is ignored. A
+// version that is not vX.Y.Z is before nothing, and nothing is before it.
+func versionBefore(a, b string) bool {
+	av, aok := parseVersion(a)
+	bv, bok := parseVersion(b)
+	if !aok || !bok {
+		return false
+	}
+	for i := 0; i < 3; i++ {
+		if av.n[i] != bv.n[i] {
+			return av.n[i] < bv.n[i]
+		}
+	}
+	return av.pre && !bv.pre
+}
+
+type semver struct {
+	n   [3]int
+	pre bool
+}
+
+func parseVersion(v string) (semver, bool) {
+	var out semver
+	v, ok := strings.CutPrefix(v, "v")
+	if !ok {
+		return out, false
+	}
+	v, _, _ = strings.Cut(v, "+")
+	v, pre, hasPre := strings.Cut(v, "-")
+	out.pre = hasPre && pre != ""
+	parts := strings.Split(v, ".")
+	if len(parts) != 3 {
+		return out, false
+	}
+	for i, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 0 {
+			return out, false
+		}
+		out.n[i] = n
+	}
+	return out, true
 }
 
 // renderBase runs the recorded version's `new` into a temp dir and reads
