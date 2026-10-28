@@ -229,7 +229,7 @@ without `--jobs`); `g`/`d` for `scaffold`, `model`, `migration`, `controller`,
 `worker` (both live-reload under Air in development), `test`, `lint`, `ci`; and `app:update`.
 Generated apps test with Ginkgo v2 and Gomega: a `test/` tree (`testdb`,
 `testapp`, `factories`, `requests`) for what tests share, a suite file per
-package, and specs from every generator (v0.4.0 and v0.4.1). v0.4.2 words the generated model specs as one Describe per store method; v0.5.0 moves the layers: `app/models` (types), `db/sqlc` (generated), `db/adapter` (the Store). v0.5.1 drops the Rails wording, has `g model` write the model's own spec, and words the generated not-found tables as sentences. v0.5.2 declares the model spec's variable and BeforeEach at the Describe, so its example Context compiles where it sits.
+package, and specs from every generator (v0.4.0 and v0.4.1). v0.4.2 words the generated model specs as one Describe per store method; v0.5.0 moves the layers: `app/models` (types), `db/sqlc` (generated), `db/adapter` (the Store). v0.5.1 drops the Rails wording, has `g model` write the model's own spec, and words the generated not-found tables as sentences. v0.5.2 declares the model spec's variable and BeforeEach at the Describe, so its example Context compiles where it sits. v0.5.3 adds `--only ACTIONS` to `g scaffold` and `g scaffold_controller [NS/]RESOURCE`, the HTTP half of a scaffold for an existing model.
 
 Known gaps:
 
