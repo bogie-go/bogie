@@ -289,8 +289,8 @@ import (
 //
 //	factories.Post(t, s, func(v *models.Post) { v.AuthorID = parent.ID })
 //
-// Placeholders: PublishedAt all default to the same instant. Set real times
-// where a spec depends on them, such as a window that starts before it ends.
+// Placeholders: the datetime defaults (PublishedAt) are one fixed instant. Set real
+// times where a spec depends on them, such as a window that starts before it ends.
 func NewPost(with ...func(*models.Post)) models.Post {
 	record := models.Post{
 		Title:       Sequence("title "),

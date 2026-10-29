@@ -366,7 +366,7 @@ func factory(module, name string, attrs []Attr, scheme IDScheme) string {
 		note = fmt.Sprintf("//\n// Left at zero: %s. The parent has to exist first, so set it from the\n// parent's own factory:\n//\n//\tfactories.%s(t, s, func(v *models.%s) { v.%s = parent.ID })\n", strings.Join(refs, ", "), typ, typ, refs[0])
 	}
 	if len(times) > 0 {
-		note += fmt.Sprintf("//\n// Placeholders: %s all default to the same instant. Set real times\n// where a spec depends on them, such as a window that starts before it ends.\n", strings.Join(times, ", "))
+		note += fmt.Sprintf("//\n// Placeholders: the datetime defaults (%s) are one fixed instant. Set real\n// times where a spec depends on them, such as a window that starts before it ends.\n", strings.Join(times, ", "))
 	}
 	fmt.Fprintf(&b, `// New%[1]s is a valid %[2]s that is not saved: every attribute has a default,
 // and "with" overrides what the spec cares about.

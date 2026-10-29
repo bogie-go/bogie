@@ -290,8 +290,8 @@ import (
 //
 //	factories.Comment(t, s, func(v *models.Comment) { v.PostID = parent.ID })
 //
-// Placeholders: PublishedAt all default to the same instant. Set real times
-// where a spec depends on them, such as a window that starts before it ends.
+// Placeholders: the datetime defaults (PublishedAt) are one fixed instant. Set real
+// times where a spec depends on them, such as a window that starts before it ends.
 func NewComment(with ...func(*models.Comment)) models.Comment {
 	record := models.Comment{
 		Body:        Sequence("body "),
