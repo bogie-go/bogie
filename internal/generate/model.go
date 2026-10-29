@@ -31,7 +31,7 @@ func Model(module, name string, attrs []Attr, scheme IDScheme, now time.Time) ([
 	if err != nil {
 		return nil, err
 	}
-	return []File{
+	files := []File{
 		migration,
 		{Path: "db/queries/" + table + ".sql", Content: queries(name, table, attrs)},
 		{Path: "app/models/" + name + ".go", Content: domainType(name, attrs, scheme)},
@@ -39,7 +39,54 @@ func Model(module, name string, attrs []Attr, scheme IDScheme, now time.Time) ([
 		{Path: "db/adapter/" + table + ".go", Content: store(module, name, table, attrs, scheme)},
 		{Path: "db/adapter/" + table + "_test.go", Content: storeTest(module, name, table, attrs, scheme)},
 		{Path: "test/factories/" + table + ".go", Content: factory(module, name, attrs, scheme)},
-	}, nil
+	}
+	if NeedsNullableHelpers(attrs) {
+		files = append(files, File{Path: NullableHelpersPath, Content: NullableHelpers})
+	}
+	return files, nil
+}
+
+// NullableHelpersPath is the file holding the two conversions a nullable
+// datetime column needs. Several models share it, so it is a file of its own.
+const NullableHelpersPath = "db/adapter/nullable.go"
+
+// NullableHelpers is that file. It is written once, with the first model that
+// has a nullable datetime, and is then the app's to edit.
+const NullableHelpers = `package adapter
+
+import (
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+// A nullable datetime column is a pgtype.Timestamptz in the row sqlc
+// generates and a *time.Time in the model: nil is NULL. These convert between
+// the two.
+
+func timestamptzToTimePtr(t pgtype.Timestamptz) *time.Time {
+	if !t.Valid {
+		return nil
+	}
+	return &t.Time
+}
+
+func timePtrToTimestamptz(t *time.Time) pgtype.Timestamptz {
+	if t == nil {
+		return pgtype.Timestamptz{}
+	}
+	return pgtype.Timestamptz{Time: *t, Valid: true}
+}
+`
+
+// NeedsNullableHelpers reports whether attrs has a nullable datetime.
+func NeedsNullableHelpers(attrs []Attr) bool {
+	for _, a := range attrs {
+		if a.Null && a.Type == "datetime" {
+			return true
+		}
+	}
+	return false
 }
 
 // modelTest is the model's own spec: a plain function call, no database. It
@@ -75,7 +122,7 @@ var _ = Describe("%[3]s.Validate", func() {
 `, module+"/app/models", module+"/test/factories", typ, v)
 	var text *Attr
 	for i := range attrs {
-		if attrs[i].Type == "string" || attrs[i].Type == "text" {
+		if !attrs[i].Null && (attrs[i].Type == "string" || attrs[i].Type == "text") {
 			text = &attrs[i]
 			break
 		}
@@ -193,7 +240,7 @@ func storeTest(module, name, table string, attrs []Attr, scheme IDScheme) string
 		var change, check string
 		saves := "saves the " + word
 		for _, a := range attrs {
-			if _, lit := edited(a, scheme); lit != "" {
+			if _, lit := edited(a, scheme); lit != "" && !a.Null {
 				change = fmt.Sprintf("\t\t\t\trecord.%s = %s\n", a.goName(), lit)
 				check = fmt.Sprintf("\t\t\t\tExpect(updated.%s).To(BeEquivalentTo(%s))\n", a.goName(), lit)
 				saves = "stores the change"
@@ -317,6 +364,10 @@ func factory(module, name string, attrs []Attr, scheme IDScheme) string {
 	var refs, times []string
 	for _, a := range attrs {
 		var v string
+		// A nullable column starts as NULL: its zero value is a valid default.
+		if a.Null {
+			continue
+		}
 		switch a.Type {
 		case "string", "text":
 			v = fmt.Sprintf("Sequence(%q)", strings.ReplaceAll(a.Name, "_", " ")+" ")
@@ -653,7 +704,7 @@ func uniqueViolationMessage(uniq []Attr) string {
 
 func needsPgtype(attrs []Attr) bool {
 	for _, a := range attrs {
-		if strings.HasPrefix(kinds[a.Type].sqlcType, "pgtype.") && a.Type == "datetime" {
+		if a.Type == "datetime" && !a.Null {
 			return true
 		}
 	}

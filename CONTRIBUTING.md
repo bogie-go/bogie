@@ -69,7 +69,7 @@ summary into the PR description. A failed run leaves the scaffolded app under
 
 ```
 main.go                 the command table; commands spelled `db:migrate`, `g`, `s`
-internal/commands/      new, generate, destroy, doctor, app:update, the proxy into the app
+internal/commands/      new, generate, destroy, doctor, app:update, model:sync, the proxy into the app
 internal/generate/      the generators, pure (clock passed in), pinned by golden files in testdata/
 internal/markers/       inserting and removing lines above // bogie:… markers
 internal/scaffold/      rendering templates/app into a directory

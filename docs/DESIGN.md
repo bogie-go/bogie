@@ -599,6 +599,65 @@ falls back to a two-way report with every differing file marked `conflict`.
 
 ---
 
+## 5b. `bogie model:sync`: following the schema
+
+Decided 2026-10-29, for Chapter 14 of the book: adding a column to a model that
+already exists. `bogie g migration add_role_to_users role:string` writes the
+migration and nothing else, and generating the model again with `--force`
+wipes `Validate` and every factory edit. One command should carry a column
+through the model, the queries, the store and the factory, and keep every
+hand edit.
+
+**It is not a generator, so it is not `g`.** `g` makes files that do not exist.
+This changes files that do, so it takes the colon spelling of the other
+commands that act on an app: `model:sync [TABLE]`.
+
+**The schema is read from sqlc, not guessed from a migration's name.** A reader
+writes the migration by hand as often as with `g migration`, and may edit what
+it generated. sqlc already compiles `db/migrate/*.sql` into a row struct per
+table in `db/sqlc/models.go`, so that is the reflection, the way Rails reflects
+from the database, with no database running. The sync generates it into a
+scratch directory with a query of no meaning, so a query of the reader's that
+names a column that is gone cannot stop the sync from learning that it is gone.
+
+**What sqlc does not show, the migrations do.** With pgx, a nullable datetime
+is the same `pgtype.Timestamptz` as a NOT NULL one, and `UNIQUE` is not in the
+row type at all. A small reader of the migrations' Up parts (CREATE TABLE,
+ALTER TABLE ADD, DROP and RENAME COLUMN, ALTER COLUMN SET or DROP NOT NULL,
+CREATE UNIQUE INDEX on one column) answers those two questions. A column it
+never saw is NOT NULL and not unique.
+
+**It edits the model's struct, and merges the files that follow from the
+columns.** For each column the model lacks it adds the field above `CreatedAt`;
+for each field bogie could have written whose column is gone it removes the
+field and the comment lines directly above it. Everything else in the file
+(Validate, constants, other fields, comments) is not touched; `go/format`
+realigns the struct. The queries, the store and the factory are generated for
+the old columns and for the new, and merged into the reader's copy with
+`git merge-file`, as `app:update` merges: a copy nobody edited is replaced, an
+edit elsewhere is kept, an edit on the same lines gets conflict markers. The
+"old columns" are the model's own fields, so the common ancestor is what
+`g model` would have written for them.
+
+**What it leaves alone, and says so:** `Validate`, the `*_extra` files, the
+views, the controllers and the specs. The views and the controller carry the
+API's JSON, which a column does not decide; the specs do not list columns. For
+a removed field it lists the lines that still mention it, in the files that
+mention the model's type, since the compiler will say the rest.
+
+**Nullable columns.** Every generated column stays NOT NULL unless the attribute
+says `:null` (`archived_at:datetime:null`), as Rails' `null: true` does, and a
+sync finds a nullable column in whatever SQL was written. A nullable string,
+number or bool is a pointer in the row and in the model; a nullable datetime is
+`*time.Time` in the model through two helpers, written once to
+`db/adapter/nullable.go`. A nullable uuid is not written. The factory leaves a
+nullable column at NULL. A scaffold does not write nullable columns yet.
+
+**Refuses on a dirty git tree**, so the result is one diff to review or undo.
+Renames cannot be told from a drop and an add, so a rename removes the old
+field and adds the new, and the reader moves what the old name carried.
+
+
 ## 6. Configuration and deploy
 
 Both are carried over from kchat unchanged in shape:

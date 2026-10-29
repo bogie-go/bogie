@@ -110,6 +110,34 @@ generators() {
   # `app:update` merges a layout change, before writing the job as usual. The
   # app's own bin/ci below then also covers the worker role it just gained.
   "$b" g job send_welcome || return 1
+  # model:sync follows a migration written by hand: one column added (a
+  # nullable datetime among them), one dropped, the Validate we edited kept.
+  "$b" g model reading note:string count:integer || return 1
+  cat >> app/models/reading.go <<'GO'
+
+// Visible is mine, and must survive the sync.
+func (r Reading) Visible() bool { return r.Note != "" }
+GO
+  cat > db/migrate/20991231000000_change_readings.sql <<'SQL'
+-- +goose Up
+ALTER TABLE readings DROP COLUMN count;
+ALTER TABLE readings ADD COLUMN taken_at timestamptz;
+ALTER TABLE readings ADD COLUMN label varchar;
+ALTER TABLE readings ADD COLUMN level integer NOT NULL DEFAULT 0;
+-- +goose Down
+ALTER TABLE readings DROP COLUMN level;
+ALTER TABLE readings DROP COLUMN label;
+ALTER TABLE readings DROP COLUMN taken_at;
+ALTER TABLE readings ADD COLUMN count integer NOT NULL DEFAULT 0;
+SQL
+  "$b" model:sync readings > sync.log || { cat sync.log; return 1; }
+  cat sync.log
+  grep -q "add  readings.taken_at (datetime, may be NULL)" sync.log || return 1
+  grep -q "remove  readings.count" sync.log || return 1
+  grep -Eq 'TakenAt +\*time\.Time' app/models/reading.go || return 1
+  grep -q "func (r Reading) Visible" app/models/reading.go || return 1
+  "$b" model:sync readings | grep -q "every model matches its table" || return 1
+  rm sync.log
   "$b" doctor || return 1
   # Same version on both sides, so this is the no-op path; the merge itself
   # is unit-tested, and a real cross-version run needs the module proxy.

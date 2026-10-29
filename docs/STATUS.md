@@ -15,6 +15,7 @@ reasoning; this file is the state.
 | M4 dogfood: regenerate kchat's skeleton and diff | **done** 2026-10-03; found the Dockerfile and Kamal config missing, added them |
 | M5 publish: version from the git tag, first release, launch | **v0.1.0 tagged 2026-10-03** with `bin/release`. No Homebrew tap, decided the same day: `go install` is the one install. The launch essay remains |
 | M6 `app:update`: three-way merge against the version in `bogie.toml` | **done** 2026-10-03; tested across two of the day's commits |
+| `model:sync` and `:null`: follow a hand-written migration into the model, queries, store and factory | **done** 2026-10-29, untagged (v0.6.0 when released); DESIGN §5b |
 
 ## What works today
 

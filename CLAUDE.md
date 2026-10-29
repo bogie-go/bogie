@@ -39,7 +39,7 @@ generated app's `.golangci.yml`, which bin/ci enforces.
 ## Decisions already made (do not re-litigate; change `docs/DESIGN.md` first if they must change)
 
 - **Familiar command spelling.** A command that names a task uses a colon:
-  `db:migrate`, `db:rollback`, `credentials:edit`, `app:update`; `server`,
+  `db:migrate`, `db:rollback`, `credentials:edit`, `app:update`, `model:sync`; `server`,
   `generate`, `new` are plain words. Vocabulary, layout and file names stay
   conventional wherever the thing has a common word: model, controller,
   migration, seed.

@@ -23,6 +23,7 @@ Inside an app (found by its bogie.toml, from any subdirectory):
   generate, g GENERATOR    scaffold | model | migration | controller | service | seed | job | authentication   (bogie g -h)
   destroy, d GENERATOR     remove what generate made, registration included
   doctor                   markers, pinned tools, layout: all intact?
+  model:sync [TABLE]       bring models, queries and store in line with the schema
   app:update               move the app to this Bogie's layout: a three-way merge
   server, s                run it; migrates at boot, reloads on save
   worker                   work the job queue (apps made with --jobs)
@@ -60,6 +61,8 @@ func main() {
 		err = commands.Destroy(os.Args[2:], os.Stdout)
 	case "doctor":
 		err = commands.Doctor(os.Stdout)
+	case "model:sync":
+		err = commands.ModelSync(os.Args[2:], os.Stdout)
 	case "app:update":
 		err = commands.Update(os.Args[2:], os.Stdout)
 	case "server", "worker", "routes", "test", "lint", "ci", "db", "migrate", "credentials":

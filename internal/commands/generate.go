@@ -80,7 +80,8 @@ Generators:
                                     (keys for machine clients, with a table
                                     and api_keys:create)
 
-Attributes are field:type, with :index or :uniq after the type. Types:
+Attributes are field:type, with :index, :uniq or :null after the type (a column
+is NOT NULL unless it says :null). Types:
   string text integer bigint boolean datetime uuid jsonb references
 A field with no :type defaults to string. A references field
 names the other model: post:references is post_id.

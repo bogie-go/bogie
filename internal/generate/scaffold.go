@@ -6,7 +6,6 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
-	"go/types"
 	"strings"
 	"time"
 )
@@ -60,6 +59,11 @@ func ParseOnly(spec string) ([]string, error) {
 // handlers, views and request specs. The model half is written in full either
 // way.
 func Scaffold(module, ns, res, name string, attrs []Attr, scheme IDScheme, now time.Time, only []string) ([]File, []Wire, error) {
+	for _, a := range attrs {
+		if a.Null {
+			return nil, nil, fmt.Errorf("%s:null: a scaffold's views and controller do not write nullable columns; use g model, then write the controller", a.Name)
+		}
+	}
 	files, err := Model(module, name, attrs, scheme, now)
 	if err != nil {
 		return nil, nil, err
@@ -170,59 +174,20 @@ func ScaffoldFiles(module, ns, res, name string, scheme IDScheme) ([]File, error
 // A Go string is a string (a uuid column and a text column read the same),
 // and an id-typed field named ...ID is a references column.
 func ModelAttrs(src []byte, name string, scheme IDScheme) ([]Attr, error) {
-	file, err := parser.ParseFile(token.NewFileSet(), "", src, 0)
+	fields, err := StructFields(src, Camel(name))
 	if err != nil {
 		return nil, err
 	}
-	var st *ast.StructType
-	for _, d := range file.Decls {
-		g, ok := d.(*ast.GenDecl)
-		if !ok {
+	var out []Attr
+	for _, f := range fields {
+		if f.owned() {
 			continue
 		}
-		for _, sp := range g.Specs {
-			if t, ok := sp.(*ast.TypeSpec); ok && t.Name.Name == Camel(name) {
-				st, _ = t.Type.(*ast.StructType)
-			}
+		a, ok := fieldAttr(f, scheme)
+		if !ok || a.Null {
+			return nil, fmt.Errorf("field %s has type %s; a scaffold controller covers the types g model writes (string, int32, int64, bool, time.Time, json.RawMessage)", f.Name, f.Type)
 		}
-	}
-	if st == nil {
-		return nil, fmt.Errorf("no struct %s in the model's file", Camel(name))
-	}
-	var out []Attr
-	for _, f := range st.Fields.List {
-		typ := types.ExprString(f.Type)
-		for _, n := range f.Names {
-			switch n.Name {
-			case "ID", "CreatedAt", "UpdatedAt":
-				continue
-			}
-			col := fieldColumn(n.Name)
-			a := Attr{Name: col}
-			switch typ {
-			case "string":
-				a.Type = "string"
-				if scheme == IDUUID && strings.HasSuffix(col, "_id") {
-					a.Type = "references"
-				}
-			case "int32":
-				a.Type = "integer"
-			case "int64":
-				a.Type = "bigint"
-				if scheme == IDBigint && strings.HasSuffix(col, "_id") {
-					a.Type = "references"
-				}
-			case "bool":
-				a.Type = "boolean"
-			case "time.Time":
-				a.Type = "datetime"
-			case "json.RawMessage":
-				a.Type = "jsonb"
-			default:
-				return nil, fmt.Errorf("field %s has type %s; a scaffold controller covers the types g model writes (string, int32, int64, bool, time.Time, json.RawMessage)", n.Name, typ)
-			}
-			out = append(out, a)
-		}
+		out = append(out, a)
 	}
 	return out, nil
 }

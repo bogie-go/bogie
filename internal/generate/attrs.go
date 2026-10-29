@@ -6,12 +6,16 @@ import (
 	"strings"
 )
 
-// Attr is one column, as `name:type[:index|:uniq]` on the command line.
+// Attr is one column, as `name:type[:index|:uniq|:null]` on the command line.
 type Attr struct {
 	Name   string
 	Type   string // the generator name: string, text, integer, ...
 	Index  bool
 	Unique bool
+	// Null is a column that may be NULL. Every generated column is NOT NULL
+	// unless it says :null; `bogie model:sync` also sets it for a nullable
+	// column it finds in the schema.
+	Null bool
 }
 
 // kind is what one attribute type becomes at each layer.
@@ -26,10 +30,10 @@ type kind struct {
 	reference bool
 }
 
-// kinds maps attribute names to Postgres and Go. Every generated column
-// is NOT NULL: a nullable column makes sqlc emit a pointer, and a pointer in
-// the domain is a nil check in every caller. A model that truly needs null
-// edits the migration by hand, which is one line.
+// kinds maps attribute names to Postgres and Go. A generated column is
+// NOT NULL unless the attribute says :null: a nullable column makes sqlc emit
+// a pointer, and a pointer in the model is a nil check in every caller, so
+// null is asked for, not the default.
 //
 // "references" has no entry here: what a foreign key is made of depends on
 // the app's IDScheme, not the attribute, so it is resolved by kindFor.
@@ -131,15 +135,53 @@ func (s IDScheme) sampleID() string {
 // references is scheme-independent and comes straight from kinds; a
 // references attribute is whatever shape this scheme's foreign keys are.
 func kindFor(a Attr, scheme IDScheme) kind {
+	k := kinds[a.Type]
 	if a.Type == "references" {
-		return scheme.referencesKind()
+		k = scheme.referencesKind()
 	}
-	return kinds[a.Type]
+	if a.Null {
+		k = nullable(k)
+	}
+	return k
 }
 
-var attrPattern = regexp.MustCompile(`^([a-z][a-z0-9_]*)(?::([a-z]+))?(?::(index|uniq))?$`)
+// nullable is k for a column that may be NULL. With emit_pointers_for_null_types
+// sqlc emits a pointer for a string, number or bool, and the model holds the
+// same pointer. A datetime stays a pgtype in the row and becomes *time.Time in
+// the model, through two helpers (see nullableHelpers). A uuid has no
+// conversion here, so a nullable uuid is refused by checkNull. jsonb is
+// already nil when empty.
+func nullable(k kind) kind {
+	k.sqlDef = strings.TrimPrefix(k.sqlDef, "NOT NULL")
+	k.sqlDef = strings.TrimSpace(k.sqlDef)
+	if i := strings.Index(k.sqlDef, "DEFAULT"); i >= 0 {
+		// A nullable column starts as NULL, not as the empty value.
+		k.sqlDef = strings.TrimSpace(k.sqlDef[:i])
+	}
+	switch k.sqlcType {
+	case "string", "int32", "int64", "bool":
+		k.sqlcType = "*" + k.sqlcType
+		k.domain = "*" + k.domain
+	case "pgtype.Timestamptz":
+		k.domain = "*time.Time"
+		k.toRow = "timePtrToTimestamptz(%s)"
+		k.fromRow = "timestamptzToTimePtr(%s)"
+	}
+	return k
+}
 
-// ParseAttrs reads `name[:type][:index|:uniq]` arguments. A bare name with no
+// checkNull refuses a nullable column whose type bogie cannot convert: a uuid,
+// and so a references column under the uuid scheme.
+func (a Attr) checkNull(scheme IDScheme) error {
+	if a.Null && kindFor(Attr{Name: a.Name, Type: a.Type}, scheme).sqlcType == "pgtype.UUID" {
+		return fmt.Errorf("%s: a uuid column cannot be :null here; write the migration by hand", a.Name)
+	}
+	return nil
+}
+
+var attrPattern = regexp.MustCompile(`^([a-z][a-z0-9_]*)(?::([a-z]+))?((?::(?:index|uniq|null))*)$`)
+
+// ParseAttrs reads `name[:type][:index|:uniq|:null]` arguments. A bare name with no
 // `:type` defaults to string. A `references` attr names the
 // other model: `post:references` becomes the column post_id.
 func ParseAttrs(args []string) ([]Attr, error) {
@@ -147,13 +189,23 @@ func ParseAttrs(args []string) ([]Attr, error) {
 	for _, a := range args {
 		m := attrPattern.FindStringSubmatch(a)
 		if m == nil {
-			return nil, fmt.Errorf("%q is not name[:type][:index|:uniq]", a)
+			return nil, fmt.Errorf("%q is not name[:type][:index|:uniq|:null]", a)
 		}
 		typ := m[2]
 		if typ == "" {
 			typ = "string"
 		}
-		attr := Attr{Name: m[1], Type: typ, Index: m[3] == "index", Unique: m[3] == "uniq"}
+		attr := Attr{Name: m[1], Type: typ}
+		for _, mod := range strings.Split(strings.TrimPrefix(m[3], ":"), ":") {
+			switch mod {
+			case "index":
+				attr.Index = true
+			case "uniq":
+				attr.Unique = true
+			case "null":
+				attr.Null = true
+			}
+		}
 		if _, ok := kinds[attr.Type]; !ok {
 			return nil, fmt.Errorf("%q: unknown type %q; one of %s", a, attr.Type, strings.Join(typeNames(), ", "))
 		}
@@ -194,7 +246,7 @@ func (a Attr) column(scheme IDScheme) string {
 	if a.Unique {
 		def += " UNIQUE"
 	}
-	return fmt.Sprintf("    %-10s %-11s %s", a.Name, k.sql, def)
+	return strings.TrimRight(fmt.Sprintf("    %-10s %-11s %s", a.Name, k.sql, def), " ")
 }
 
 // indexStatement is the CREATE INDEX for an indexed attr, or "".
