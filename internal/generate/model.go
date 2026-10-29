@@ -314,7 +314,7 @@ func factory(module, name string, attrs []Attr, scheme IDScheme) string {
 	typ := Camel(name)
 	imports := map[string]bool{"context": true}
 	var fields strings.Builder
-	var refs []string
+	var refs, times []string
 	for _, a := range attrs {
 		var v string
 		switch a.Type {
@@ -327,6 +327,7 @@ func factory(module, name string, attrs []Attr, scheme IDScheme) string {
 		case "datetime":
 			v = "time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)"
 			imports["time"] = true
+			times = append(times, a.goName())
 		case "uuid":
 			v = "uuid.NewString()"
 			imports["github.com/google/uuid"] = true
@@ -363,6 +364,9 @@ func factory(module, name string, attrs []Attr, scheme IDScheme) string {
 	note := ""
 	if len(refs) > 0 {
 		note = fmt.Sprintf("//\n// Left at zero: %s. The parent has to exist first, so set it from the\n// parent's own factory:\n//\n//\tfactories.%s(t, s, func(v *models.%s) { v.%s = parent.ID })\n", strings.Join(refs, ", "), typ, typ, refs[0])
+	}
+	if len(times) > 0 {
+		note += fmt.Sprintf("//\n// Placeholders: %s all default to the same instant. Set real times\n// where a spec depends on them, such as a window that starts before it ends.\n", strings.Join(times, ", "))
 	}
 	fmt.Fprintf(&b, `// New%[1]s is a valid %[2]s that is not saved: every attribute has a default,
 // and "with" overrides what the spec cares about.
