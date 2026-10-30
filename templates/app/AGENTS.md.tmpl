@@ -349,7 +349,9 @@ uuid, jsonb, references; `:index` or `:uniq` after a type. `post:references`
 is the column `post_id` with a foreign key and an index. Go names follow
 sqlc's: `image_url` is `ImageUrl`, and only `id` is spelled `ID` (`PostID`). A `:uniq` column
 also makes `Create`/`Update` map a duplicate value to `models.ErrInvalid`
-("email is already taken"), not a raw database error. `Delete` maps a
+("email is already taken"), not a raw database error; a `references` column
+likewise makes them map a foreign key that names nothing to `models.ErrInvalid`
+("post_id does not exist"). `Delete` maps a
 foreign-key violation (a row something else still points at) to
 `models.ErrInvalid` too ("post is still in use"), so a controller answers 422,
 not 500.

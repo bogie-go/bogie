@@ -130,6 +130,10 @@ func (s *Store) CreateComment(ctx context.Context, c models.Comment) (models.Com
 	}
 	row, err := s.q.CreateComment(ctx, sqlc.CreateCommentParams{Body: c.Body, PostID: c.PostID, Score: c.Score, PublishedAt: pgtype.Timestamptz{Time: c.PublishedAt, Valid: true}, Meta: c.Meta})
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			return models.Comment{}, fmt.Errorf("%w: post_id does not exist", models.ErrInvalid)
+		}
 		return models.Comment{}, fmt.Errorf("store: create comment: %w", err)
 	}
 	return commentFromRow(row), nil
@@ -171,9 +175,12 @@ func (s *Store) UpdateComment(ctx context.Context, c models.Comment) (models.Com
 	}
 	pk := c.ID
 	row, err := s.q.UpdateComment(ctx, sqlc.UpdateCommentParams{ID: pk, Body: c.Body, PostID: c.PostID, Score: c.Score, PublishedAt: pgtype.Timestamptz{Time: c.PublishedAt, Valid: true}, Meta: c.Meta})
+	var pgErr *pgconn.PgError
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return models.Comment{}, models.ErrNotFound
+	case errors.As(err, &pgErr) && pgErr.Code == "23503":
+		return models.Comment{}, fmt.Errorf("%w: post_id does not exist", models.ErrInvalid)
 	case err != nil:
 		return models.Comment{}, fmt.Errorf("store: update comment %v: %w", c.ID, err)
 	}
@@ -259,6 +266,22 @@ var _ = Describe("Comments", func() {
 			It("is not found", func() {
 				_, err := store.UpdateComment(GinkgoT().Context(), missing)
 				Expect(err).To(MatchError(models.ErrNotFound))
+			})
+		})
+	})
+
+	Describe("CreateComment", func() {
+		Context("when a reference names nothing", func() {
+			var missing models.Comment
+
+			BeforeEach(func() {
+				missing = factories.NewComment()
+				missing.PostID = 999999999
+			})
+
+			It("is invalid", func() {
+				_, err := store.CreateComment(GinkgoT().Context(), missing)
+				Expect(err).To(MatchError(models.ErrInvalid))
 			})
 		})
 	})

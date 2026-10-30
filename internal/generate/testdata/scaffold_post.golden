@@ -129,6 +129,10 @@ func (s *Store) CreatePost(ctx context.Context, p models.Post) (models.Post, err
 	}
 	row, err := s.q.CreatePost(ctx, sqlc.CreatePostParams{Title: p.Title, Body: p.Body, Score: p.Score, PublishedAt: pgtype.Timestamptz{Time: p.PublishedAt, Valid: true}, AuthorID: p.AuthorID})
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			return models.Post{}, fmt.Errorf("%w: author_id does not exist", models.ErrInvalid)
+		}
 		return models.Post{}, fmt.Errorf("store: create post: %w", err)
 	}
 	return postFromRow(row), nil
@@ -170,9 +174,12 @@ func (s *Store) UpdatePost(ctx context.Context, p models.Post) (models.Post, err
 	}
 	pk := p.ID
 	row, err := s.q.UpdatePost(ctx, sqlc.UpdatePostParams{ID: pk, Title: p.Title, Body: p.Body, Score: p.Score, PublishedAt: pgtype.Timestamptz{Time: p.PublishedAt, Valid: true}, AuthorID: p.AuthorID})
+	var pgErr *pgconn.PgError
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return models.Post{}, models.ErrNotFound
+	case errors.As(err, &pgErr) && pgErr.Code == "23503":
+		return models.Post{}, fmt.Errorf("%w: author_id does not exist", models.ErrInvalid)
 	case err != nil:
 		return models.Post{}, fmt.Errorf("store: update post %v: %w", p.ID, err)
 	}
@@ -258,6 +265,22 @@ var _ = Describe("Posts", func() {
 			It("is not found", func() {
 				_, err := store.UpdatePost(GinkgoT().Context(), missing)
 				Expect(err).To(MatchError(models.ErrNotFound))
+			})
+		})
+	})
+
+	Describe("CreatePost", func() {
+		Context("when a reference names nothing", func() {
+			var missing models.Post
+
+			BeforeEach(func() {
+				missing = factories.NewPost()
+				missing.AuthorID = 999999999
+			})
+
+			It("is invalid", func() {
+				_, err := store.CreatePost(GinkgoT().Context(), missing)
+				Expect(err).To(MatchError(models.ErrInvalid))
 			})
 		})
 	})
