@@ -352,8 +352,20 @@ foreign-key violation (a row something else still points at) to
 not 500.
 
 Every generated column is NOT NULL with a type-appropriate default, so sqlc
-emits plain Go types rather than pointers. A column that truly needs null is
-one edit to the migration.
+emits plain Go types rather than pointers. A column that may be NULL says so,
+`archived_at:datetime:null`, or is written so in a migration by hand; the model
+then holds a pointer (`*string`, `*time.Time`), nil being NULL.
+
+A column added to or dropped from a model that already exists is followed with
+`bogie model:sync [TABLE]`, after the migration and `bogie db:migrate`. It
+reads the columns from what sqlc makes of the migrations, adds the model's
+field for each new column and removes the field for each dropped one, then
+regenerates the queries, the store and the factory and merges them into your
+copies, so `Validate` and every hand edit stay; the report has a line for each
+file, and for each one it leaves alone. A hand edit on the same lines as the
+change gets conflict markers to resolve. The views and controller are not
+touched: add the field there if the API should carry it. It needs a clean git
+tree.
 
 This app's id scheme is `{{.IDScheme}}`, recorded in `bogie.toml` at `bogie
 new` time: every `id` column and every `:references` foreign key is made of
