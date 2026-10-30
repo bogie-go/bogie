@@ -382,11 +382,28 @@ half alone, for a model that already exists: the model is the last segment,
 singular (`admin/categories` is the category model's controller), and its
 attributes are read back from `app/models/<name>.go`, since a model is never
 namespaced and the migration is no longer the source of truth once it is
-edited. Types `g model` does not write are refused by name. The wire shapes
-are the model's, shared by every controller over it, so an existing
-`app/views/<table>.go` is kept as it is and only gains the types the new
-controller lacks. `bogie d scaffold_controller` removes the controller and its
-spec, never the model, store or views.
+edited. Types `g model` does not write are refused by name. The root
+controller's wire shapes are the model's, `app/views/<table>.go`; a namespaced
+controller's are its own (see "views take the prefix" below). If a controller's
+views file already exists, a second run with other actions keeps it as it is
+and only adds the types the new actions lack. `bogie d scaffold_controller`
+removes the controller and its spec, never the model or store, and a root one
+leaves its views; a namespaced one removes the views it wrote.
+
+**Views take the prefix, built 2026-10-30 (v0.6.2).** Until v0.6.1 a namespaced
+`scaffold_controller` shared the model's views file with the root controller,
+so `admin/products` and `products` answered with one `ProductResponse`. A
+namespace sees and writes what the public API must not (stock, an archived
+marker, a cost), and a shared type makes every admin field a public one or
+needs an admin-only mode. Views now follow the model: flat, with the namespace
+in front. `scaffold_controller admin/products` writes
+`app/views/admin_products.go` with `AdminProductRequest`, `AdminProductResponse`
+and `AdminProductsResponse`, and `g scaffold admin/products` (a model of its
+own, `admin_product`) writes the same file, so the two commands agree. The
+JSON key of a listing stays the table (`products`). The price is two small
+structs repeated when the admin shape starts out the same as the public one,
+which is the cost of letting them differ. A views file is not a package: it has
+no behavior to share, which is the rule that keeps models flat too.
 
 **A namespaced scaffold, and `admin_controllers`, built 2026-10-28.** The
 namespace package is plural, `app/controllers/admin_controllers/`, as every

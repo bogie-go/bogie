@@ -710,7 +710,7 @@ func TestScaffoldControllerInANamespace(t *testing.T) {
 		t.Fatal(err)
 	}
 	golden(t, "scaffold_controller_admin_categories", files)
-	want := []string{"app/views/categories.go", "app/controllers/admin_controllers/categories_controller.go", "app/controllers/admin_controllers/categories_controller_test.go"}
+	want := []string{"app/views/admin_categories.go", "app/controllers/admin_controllers/categories_controller.go", "app/controllers/admin_controllers/categories_controller_test.go"}
 	for i, f := range files {
 		if f.Path != want[i] {
 			t.Errorf("file %d = %s, want %s", i, f.Path, want[i])
@@ -843,11 +843,12 @@ func TestModelAttrs(t *testing.T) {
 	}
 }
 
-// A namespaced controller shares the model's views with the root one. The
-// file grows by the types it lacks and keeps every one it has, edits and all.
+// A second scaffold_controller over the same model, with other actions,
+// completes the views file. The file grows by the types it lacks and keeps
+// every one it has, edits and all.
 func TestMergeViews(t *testing.T) {
 	const existing = "package views\n\nimport \"time\"\n\n// Mine, hand-edited.\ntype CategoryResponse struct {\n\tID int64 `json:\"id\"`\n\tName string `json:\"name\"`\n\tProductCount int64 `json:\"product_count\"`\n\tAt time.Time `json:\"at\"`\n}\n"
-	out, added, err := MergeViews([]byte(existing), "example.com/blog", "category", attrs(t, "name:string"), IDBigint, nil)
+	out, added, err := MergeViews([]byte(existing), "example.com/blog", "", "category", attrs(t, "name:string"), IDBigint, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -857,12 +858,17 @@ func TestMergeViews(t *testing.T) {
 	if !strings.Contains(string(out), "ProductCount") || !strings.Contains(string(out), "Mine, hand-edited") {
 		t.Errorf("the existing type was changed:\n%s", out)
 	}
-	again, none, err := MergeViews(out, "example.com/blog", "category", attrs(t, "name:string"), IDBigint, nil)
+	again, none, err := MergeViews(out, "example.com/blog", "", "category", attrs(t, "name:string"), IDBigint, nil)
 	if err != nil || len(none) != 0 || string(again) != string(out) {
 		t.Errorf("a second merge changed the file: %v %v", none, err)
 	}
+	// A namespace's file is its own, and its types carry the namespace.
+	admin, added, err := MergeViews([]byte("package views\n"), "example.com/blog", "admin", "category", attrs(t, "name:string"), IDBigint, []string{"index"})
+	if err != nil || strings.Join(added, ",") != "AdminCategoriesResponse,AdminCategoryResponse" && strings.Join(added, ",") != "AdminCategoryResponse,AdminCategoriesResponse" {
+		t.Errorf("a namespace's types: %v %v\n%s", added, err, admin)
+	}
 	// A file with no imports gets the one a new type needs.
-	bare, _, err := MergeViews([]byte("package views\n"), "example.com/blog", "category", attrs(t, "name:string"), IDBigint, []string{"show"})
+	bare, _, err := MergeViews([]byte("package views\n"), "example.com/blog", "", "category", attrs(t, "name:string"), IDBigint, []string{"show"})
 	if err != nil || !strings.Contains(string(bare), `"time"`) {
 		t.Errorf("no time import added: %v\n%s", err, bare)
 	}

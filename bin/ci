@@ -77,11 +77,15 @@ generators() {
   "$b" g scaffold category name:string || return 1
   # Only some actions; then the HTTP half over an existing model, in a
   # namespace, read back from the model (session has every attribute type),
-  # one of them completing the views a --only scaffold left short.
+  # each with the views of its own.
   "$b" g scaffold tag name:string:uniq --only index,show || return 1
   "$b" g scaffold_controller admin/tags || return 1
   "$b" g scaffold_controller admin/sessions --only index,show || return 1
   "$b" g scaffold_controller admin/categories --only create,destroy || return 1
+  # A namespace's controller has wire types of its own, prefixed like a
+  # model, and the root's stay as they were.
+  grep -q "AdminCategoryRequest" app/views/admin_categories.go || return 1
+  grep -q "CategoryRequest" app/views/categories.go || return 1
   # A scaffold in a namespace is a model of its own (admin_page, table
   # admin_pages), with its controller in the namespace under the short name.
   "$b" g scaffold admin/pages title:string body:text || return 1
@@ -161,6 +165,9 @@ SQL
   "$b" d service publish_post || return 1
   "$b" d migration add_slug_to_posts || return 1
   "$b" d scaffold_controller admin/categories || return 1
+  # Its own views go with it; the root's stay for the controller over them.
+  test ! -f app/views/admin_categories.go || return 1
+  test -f app/views/categories.go || return 1
   "$b" d scaffold_controller admin/sessions || return 1
   "$b" d scaffold_controller admin/tags || return 1
   "$b" d scaffold admin/pages || return 1

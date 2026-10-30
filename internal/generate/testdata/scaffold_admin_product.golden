@@ -353,7 +353,7 @@ import (
 	"time"
 )
 
-// AdminProductRequest is the body of POST /products and PATCH /products/:id.
+// AdminProductRequest is the body of POST /admin/products and PATCH /admin/products/:id.
 type AdminProductRequest struct {
 	Name string `json:"name"`
 }

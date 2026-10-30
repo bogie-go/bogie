@@ -21,9 +21,10 @@ controller the three lines that registered it. For a config group, its file
 and its lines in config/config.go; the group's lines in the development
 credentials stay, harmless. A namespaced controller's
 package goes too once it holds no controller, with the three lines that
-registered the namespace. A scaffold_controller leaves the model, its store
-and its views, which other controllers may use. Nothing else is touched; a file you added to a
-package by hand stays.
+registered the namespace. A scaffold_controller leaves the model and its store,
+and a root one its views, which other controllers may use; a namespaced one
+removes the views it wrote (app/views/admin_categories.go). Nothing else is
+touched; a file you added to a package by hand stays.
 
   bogie d scaffold post
   bogie d controller comments
@@ -108,7 +109,8 @@ func destroyIn(root string, args []string, out io.Writer) error {
 	case "controller", "scaffold_controller":
 		// The same two files whatever actions generate was given. A scaffold
 		// controller is a controller named for its model's table, and leaves
-		// the model, its store and its views, which other controllers use.
+		// the model and its store. A root one leaves its views too, which
+		// other controllers use; a namespaced one wrote views of its own.
 		var ns, ctl string
 		ns, ctl, err = generate.ParseControllerName(positional[0])
 		if err == nil && generator == "scaffold_controller" {
@@ -117,6 +119,9 @@ func destroyIn(root string, args []string, out io.Writer) error {
 		if err == nil {
 			files, _, err = generate.Controller(module, ns, ctl, nil)
 			wires = generate.WirePrefixes(ns, ctl)
+			if generator == "scaffold_controller" && ns != "" {
+				files = append(files, generate.File{Path: generate.ViewsPath(ns, generate.Singular(ctl))})
+			}
 		}
 		if err == nil && ns != "" {
 			files, wires = dropEmptyNamespace(root, ns, files, wires)

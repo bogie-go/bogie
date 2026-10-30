@@ -154,12 +154,25 @@ func newScaffold(module, ns, res, name string, attrs []Attr, scheme IDScheme, on
 	if res == "" {
 		res = Plural(name)
 	}
-	return scaffold{module: module, ns: ns, res: res, name: name, table: Plural(name), attrs: attrs, scheme: scheme, actions: actions}, nil
+	return scaffold{module: module, ns: ns, res: res, name: name, table: Plural(name), view: viewName(ns, name), attrs: attrs, scheme: scheme, actions: actions}, nil
 }
 
-// ViewsPath is the file of a model's wire shapes, which a namespaced
-// controller shares with the root one rather than writing a second set.
-func ViewsPath(name string) string { return "app/views/" + Plural(name) + ".go" }
+// viewName is the name a controller's wire types are named for: the model's
+// own for a root controller, and with the namespace in front for a namespaced
+// one, as a model is when `g scaffold admin/pages` makes it: admin_product,
+// AdminProductResponse, app/views/admin_products.go. A namespace sees and
+// writes what the public API must not, so its types are its own. A model that
+// already starts with the namespace (admin_page) is named as it is.
+func viewName(ns, name string) string {
+	if ns == "" || strings.HasPrefix(name, ns+"_") {
+		return name
+	}
+	return ns + "_" + name
+}
+
+// ViewsPath is the file of a controller's wire shapes: the model's for the
+// root controller, and a namespace's own, prefixed, for a namespaced one.
+func ViewsPath(ns, name string) string { return "app/views/" + Plural(viewName(ns, name)) + ".go" }
 
 // ScaffoldFiles are the paths Scaffold writes for name, for destroy, which
 // cannot know the attributes it was given. Model's files are included.
@@ -203,6 +216,7 @@ func fieldColumn(field string) string {
 
 type scaffold struct {
 	module, ns, res, name, table string
+	view                         string // the name the wire types are named for; see viewName
 	attrs                        []Attr
 	scheme                       IDScheme
 	actions                      map[string]bool // the actions written; never empty
@@ -227,11 +241,16 @@ func (s scaffold) dir() string { return controller{ns: s.ns}.dir() }
 func (s scaffold) url() string { return controller{ns: s.ns, name: s.res}.prefix() }
 
 // viewsPath is the file of the wire shapes.
-func (s scaffold) viewsPath() string { return ViewsPath(s.name) }
+func (s scaffold) viewsPath() string { return ViewsPath(s.ns, s.name) }
 
 func (s scaffold) typ() string  { return Camel(s.name) }  // Post
 func (s scaffold) many() string { return Camel(s.table) } // Posts
-func (s scaffold) ctl() string  { return Camel(s.res) + "Controller" }
+
+// vtyp and vmany name the wire types: Post and Posts at the root, AdminPost
+// and AdminPosts in the admin namespace.
+func (s scaffold) vtyp() string  { return Camel(s.view) }
+func (s scaffold) vmany() string { return Camel(Plural(s.view)) }
+func (s scaffold) ctl() string   { return Camel(s.res) + "Controller" }
 func (s scaffold) storeIface() string {
 	return lowerCamel(s.table) + "Store"
 }
@@ -279,25 +298,25 @@ func (s scaffold) viewTypes() []viewType {
 		var of string
 		switch {
 		case s.has("create") && s.has("update"):
-			of = fmt.Sprintf("POST /%s and PATCH /%s/:id", s.res, s.res)
+			of = fmt.Sprintf("POST %s and PATCH %s/:id", s.url(), s.url())
 		case s.has("create"):
-			of = "POST /" + s.res
+			of = "POST " + s.url()
 		default:
-			of = fmt.Sprintf("PATCH /%s/:id", s.res)
+			of = fmt.Sprintf("PATCH %s/:id", s.url())
 		}
 		var b strings.Builder
-		fmt.Fprintf(&b, "// %sRequest is the body of %s.\n", s.typ(), of)
-		fmt.Fprintf(&b, "type %sRequest struct {\n", s.typ())
+		fmt.Fprintf(&b, "// %sRequest is the body of %s.\n", s.vtyp(), of)
+		fmt.Fprintf(&b, "type %sRequest struct {\n", s.vtyp())
 		for _, a := range s.attrs {
 			b.WriteString(field(a))
 		}
 		b.WriteString("}\n")
-		out = append(out, viewType{s.typ() + "Request", b.String(), withAttrImports()})
+		out = append(out, viewType{s.vtyp() + "Request", b.String(), withAttrImports()})
 	}
 	if s.has("index", "show", "create", "update") {
 		var b strings.Builder
-		fmt.Fprintf(&b, "// %sResponse is one %s on the wire.\n", s.typ(), s.name)
-		fmt.Fprintf(&b, "type %sResponse struct {\n", s.typ())
+		fmt.Fprintf(&b, "// %sResponse is one %s on the wire.\n", s.vtyp(), s.name)
+		fmt.Fprintf(&b, "type %sResponse struct {\n", s.vtyp())
 		fmt.Fprintf(&b, "\t%-*s %s `json:\"id\"`\n", width, "ID", s.scheme.idDomain())
 		for _, a := range s.attrs {
 			b.WriteString(field(a))
@@ -305,11 +324,11 @@ func (s scaffold) viewTypes() []viewType {
 		fmt.Fprintf(&b, "\t%-*s time.Time `json:\"created_at\"`\n", width, "CreatedAt")
 		fmt.Fprintf(&b, "\t%-*s time.Time `json:\"updated_at\"`\n", width, "UpdatedAt")
 		b.WriteString("}\n")
-		out = append(out, viewType{s.typ() + "Response", b.String(), withAttrImports("time")})
+		out = append(out, viewType{s.vtyp() + "Response", b.String(), withAttrImports("time")})
 	}
 	if s.has("index") {
-		src := fmt.Sprintf("// %sResponse is a listing.\ntype %sResponse struct {\n\t%s []%sResponse `json:%q`\n}\n", s.many(), s.many(), s.many(), s.typ(), s.table)
-		out = append(out, viewType{s.many() + "Response", src, nil})
+		src := fmt.Sprintf("// %sResponse is a listing.\ntype %sResponse struct {\n\t%s []%sResponse `json:%q`\n}\n", s.vmany(), s.vmany(), s.many(), s.vtyp(), s.table)
+		out = append(out, viewType{s.vmany() + "Response", src, nil})
 	}
 	return out
 }
@@ -341,12 +360,12 @@ func (s scaffold) views() string {
 	return b.String()
 }
 
-// MergeViews adds to a model's existing views file the wire shapes the
+// MergeViews adds to a controller's existing views file the wire shapes the
 // actions need that it does not declare yet, and returns the new text and
-// the names it added. A namespaced controller shares the root controller's
-// types, so the file is the model's and grows as controllers over it do; a
-// type already there is left exactly as it is, hand-edited or not.
-func MergeViews(existing []byte, module, name string, attrs []Attr, scheme IDScheme, only []string) ([]byte, []string, error) {
+// the names it added. A second scaffold_controller over the same model, with
+// other actions, completes the file; a type already there is left exactly as
+// it is, hand-edited or not.
+func MergeViews(existing []byte, module, ns, name string, attrs []Attr, scheme IDScheme, only []string) ([]byte, []string, error) {
 	file, err := parser.ParseFile(token.NewFileSet(), "", existing, 0)
 	if err != nil {
 		return nil, nil, err
@@ -361,7 +380,7 @@ func MergeViews(existing []byte, module, name string, attrs []Attr, scheme IDSch
 			}
 		}
 	}
-	s, err := newScaffold(module, "", "", name, attrs, scheme, only)
+	s, err := newScaffold(module, ns, "", name, attrs, scheme, only)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -593,9 +612,9 @@ func (ctl *%[2]s) fail(c *gin.Context, err error) {
 // The controller converts between the models and the wire. views never
 // imports models, so this is where %[1]sResponse is built.
 
-`, typ)
+`, s.vtyp())
 	// One record on the wire: index builds a listing out of them.
-	w("func %sView(%s models.%s) views.%sResponse {\n\treturn views.%sResponse{\n", lowerCamel(s.name), recv, typ, typ, typ)
+	w("func %sView(%s models.%s) views.%sResponse {\n\treturn views.%sResponse{\n", lowerCamel(s.name), recv, typ, s.vtyp(), s.vtyp())
 	width := len("CreatedAt:")
 	for _, a := range s.attrs {
 		if n := len(a.goName()) + 1; n > width {
@@ -609,8 +628,8 @@ func (ctl *%[2]s) fail(c *gin.Context, err error) {
 	w("\t\t%-*s %s.CreatedAt,\n\t\t%-*s %s.UpdatedAt,\n\t}\n}\n", width, "CreatedAt:", recv, width, "UpdatedAt:", recv)
 
 	if s.has("index") {
-		w("\nfunc %sView(%s []models.%s) views.%sResponse {\n", lowerCamel(s.table), lowerCamel(s.table), typ, many)
-		w("\tout := views.%sResponse{%s: make([]views.%sResponse, 0, len(%s))}\n", many, many, typ, lowerCamel(s.table))
+		w("\nfunc %sView(%s []models.%s) views.%sResponse {\n", lowerCamel(s.table), lowerCamel(s.table), typ, s.vmany())
+		w("\tout := views.%sResponse{%s: make([]views.%sResponse, 0, len(%s))}\n", s.vmany(), many, s.vtyp(), lowerCamel(s.table))
 		w("\tfor _, %s := range %s {\n\t\tout.%s = append(out.%s, %sView(%s))\n\t}\n\treturn out\n}\n", recv, lowerCamel(s.table), many, many, lowerCamel(s.name), recv)
 	}
 	return b.String()
@@ -622,7 +641,7 @@ func (s scaffold) bind() string {
 	if len(s.attrs) == 0 {
 		return ""
 	}
-	return fmt.Sprintf("\tvar req views.%sRequest\n\tif err := c.ShouldBindJSON(&req); err != nil {\n\t\tc.JSON(http.StatusBadRequest, views.Error(err))\n\t\treturn\n\t}\n", s.typ())
+	return fmt.Sprintf("\tvar req views.%sRequest\n\tif err := c.ShouldBindJSON(&req); err != nil {\n\t\tc.JSON(http.StatusBadRequest, views.Error(err))\n\t\treturn\n\t}\n", s.vtyp())
 }
 
 // fromRequest is the model built from the bound request, with the
@@ -645,7 +664,7 @@ func (s scaffold) toRequest(recv string) string {
 	for i, a := range s.attrs {
 		parts[i] = fmt.Sprintf("%s: %s.%s", a.goName(), recv, a.goName())
 	}
-	return fmt.Sprintf("views.%sRequest{%s}", s.typ(), strings.Join(parts, ", "))
+	return fmt.Sprintf("views.%sRequest{%s}", s.vtyp(), strings.Join(parts, ", "))
 }
 
 // edited is a second JSON value and Go literal per attribute type, unlike
@@ -712,7 +731,7 @@ func (s scaffold) controllerTest() string {
 		})
 
 		It("lists them, newest first", func() {
-			var list views.%[3]sResponse
+			var list views.%[6]sResponse
 			app.Get("%[5]s").Do().Status(http.StatusOK).JSON(&list)
 
 			Expect(list.%[3]s).To(HaveLen(2))
@@ -720,7 +739,7 @@ func (s scaffold) controllerTest() string {
 			Expect(list.%[3]s[1].ID).To(Equal(first.ID))
 		})
 	})
-`, table, typ, many, factory, url)
+`, table, typ, many, factory, url, s.vmany())
 		}
 		w("})\n")
 	}
@@ -737,14 +756,14 @@ func (s scaffold) controllerTest() string {
 		})
 
 		It("shows it", func() {
-			var shown views.%[2]sResponse
+			var shown views.%[5]sResponse
 			app.Get(%[4]s).Do().Status(http.StatusOK).JSON(&shown)
 
 			Expect(shown.ID).To(Equal(record.ID))
 		})
 	})
 
-`, s.name, typ, factory, pathOf)
+`, s.name, typ, factory, pathOf, s.vtyp())
 		}
 		w(`	Context("when the %[1]s does not exist", func() {
 		It("is not found", func() {
@@ -767,14 +786,14 @@ func (s scaffold) controllerTest() string {
 `, url)
 		} else {
 			if !hasRefs {
-				w("\tvar body views.%sRequest\n\n", typ)
+				w("\tvar body views.%sRequest\n\n", s.vtyp())
 				w(`	Context("with a valid body", func() {
 		BeforeEach(func() {
 			body = %[1]sRequest(factories.New%[2]s())
 		})
 
 		It("creates it", func() {
-			var created views.%[2]sResponse
+			var created views.%[4]sResponse
 			app.Post("%[3]s", body).Do().Status(http.StatusCreated).JSON(&created)
 
 			Expect(created.ID).NotTo(BeZero())
@@ -782,7 +801,7 @@ func (s scaffold) controllerTest() string {
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})
-`, lowerCamel(s.name), typ, url)
+`, lowerCamel(s.name), typ, url, s.vtyp())
 				if uniq := uniqueAttrs(s.attrs); len(uniq) > 0 {
 					names := make([]string, len(uniq))
 					for i, a := range uniq {
@@ -835,7 +854,7 @@ func (s scaffold) controllerTest() string {
 			if sent != nil {
 				// PATCH is partial: a field the body leaves out keeps
 				// its stored value rather than being blanked.
-				w("\t\tIt(\"changes only the fields sent\", func() {\n\t\t\tvar updated views.%sResponse\n", typ)
+				w("\t\tIt(\"changes only the fields sent\", func() {\n\t\t\tvar updated views.%sResponse\n", s.vtyp())
 				w("\t\t\tapp.Patch(%s, map[string]any{%q: %s}).Do().Status(http.StatusOK).JSON(&updated)\n\n", pathOf, sent.Name, sentLit)
 				w("\t\t\tExpect(updated.%s).To(BeEquivalentTo(%s))\n", sent.goName(), sentLit)
 				for _, a := range s.attrs {
@@ -851,12 +870,12 @@ func (s scaffold) controllerTest() string {
 				w("\t\t})\n")
 			} else {
 				w(`		It("keeps it as it is when nothing is sent", func() {
-			var updated views.%[1]sResponse
+			var updated views.%[3]sResponse
 			app.Patch(%[2]s, map[string]any{}).Do().Status(http.StatusOK).JSON(&updated)
 
 			Expect(updated.ID).To(Equal(record.ID))
 		})
-`, typ, pathOf)
+`, typ, pathOf, s.vtyp())
 			}
 			if len(s.attrs) > 0 {
 				w(`
@@ -914,7 +933,7 @@ func (s scaffold) controllerTest() string {
 // "with" function of factories.%[2]s, and add them.
 `, withArticle(s.name), typ)
 	} else if len(s.attrs) > 0 && s.has("create") {
-		w("\n// %[1]sRequest is the body that creates a record like this one.\nfunc %[1]sRequest(record models.%[2]s) views.%[2]sRequest {\n\treturn views.%[2]sRequest{", lowerCamel(s.name), typ)
+		w("\n// %[1]sRequest is the body that creates a record like this one.\nfunc %[1]sRequest(record models.%[2]s) views.%[3]sRequest {\n\treturn views.%[3]sRequest{", lowerCamel(s.name), typ, s.vtyp())
 		for i, a := range s.attrs {
 			if i > 0 {
 				w(", ")

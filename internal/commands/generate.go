@@ -171,7 +171,7 @@ func generateIn(root string, args []string, out io.Writer) error {
 		scheme = settings.IDScheme
 	}
 	var only []string
-	// The shared views file a scaffold_controller adds types to, when it exists.
+	// The controller's views file a second scaffold_controller adds types to, when it exists.
 	var viewsPath string
 	var viewsMerged []byte
 	var viewsAdded []string
@@ -255,12 +255,13 @@ func generateIn(root string, args []string, out io.Writer) error {
 		if err != nil {
 			return fmt.Errorf("generate scaffold_controller: %w", err)
 		}
-		// The wire shapes belong to the model and are shared by every
-		// controller over it, the root's and a namespace's: the file that is
-		// already there is the one in use, hand-edited or not, and only
+		// A namespaced controller has wire types of its own (AdminProduct...),
+		// in app/views/admin_products.go. When that file is already there, a
+		// second scaffold_controller over the model, with other actions,
+		// completes it: the file in use is kept, hand-edited or not, and only
 		// gains the types this controller needs and it lacks.
 		for _, f := range ctlFiles {
-			if f.Path != generate.ViewsPath(model) {
+			if f.Path != generate.ViewsPath(ns, model) {
 				files = append(files, f)
 				continue
 			}
@@ -269,12 +270,12 @@ func generateIn(root string, args []string, out io.Writer) error {
 				files = append(files, f)
 				continue
 			}
-			merged, added, err := generate.MergeViews(existing, module, model, modelAttrs, scheme, only)
+			merged, added, err := generate.MergeViews(existing, module, ns, model, modelAttrs, scheme, only)
 			if err != nil {
 				return fmt.Errorf("generate scaffold_controller: %s: %w", f.Path, err)
 			}
 			if len(added) == 0 {
-				say("%12s  %s (shared with the other controllers over %s)\n", "exist", f.Path, model)
+				say("%12s  %s (it has the types this controller needs)\n", "exist", f.Path)
 				continue
 			}
 			viewsPath, viewsMerged, viewsAdded = f.Path, merged, added

@@ -1,26 +1,26 @@
-==> app/views/categories.go
+==> app/views/admin_categories.go
 package views
 
 import (
 	"time"
 )
 
-// CategoryRequest is the body of POST /categories and PATCH /categories/:id.
-type CategoryRequest struct {
+// AdminCategoryRequest is the body of POST /admin/categories and PATCH /admin/categories/:id.
+type AdminCategoryRequest struct {
 	Name string `json:"name"`
 }
 
-// CategoryResponse is one category on the wire.
-type CategoryResponse struct {
+// AdminCategoryResponse is one category on the wire.
+type AdminCategoryResponse struct {
 	ID        int64     `json:"id"`
 	Name      string    `json:"name"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// CategoriesResponse is a listing.
-type CategoriesResponse struct {
-	Categories []CategoryResponse `json:"categories"`
+// AdminCategoriesResponse is a listing.
+type AdminCategoriesResponse struct {
+	Categories []AdminCategoryResponse `json:"categories"`
 }
 ==> app/controllers/admin_controllers/categories_controller.go
 package admin_controllers
@@ -101,7 +101,7 @@ func (ctl *CategoriesController) Show(c *gin.Context) {
 
 // Create handles POST /admin/categories.
 func (ctl *CategoriesController) Create(c *gin.Context) {
-	var req views.CategoryRequest
+	var req views.AdminCategoryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, views.Error(err))
 		return
@@ -124,7 +124,7 @@ func (ctl *CategoriesController) Update(c *gin.Context) {
 		ctl.fail(c, err)
 		return
 	}
-	req := views.CategoryRequest{Name: category.Name}
+	req := views.AdminCategoryRequest{Name: category.Name}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, views.Error(err))
 		return
@@ -163,10 +163,10 @@ func (ctl *CategoriesController) fail(c *gin.Context, err error) {
 }
 
 // The controller converts between the models and the wire. views never
-// imports models, so this is where CategoryResponse is built.
+// imports models, so this is where AdminCategoryResponse is built.
 
-func categoryView(category models.Category) views.CategoryResponse {
-	return views.CategoryResponse{
+func categoryView(category models.Category) views.AdminCategoryResponse {
+	return views.AdminCategoryResponse{
 		ID:        category.ID,
 		Name:      category.Name,
 		CreatedAt: category.CreatedAt,
@@ -174,8 +174,8 @@ func categoryView(category models.Category) views.CategoryResponse {
 	}
 }
 
-func categoriesView(categories []models.Category) views.CategoriesResponse {
-	out := views.CategoriesResponse{Categories: make([]views.CategoryResponse, 0, len(categories))}
+func categoriesView(categories []models.Category) views.AdminCategoriesResponse {
+	out := views.AdminCategoriesResponse{Categories: make([]views.AdminCategoryResponse, 0, len(categories))}
 	for _, category := range categories {
 		out.Categories = append(out.Categories, categoryView(category))
 	}
@@ -212,7 +212,7 @@ var _ = Describe("GET /admin/categories", func() {
 		})
 
 		It("lists them, newest first", func() {
-			var list views.CategoriesResponse
+			var list views.AdminCategoriesResponse
 			app.Get("/admin/categories").Do().Status(http.StatusOK).JSON(&list)
 
 			Expect(list.Categories).To(HaveLen(2))
@@ -231,7 +231,7 @@ var _ = Describe("GET /admin/categories/:id", func() {
 		})
 
 		It("shows it", func() {
-			var shown views.CategoryResponse
+			var shown views.AdminCategoryResponse
 			app.Get("/admin/categories/" + fmt.Sprint(record.ID)).Do().Status(http.StatusOK).JSON(&shown)
 
 			Expect(shown.ID).To(Equal(record.ID))
@@ -246,7 +246,7 @@ var _ = Describe("GET /admin/categories/:id", func() {
 })
 
 var _ = Describe("POST /admin/categories", func() {
-	var body views.CategoryRequest
+	var body views.AdminCategoryRequest
 
 	Context("with a valid body", func() {
 		BeforeEach(func() {
@@ -254,7 +254,7 @@ var _ = Describe("POST /admin/categories", func() {
 		})
 
 		It("creates it", func() {
-			var created views.CategoryResponse
+			var created views.AdminCategoryResponse
 			app.Post("/admin/categories", body).Do().Status(http.StatusCreated).JSON(&created)
 
 			Expect(created.ID).NotTo(BeZero())
@@ -279,7 +279,7 @@ var _ = Describe("PATCH /admin/categories/:id", func() {
 		})
 
 		It("changes only the fields sent", func() {
-			var updated views.CategoryResponse
+			var updated views.AdminCategoryResponse
 			app.Patch("/admin/categories/"+fmt.Sprint(record.ID), map[string]any{"name": "Edited"}).Do().Status(http.StatusOK).JSON(&updated)
 
 			Expect(updated.Name).To(BeEquivalentTo("Edited"))
@@ -322,6 +322,6 @@ var _ = Describe("DELETE /admin/categories/:id", func() {
 })
 
 // categoryRequest is the body that creates a record like this one.
-func categoryRequest(record models.Category) views.CategoryRequest {
-	return views.CategoryRequest{Name: record.Name}
+func categoryRequest(record models.Category) views.AdminCategoryRequest {
+	return views.AdminCategoryRequest{Name: record.Name}
 }

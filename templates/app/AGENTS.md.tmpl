@@ -224,12 +224,15 @@ version such as `v1` is a route group inside the namespace's `routes.go`.
 `bogie d controller admin/reports` removes the controller, and the package
 too once it holds no controller.
 
-Only the controller is namespaced. `bogie g scaffold admin/pages title:string`
+Only the controller gets a package; the model, the store and the views are flat,
+the namespace in front of their names. `bogie g scaffold admin/pages title:string`
 makes a model of its own, as Rails does: `admin_page`, table `admin_pages`,
 `app/models/admin_page.go`, all flat, with `PagesController` in the admin
 package at `/admin/pages`. To put an admin controller over a model that
 exists, say `categories`, use `bogie g scaffold_controller admin/categories`:
-it reads the model and writes only the controller, its views and its spec.
+it reads the model and writes only the controller, its spec and views of its own,
+`app/views/admin_categories.go` with `AdminCategoryResponse`, so what staff see
+can differ from the public shapes in `app/views/categories.go`.
 
 {{if .Jobs}}### Add a background job
 
