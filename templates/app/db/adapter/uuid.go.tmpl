@@ -6,7 +6,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// The domain speaks strings; Postgres speaks uuid. Converting here rather than
+// The models speak strings; Postgres speaks uuid. Converting here rather than
 // in db/adapter is what lets app/models import nothing third-party.
 
 func parseUUID(s string) (pgtype.UUID, error) {

@@ -18,7 +18,7 @@ var _ = BeforeEach(func() {
 	store = testdb.Store(GinkgoT())
 })
 
-func TestModels(t *testing.T) {
+func TestAdapter(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Models")
+	RunSpecs(t, "Adapter")
 }

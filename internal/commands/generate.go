@@ -15,7 +15,7 @@ import (
 	"github.com/bogie-go/bogie/internal/scaffold"
 )
 
-const generateUsage = `Usage: bogie generate GENERATOR NAME [attributes] [--pretend] [--force] [--skip-sqlc]
+const generateUsage = `Usage: bogie generate GENERATOR NAME [attributes] [--only ACTIONS] [--pretend] [--force] [--skip-sqlc]
        bogie g ...
 
 Generators:
@@ -28,7 +28,21 @@ Generators:
   scaffold NAME [field[:type] ...]  the model, plus app/views/<table>.go and
                                     a <Table>Controller with real handlers
                                     over the store, REGISTERED. The model is
-                                    singular, the rest plural
+                                    singular, the rest plural. --only
+                                    index,show writes just those actions,
+                                    with their routes, views and specs
+                                    (the model half is written in full).
+                                    admin/NAME is a model of its own, as in
+                                    Rails: admin_page, table admin_pages,
+                                    its controller PagesController in the
+                                    admin namespace at /admin/pages
+  scaffold_controller [NS/]RESOURCE the HTTP half of a scaffold for a model
+                                    that already exists, read from
+                                    app/models: admin/categories mounts the
+                                    five actions over the category store
+                                    under /admin/categories. The model is
+                                    the last segment, not namespaced;
+                                    --only works here too
   controller NAME [action ...]      app/controllers/<name>_controller.go, one
                                     controller in one file, REGISTERED:
                                     a field, a wire line and a mount above
@@ -36,7 +50,7 @@ Generators:
                                     plural: posts answers at
                                     /posts, post at /post. admin/NAME puts it
                                     in the admin namespace, the package
-                                    app/controllers/admin_controller/, made
+                                    app/controllers/admin_controllers/, made
                                     on first use and registered the same way
   service NAME                      app/services/<name>/, ctx first, no HTTP
   job NAME                          app/jobs/<name>.go, a River job, REGISTERED
@@ -67,13 +81,16 @@ Generators:
                                     (keys for machine clients, with a table
                                     and api_keys:create)
 
-Attributes are field:type, with :index or :uniq after the type. Types:
+Attributes are field:type, with :index, :uniq or :null after the type (a column
+is NOT NULL unless it says :null). Types:
   string text integer bigint boolean datetime uuid jsonb references
 (int and bool are accepted too, as in g config, which takes integer and boolean.)
 A field with no :type defaults to string. A references field
 names the other model: post:references is post_id.
 
   bogie g scaffold post title body:text
+  bogie g scaffold category name:string:uniq --only index
+  bogie g scaffold_controller admin/categories
   bogie g model comment body:text post:references
   bogie g migration add_slug_to_posts slug:string:uniq
   bogie g controller comments index show create
@@ -114,6 +131,7 @@ func generateIn(root string, args []string, out io.Writer) error {
 	force := fs.Bool("force", false, "overwrite files that differ")
 	pretend := fs.Bool("pretend", false, "report what would be written and write nothing")
 	skipSqlc := fs.Bool("skip-sqlc", false, "do not run sqlc afterwards")
+	onlySpec := fs.String("only", "", "write only these actions (index,show,create,update,destroy)")
 	fs.Usage = func() { say(generateUsage) }
 
 	// Flags anywhere, positionals in order, as for `new`.
@@ -147,12 +165,26 @@ func generateIn(root string, args []string, out io.Writer) error {
 	// beyond the module, as before this setting existed.
 	var settings Settings
 	var scheme generate.IDScheme
-	if generator == "migration" || generator == "model" || generator == "scaffold" || generator == "authentication" {
+	if generator == "migration" || generator == "model" || generator == "scaffold" || generator == "scaffold_controller" || generator == "authentication" {
 		settings, err = readSettings(root)
 		if err != nil {
 			return fmt.Errorf("generate %s: %w", generator, err)
 		}
 		scheme = settings.IDScheme
+	}
+	var only []string
+	// The controller's views file a second scaffold_controller adds types to, when it exists.
+	var viewsPath string
+	var viewsMerged []byte
+	var viewsAdded []string
+	if *onlySpec != "" {
+		if generator != "scaffold" && generator != "scaffold_controller" {
+			return fmt.Errorf("generate %s: --only is for scaffold and scaffold_controller", generator)
+		}
+		only, err = generate.ParseOnly(*onlySpec)
+		if err != nil {
+			return fmt.Errorf("generate %s: %w", generator, err)
+		}
 	}
 	var files []generate.File
 	var wires []generate.Wire
@@ -172,7 +204,7 @@ func generateIn(root string, args []string, out io.Writer) error {
 		// root lines that register it; after that only the controller's
 		// own lines are inserted.
 		if ns != "" {
-			if _, err := os.Stat(filepath.Join(root, "app", "controllers", ns+"_controller", "server.go")); err != nil {
+			if _, err := os.Stat(filepath.Join(root, "app", "controllers", ns+"_controllers", "server.go")); err != nil {
 				files, wires, err = generate.Namespace(module, ns)
 				if err != nil {
 					return fmt.Errorf("generate controller: %w", err)
@@ -191,6 +223,66 @@ func generateIn(root string, args []string, out io.Writer) error {
 		if generate.LooksLikeASingularResource(ctl, attrArgs) {
 			defer say("%12s  A resource is named in the plural: %s would answer at /%s; %s answers at /%s\n", "note", generate.Plural(ctl), generate.Plural(ctl), ctl, ctl)
 		}
+	case "scaffold_controller":
+		if len(attrArgs) > 0 {
+			return fmt.Errorf("generate scaffold_controller: the attributes are read from the model, so give none (got %s)", strings.Join(attrArgs, " "))
+		}
+		ns, resource, err := generate.ParseControllerName(positional[0])
+		if err != nil {
+			return fmt.Errorf("generate scaffold_controller: %w", err)
+		}
+		// Models are never namespaced: admin/categories is the category
+		// model's controller, so the model is the last segment, singular.
+		model := generate.Singular(resource)
+		src, err := os.ReadFile(filepath.Join(root, "app", "models", model+".go"))
+		if err != nil {
+			return fmt.Errorf("generate scaffold_controller: no model %s (app/models/%s.go): make it first with bogie g model %s, or use bogie g scaffold", model, model, model)
+		}
+		if _, err := os.Stat(filepath.Join(root, "db", "adapter", generate.Plural(model)+".go")); err != nil {
+			return fmt.Errorf("generate scaffold_controller: model %s has no store (db/adapter/%s.go)", model, generate.Plural(model))
+		}
+		modelAttrs, err := generate.ModelAttrs(src, model, scheme)
+		if err != nil {
+			return fmt.Errorf("generate scaffold_controller: app/models/%s.go: %w", model, err)
+		}
+		if ns != "" {
+			if _, err := os.Stat(filepath.Join(root, "app", "controllers", ns+"_controllers", "server.go")); err != nil {
+				files, wires, err = generate.Namespace(module, ns)
+				if err != nil {
+					return fmt.Errorf("generate scaffold_controller: %w", err)
+				}
+			}
+		}
+		ctlFiles, ctlWires, err := generate.ScaffoldController(module, ns, generate.Plural(model), model, modelAttrs, scheme, only)
+		if err != nil {
+			return fmt.Errorf("generate scaffold_controller: %w", err)
+		}
+		// A namespaced controller has wire types of its own (AdminProduct...),
+		// in app/views/admin_products.go. When that file is already there, a
+		// second scaffold_controller over the model, with other actions,
+		// completes it: the file in use is kept, hand-edited or not, and only
+		// gains the types this controller needs and it lacks.
+		for _, f := range ctlFiles {
+			if f.Path != generate.ViewsPath(ns, model) {
+				files = append(files, f)
+				continue
+			}
+			existing, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(f.Path)))
+			if err != nil {
+				files = append(files, f)
+				continue
+			}
+			merged, added, err := generate.MergeViews(existing, module, ns, model, modelAttrs, scheme, only)
+			if err != nil {
+				return fmt.Errorf("generate scaffold_controller: %s: %w", f.Path, err)
+			}
+			if len(added) == 0 {
+				say("%12s  %s (it has the types this controller needs)\n", "exist", f.Path)
+				continue
+			}
+			viewsPath, viewsMerged, viewsAdded = f.Path, merged, added
+		}
+		wires = append(wires, ctlWires...)
 	case "service":
 		files, err = generate.Service(module, name)
 		if err != nil {
@@ -284,10 +376,29 @@ func generateIn(root string, args []string, out io.Writer) error {
 			return fmt.Errorf("generate model: %w", err)
 		}
 	case "scaffold":
-		files, wires, err = generate.Scaffold(module, name, attrs, scheme, now)
+		// admin/products is a model of its own, as in Rails: admin_product,
+		// table admin_products, with its controller in the admin namespace
+		// under the short name. The existing model's controller is
+		// scaffold_controller.
+		ns, res, model, err := generate.ParseScaffoldName(positional[0])
 		if err != nil {
 			return fmt.Errorf("generate scaffold: %w", err)
 		}
+		if ns != "" {
+			name = model
+			if _, err := os.Stat(filepath.Join(root, "app", "controllers", ns+"_controllers", "server.go")); err != nil {
+				files, wires, err = generate.Namespace(module, ns)
+				if err != nil {
+					return fmt.Errorf("generate scaffold: %w", err)
+				}
+			}
+			defer say("%12s  model %s is %s.go, table %s; its controller is %s/%s, at /%s/%s\n", "note", model, model, generate.Plural(model), ns+"_controllers", res, ns, res)
+		}
+		scaffoldFiles, scaffoldWires, err := generate.Scaffold(module, ns, res, name, attrs, scheme, now, only)
+		if err != nil {
+			return fmt.Errorf("generate scaffold: %w", err)
+		}
+		files, wires = append(files, scaffoldFiles...), append(wires, scaffoldWires...)
 	}
 
 	toWrite := make([]scaffold.File, len(files))
@@ -326,6 +437,14 @@ func generateIn(root string, args []string, out io.Writer) error {
 
 	if _, err := scaffold.Write(root, toWrite, scaffold.Options{Force: *force, Pretend: *pretend, Report: report}); err != nil {
 		return fmt.Errorf("generate %s: %w", generator, err)
+	}
+	if viewsPath != "" {
+		report(scaffold.Action{Op: "update", Path: viewsPath + ": " + strings.Join(viewsAdded, ", ")})
+		if !*pretend {
+			if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(viewsPath)), viewsMerged, 0o644); err != nil {
+				return fmt.Errorf("generate %s: %w", generator, err)
+			}
+		}
 	}
 	if err := wire(root, wires, pending, *pretend, report); err != nil {
 		return fmt.Errorf("generate %s: %w", generator, err)

@@ -58,7 +58,7 @@ func ParseControllerName(spec string) (ns, name string, err error) {
 // type holding its dependencies, SetupRoutes, one method per action, and a
 // test that every route is mounted. With no namespace it goes in the
 // controllers package as app/controllers/<name>_controller.go; with one, in
-// app/controllers/<ns>_controller/<name>_controller.go, the package Namespace
+// app/controllers/<ns>_controllers/<name>_controller.go, the package Namespace
 // writes. Either way it returns the three lines that register it
 // (docs/DESIGN.md §5).
 func Controller(module, ns, name string, actions []string) ([]File, []Wire, error) {
@@ -100,7 +100,7 @@ func checkNamespace(ns string) error {
 }
 
 // Namespace writes the package a namespaced controller lives in:
-// app/controllers/<ns>_controller/ (the namespace admin, with the
+// app/controllers/<ns>_controllers/ (the namespace admin, with the
 // suffix Go needs so that admin never collides with another import in
 // app/application.go, and internal is not Go's internal) with server.go
 // (the namespace Server, one named field per controller above its own
@@ -111,7 +111,7 @@ func Namespace(module, ns string) ([]File, []Wire, error) {
 	if err := checkNamespace(ns); err != nil {
 		return nil, nil, err
 	}
-	pkg := ns + "_controller"
+	pkg := ns + "_controllers"
 	dir := "app/controllers/" + pkg + "/"
 	field := Camel(ns)
 	importPath := module + "/app/controllers/" + pkg
@@ -153,7 +153,7 @@ func WirePrefixes(ns, name string) []Wire {
 func NamespaceWirePrefixes(ns string) []Wire {
 	field := Camel(ns)
 	return []Wire{
-		{File: "app/controllers/application.go", Line: field + " *" + ns + "_controller.Server"},
+		{File: "app/controllers/application.go", Line: field + " *" + ns + "_controllers.Server"},
 		{File: "app/application.go", Line: "server." + field + " ="},
 		{File: "app/controllers/routes.go", Line: "s." + field + ".SetupRoutes("},
 	}
@@ -186,14 +186,14 @@ func (c controller) pkg() string {
 	if c.ns == "" {
 		return "controllers"
 	}
-	return c.ns + "_controller"
+	return c.ns + "_controllers"
 }
 
 func (c controller) dir() string {
 	if c.ns == "" {
 		return "app/controllers/"
 	}
-	return "app/controllers/" + c.ns + "_controller/"
+	return "app/controllers/" + c.ns + "_controllers/"
 }
 
 func (c controller) typeName() string { return Camel(c.name) + "Controller" }
@@ -225,7 +225,7 @@ func (c controller) wires() []Wire {
 	return []Wire{
 		{File: c.dir() + "server.go", Marker: "controllers", Line: c.typeField()},
 		{File: "app/application.go", Marker: "wire", Line: fmt.Sprintf("server.%s.%s = %s.New%s(log)", nsField, field, c.pkg(), c.typeName()), Import: c.module + "/app/controllers/" + c.pkg()},
-		{File: c.dir() + "routes.go", Marker: "routes", Line: fmt.Sprintf("s.%s.SetupRoutes(%s)", field, c.ns)},
+		{File: c.dir() + "routes.go", Marker: "routes", Line: fmt.Sprintf("s.%s.SetupRoutes(%s)", field, lowerCamel(c.ns))},
 	}
 }
 
@@ -260,14 +260,14 @@ func New%[1]s(log *slog.Logger) *%[1]s {
 // whole controller needs goes here; which group it sits in, and so how it is
 // exposed, is decided by the routes.go that calls this.
 func (ctl *%[1]s) SetupRoutes(router *gin.RouterGroup) {
-	%[2]s := router.Group("/%[2]s")
+	%[3]s := router.Group("/%[2]s")
 `, c.typeName(), c.name, lowerCamel(c.name))
 	if len(c.actions) == 0 {
-		fmt.Fprintf(&b, "\t_ = %s // no actions yet; add them below and mount them here\n", c.name)
+		fmt.Fprintf(&b, "\t_ = %s // no actions yet; add them below and mount them here\n", lowerCamel(c.name))
 	}
 	for _, a := range c.actions {
 		method, path := routeFor(a)
-		fmt.Fprintf(&b, "\t%s.%s(%q, ctl.%s)\n", c.name, method, path, Camel(a))
+		fmt.Fprintf(&b, "\t%s.%s(%q, ctl.%s)\n", lowerCamel(c.name), method, path, Camel(a))
 	}
 	b.WriteString("}\n")
 
@@ -276,7 +276,7 @@ func (ctl *%[1]s) SetupRoutes(router *gin.RouterGroup) {
 		fmt.Fprintf(&b, `
 // %[1]s handles %[2]s %[3]s%[4]s.
 //
-// A handler converts HTTP into domain values, calls one service function,
+// A handler converts HTTP into models, calls one service function,
 // and converts the result back. Nothing below app/controllers sees
 // *gin.Context.
 func (ctl *%[5]s) %[1]s(c *gin.Context) {
@@ -299,9 +299,11 @@ func routeFor(action string) (method, path string) {
 
 // test is the controller's request spec, beside the controller: every action
 // is mounted, which fails when a route was never registered or the namespace's
-// routes.go lost the mount line, since the request goes through the whole
-// application the suite builds (package controllers_test, or the namespace's
-// own suite).
+// routes.go lost the mount line. It looks the method and path up in the routes
+// of the whole application the suite builds (package controllers_test, or the
+// namespace's own suite), rather than sending a request and expecting not a
+// 404: a real Show or Destroy answers 404 for a record that is not there, and
+// that must not break this spec once the action is written.
 func (c controller) test() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "package %s_test\n\n", c.pkg())
@@ -309,16 +311,16 @@ func (c controller) test() string {
 		b.WriteString("// No actions yet. Add a request spec per route as you add it: the suite\n// provides app, the whole application on a clean test database.\n")
 		return b.String()
 	}
-	b.WriteString("import (\n\t\"net/http\"\n\t\"net/http/httptest\"\n\n\t. \"github.com/onsi/ginkgo/v2\"\n\t. \"github.com/onsi/gomega\"\n)\n\n")
+	b.WriteString("import (\n\t\"net/http\"\n\n\t. \"github.com/onsi/ginkgo/v2\"\n\t. \"github.com/onsi/gomega\"\n)\n\n")
 	for _, a := range c.actions {
 		method, path := routeFor(a)
-		route := c.prefix() + strings.ReplaceAll(path, ":id", "1")
+		route := c.prefix() + path
 		fmt.Fprintf(&b, `var _ = Describe("%[1]s %[2]s", func() {
 	It("is mounted", func() {
-		rec := httptest.NewRecorder()
-		app.Server.Router.ServeHTTP(rec, httptest.NewRequest(http.Method%[3]s, %[2]q, nil))
-
-		Expect(rec.Code).NotTo(Equal(http.StatusNotFound))
+		Expect(app.Server.Router.Routes()).To(ContainElement(And(
+			HaveField("Method", http.Method%[3]s),
+			HaveField("Path", %[2]q),
+		)))
 	})
 })
 
@@ -330,7 +332,7 @@ func (c controller) test() string {
 // namespaceSuite is the Ginkgo suite of a namespace's package: the app every
 // spec in it uses, rebuilt before each, as the controllers package has.
 func namespaceSuite(module, ns string) string {
-	return fmt.Sprintf(`package %[1]s_controller_test
+	return fmt.Sprintf(`package %[1]s_controllers_test
 
 import (
 	"testing"
@@ -359,7 +361,7 @@ func Test%[2]s(t *testing.T) {
 // NamespaceSuitePath is the suite file of a namespace's package, which
 // Namespace writes and destroy removes with the last controller in it.
 func NamespaceSuitePath(ns string) string {
-	return "app/controllers/" + ns + "_controller/" + ns + "_controller_suite_test.go"
+	return "app/controllers/" + ns + "_controllers/" + ns + "_controllers_suite_test.go"
 }
 
 func namespaceServer(pkg, ns string) string {
@@ -398,8 +400,8 @@ import "github.com/gin-gonic/gin"
 // Middleware the whole namespace shares, an auth check or a shared secret,
 // goes on the group here, so the exposure boundary is visible in one place.
 func (s *Server) SetupRoutes(router *gin.RouterGroup) {
-	%[2]s := router.Group("/%[2]s")
+	%[3]s := router.Group("/%[2]s")
 	// bogie:routes
 }
-`, pkg, ns)
+`, pkg, ns, lowerCamel(ns))
 }

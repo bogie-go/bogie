@@ -32,6 +32,11 @@ func Migration(name string, attrs []Attr, scheme IDScheme, now time.Time) (File,
 	if !namePattern.MatchString(name) {
 		return File{}, fmt.Errorf("%q is not a migration name: lowercase letters, digits and underscores", name)
 	}
+	for _, a := range attrs {
+		if err := a.checkNull(scheme); err != nil {
+			return File{}, err
+		}
+	}
 	path := fmt.Sprintf("db/migrate/%s_%s.sql", Stamp(now), name)
 
 	var up, down string

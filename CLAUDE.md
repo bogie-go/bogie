@@ -39,7 +39,7 @@ generated app's `.golangci.yml`, which bin/ci enforces.
 ## Decisions already made (do not re-litigate; change `docs/DESIGN.md` first if they must change)
 
 - **Familiar command spelling.** A command that names a task uses a colon:
-  `db:migrate`, `db:rollback`, `credentials:edit`, `app:update`; `server`,
+  `db:migrate`, `db:rollback`, `credentials:edit`, `app:update`, `model:sync`; `server`,
   `generate`, `new` are plain words. Vocabulary, layout and file names stay
   conventional wherever the thing has a common word: model, controller,
   migration, seed.
@@ -145,4 +145,4 @@ the rest of issue #11.
 M0 decide → M1 `bogie new` producing an app that builds, migrates and serves →
 M2 generators + markers + doctor + golden tests → M3 agent layer → M4 dogfood
 against kchat → M5 publish → M6 `app:update`. All built; v0.1.0 tagged
-2026-10-03, v0.5.1 the latest (2026-10-27). `docs/STATUS.md` has what is next.
+2026-10-03, v0.6.2 the latest (2026-10-30). `docs/STATUS.md` has what is next.

@@ -21,12 +21,15 @@ controller the three lines that registered it. For a config group, its file
 and its lines in config/config.go; the group's lines in the development
 credentials stay, harmless. A namespaced controller's
 package goes too once it holds no controller, with the three lines that
-registered the namespace. Nothing else is touched; a file you added to a
-package by hand stays.
+registered the namespace. A scaffold_controller leaves the model and its store,
+and a root one its views, which other controllers may use; a namespaced one
+removes the views it wrote (app/views/admin_categories.go). Nothing else is
+touched; a file you added to a package by hand stays.
 
   bogie d scaffold post
   bogie d controller comments
   bogie d controller admin/reports
+  bogie d scaffold_controller admin/categories
   bogie d service publish_post
   bogie d job send_welcome
   bogie d seed demo_posts
@@ -103,36 +106,25 @@ func destroyIn(root string, args []string, out io.Writer) error {
 	var wires []generate.Wire
 	runSqlc := false
 	switch generator {
-	case "controller":
-		// The same two files whatever actions generate was given.
+	case "controller", "scaffold_controller":
+		// The same two files whatever actions generate was given. A scaffold
+		// controller is a controller named for its model's table, and leaves
+		// the model and its store. A root one leaves its views too, which
+		// other controllers use; a namespaced one wrote views of its own.
 		var ns, ctl string
 		ns, ctl, err = generate.ParseControllerName(positional[0])
+		if err == nil && generator == "scaffold_controller" {
+			ctl = generate.Plural(generate.Singular(ctl))
+		}
 		if err == nil {
 			files, _, err = generate.Controller(module, ns, ctl, nil)
 			wires = generate.WirePrefixes(ns, ctl)
+			if generator == "scaffold_controller" && ns != "" {
+				files = append(files, generate.File{Path: generate.ViewsPath(ns, generate.Singular(ctl))})
+			}
 		}
-		// The namespace lives for its controllers: when this was the last
-		// one, its server.go and routes.go go too, and the root lines that
-		// registered it. Anything else in the package keeps it alive.
 		if err == nil && ns != "" {
-			dir := filepath.Join(root, "app", "controllers", ns+"_controller")
-			removing := map[string]bool{}
-			for _, f := range files {
-				removing[filepath.Base(f.Path)] = true
-			}
-			matches, _ := filepath.Glob(filepath.Join(dir, "*"))
-			empty := len(matches) > 0
-			for _, m := range matches {
-				base := filepath.Base(m)
-				if !removing[base] && base != "server.go" && base != "routes.go" && base != filepath.Base(generate.NamespaceSuitePath(ns)) {
-					empty = false
-				}
-			}
-			if empty {
-				rel := "app/controllers/" + ns + "_controller/"
-				files = append(files, generate.File{Path: rel + "server.go"}, generate.File{Path: rel + "routes.go"}, generate.File{Path: generate.NamespaceSuitePath(ns)})
-				wires = append(wires, generate.NamespaceWirePrefixes(ns)...)
-			}
+			files, wires = dropEmptyNamespace(root, ns, files, wires)
 		}
 	case "service":
 		files, err = generate.Service(module, name)
@@ -176,8 +168,22 @@ func destroyIn(root string, args []string, out io.Writer) error {
 		if generator == "model" {
 			files, err = generate.Model(module, name, nil, scheme, time.Time{})
 		} else {
-			files, err = generate.ScaffoldFiles(module, name, scheme)
-			wires = generate.WirePrefixes("", generate.Plural(name))
+			// admin/posts removes the model admin_post and its controller
+			// in the admin namespace.
+			var ns, res, model string
+			ns, res, model, err = generate.ParseScaffoldName(positional[0])
+			if err != nil {
+				break
+			}
+			name = model
+			if res == "" {
+				res = generate.Plural(model)
+			}
+			files, err = generate.ScaffoldFiles(module, ns, res, name, scheme)
+			wires = generate.WirePrefixes(ns, res)
+			if err == nil && ns != "" {
+				files, wires = dropEmptyNamespace(root, ns, files, wires)
+			}
 		}
 		// sqlc writes a file per query file and never removes one whose
 		// source is gone, so the generated half goes too.
@@ -216,7 +222,7 @@ func destroyIn(root string, args []string, out io.Writer) error {
 		}
 		// A controller or service package directory goes once it is empty.
 		// The layout's own directories (db/migrate, app/models, ...) stay.
-		if generator == "controller" || generator == "service" {
+		if generator == "controller" || generator == "scaffold_controller" || generator == "scaffold" || generator == "service" {
 			_ = os.Remove(filepath.Dir(abs))
 		}
 	}
@@ -253,4 +259,32 @@ func destroyIn(root string, args []string, out io.Writer) error {
 		}
 	}
 	return nil
+}
+
+// dropEmptyNamespace adds a namespace's own files and the root lines that
+// registered it to what is being removed, when the files already listed are
+// the last controllers in its package. The namespace lives for its
+// controllers: anything else in the package keeps it alive.
+func dropEmptyNamespace(root, ns string, files []generate.File, wires []generate.Wire) ([]generate.File, []generate.Wire) {
+	dir := filepath.Join(root, "app", "controllers", ns+"_controllers")
+	removing := map[string]bool{}
+	for _, f := range files {
+		if filepath.ToSlash(filepath.Dir(f.Path)) == "app/controllers/"+ns+"_controllers" {
+			removing[filepath.Base(f.Path)] = true
+		}
+	}
+	matches, _ := filepath.Glob(filepath.Join(dir, "*"))
+	empty := len(matches) > 0
+	for _, m := range matches {
+		base := filepath.Base(m)
+		if !removing[base] && base != "server.go" && base != "routes.go" && base != filepath.Base(generate.NamespaceSuitePath(ns)) {
+			empty = false
+		}
+	}
+	if !empty {
+		return files, wires
+	}
+	rel := "app/controllers/" + ns + "_controllers/"
+	files = append(files, generate.File{Path: rel + "server.go"}, generate.File{Path: rel + "routes.go"}, generate.File{Path: generate.NamespaceSuitePath(ns)})
+	return files, append(wires, generate.NamespaceWirePrefixes(ns)...)
 }

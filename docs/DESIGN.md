@@ -105,7 +105,7 @@ app/
     public.go                 no-route fallback: a file in public/, else public/404.html (§5)
     welcome.go                the development page at /; gone once a route claims /
     <name>_controller.go      one file per controller: a <Name>Controller type, its routes, its actions
-    <ns>_controller/          one package per namespace: server.go · routes.go · <name>_controller.go …
+    <ns>_controllers/          one package per namespace: server.go · routes.go · <name>_controller.go …
   middlewares/                request id · logging · recover
   services/<name>/            ctx first, knows nothing about HTTP
   views/                      wire contracts; model structs never double as wire structs
@@ -291,7 +291,7 @@ line above each of three markers (`bogie:controllers`, `bogie:wire`,
 checked before any file is written, so a missing one means nothing changed.
 `d controller` removes the files and the lines and prunes imports the removal
 left unused. `doctor` checks each marker appears exactly once and that every
-`*_controller` package is mounted. The tool's `bin/ci` generates a controller
+`*_controllers` package is mounted. The tool's `bin/ci` generates a controller
 and a service into a fresh app, runs that app's pipeline, destroys them, and
 runs it again.
 
@@ -313,7 +313,7 @@ proves common.
 
 **Controllers and namespaces, decided 2026-10-03.** The first cut made every
 controller a Go package (`posts_controller/`, one file per action). That
-is not what kchat has: its `internal_controller` holds conversations, inboxes,
+is not what kchat has: its `internal_controllers` holds conversations, inboxes,
 messages and tags, so the package is the namespace and the file is the
 controller. Bogie now maps those two things to Go's two things, and in
 `g controller` a slash (or `::`) means a namespace:
@@ -329,7 +329,7 @@ controller. Bogie now maps those two things to Go's two things, and in
   for one and says what the file is in a directory that also holds
   `application.go`, `routes.go` and `welcome.go`.
 - **A namespace is a Go package.** `bogie g controller internal/conversations
-  index show` writes `app/controllers/internal_controller/conversations_controller.go`
+  index show` writes `app/controllers/internal_controllers/conversations_controller.go`
   with `type ConversationsController`. If the package does not exist, the
   generator first writes its `server.go` (the namespace `Server`, one named
   field per controller above its own `// bogie:controllers`) and `routes.go`
@@ -339,7 +339,7 @@ controller. Bogie now maps those two things to Go's two things, and in
   the namespace's markers in the content it is about to write.
 - **All construction stays in `app/application.go`.** The namespace `Server`
   is a holder plus routes. The controller's wire line is
-  `server.Internal.Conversations = internal_controller.NewConversationsController(log)`,
+  `server.Internal.Conversations = internal_controllers.NewConversationsController(log)`,
   inserted after the namespace's own `server.Internal = ...`, so a dependency
   is never threaded through a namespace constructor.
 - **The namespace lives for its controllers.** `d controller internal/conversations`
@@ -347,7 +347,7 @@ controller. Bogie now maps those two things to Go's two things, and in
   holding only `server.go` and `routes.go`, it removes those and the root
   registration too, since an empty namespace is an unused group variable
   that does not compile.
-- **The `_controller` suffix stays on namespace packages**, the one place the
+- **The `_controllers` suffix stays on namespace packages**, the one place the
   folder name departs from the namespace name (`admin/`). Considered and
   rejected on 2026-10-03: a plain `admin/` package is imported into
   `app/application.go` beside every service and layout package, so a
@@ -372,6 +372,51 @@ one place the tool pluralizes; `g controller` uses the name as typed. A
 service is for logic that is not CRUD, and `g service` is there when a
 resource outgrows the store. One level: no namespace in v1, and a scaffold
 over an existing model is reported as a conflict rather than merged.
+
+**`--only` and `g scaffold_controller`, built 2026-10-28.** A scaffold takes
+`--only index,show` to write just those actions: their routes, handlers,
+store methods, wire shapes and request specs, and nothing another action
+would need. The name follows Rails routes' `only:`. The model half is
+written in full either way. `g scaffold_controller [NS/]RESOURCE` is the HTTP
+half alone, for a model that already exists: the model is the last segment,
+singular (`admin/categories` is the category model's controller), and its
+attributes are read back from `app/models/<name>.go`, since a model is never
+namespaced and the migration is no longer the source of truth once it is
+edited. Types `g model` does not write are refused by name. The root
+controller's wire shapes are the model's, `app/views/<table>.go`; a namespaced
+controller's are its own (see "views take the prefix" below). If a controller's
+views file already exists, a second run with other actions keeps it as it is
+and only adds the types the new actions lack. `bogie d scaffold_controller`
+removes the controller and its spec, never the model or store, and a root one
+leaves its views; a namespaced one removes the views it wrote.
+
+**Views take the prefix, built 2026-10-30 (v0.6.2).** Until v0.6.1 a namespaced
+`scaffold_controller` shared the model's views file with the root controller,
+so `admin/products` and `products` answered with one `ProductResponse`. A
+namespace sees and writes what the public API must not (stock, an archived
+marker, a cost), and a shared type makes every admin field a public one or
+needs an admin-only mode. Views now follow the model: flat, with the namespace
+in front. `scaffold_controller admin/products` writes
+`app/views/admin_products.go` with `AdminProductRequest`, `AdminProductResponse`
+and `AdminProductsResponse`, and `g scaffold admin/products` (a model of its
+own, `admin_product`) writes the same file, so the two commands agree. The
+JSON key of a listing stays the table (`products`). The price is two small
+structs repeated when the admin shape starts out the same as the public one,
+which is the cost of letting them differ. A views file is not a package: it has
+no behavior to share, which is the rule that keeps models flat too.
+
+**A namespaced scaffold, and `admin_controllers`, built 2026-10-28.** The
+namespace package is plural, `app/controllers/admin_controllers/`, as every
+other directory is; the singular was an inconsistency. `g scaffold admin/pages`
+follows Rails: the namespace is part of the model's name, so it makes the model
+`admin_page` (`app/models/admin_page.go`, table `admin_pages`, store, views and
+factory all flat), and its controller is `PagesController` in the admin
+package at `/admin/pages`. Only the controller gets a package, because only it
+carries something the namespace owns: the route group and its middleware, which
+a prefix on a file name cannot guard. A model, store or view namespaced by
+folder would only duplicate the type under two names (`admin_models.Page` over
+`sqlc.AdminPage`), so the prefix does that job. For the same model shared with
+the public side, `g scaffold_controller admin/pages` is the command.
 
 **`g authentication`, built 2026-10-03.** It takes a
 shape, because the two reference services
@@ -400,7 +445,7 @@ boundary and belongs in `routes.go` where it can be read.
 The file rule is one sentence: one file per controller, one package per
 namespace. kchat's `conversations.go` already obeys it; "one file per
 action" is gone. `doctor` checks that every `*Controller` type is constructed
-and mounted, in the root or in its namespace, and that every `*_controller`
+and mounted, in the root or in its namespace, and that every `*_controllers`
 package is.
 
 **`public/` and the no-route chain, decided 2026-10-17.** A web app serves
@@ -570,6 +615,67 @@ development build's apps say which commit made them. A `dev` build with no tag t
 falls back to a two-way report with every differing file marked `conflict`.
 
 ---
+
+## 5b. `bogie model:sync`: following the schema
+
+Decided 2026-10-29, for Chapter 14 of the book: adding a column to a model that
+already exists. `bogie g migration add_role_to_users role:string` writes the
+migration and nothing else, and generating the model again with `--force`
+wipes `Validate` and every factory edit. One command should carry a column
+through the model, the queries, the store and the factory, and keep every
+hand edit.
+
+**It is not a generator, so it is not `g`.** `g` makes files that do not exist.
+This changes files that do, so it takes the colon spelling of the other
+commands that act on an app: `model:sync [TABLE]`.
+
+**The schema is read from sqlc, not guessed from a migration's name.** A reader
+writes the migration by hand as often as with `g migration`, and may edit what
+it generated. sqlc already compiles `db/migrate/*.sql` into a row struct per
+table in `db/sqlc/models.go`, so that is the reflection, the way Rails reflects
+from the database, with no database running. The sync generates it into a
+scratch directory with a query of no meaning, so a query of the reader's that
+names a column that is gone cannot stop the sync from learning that it is gone.
+
+**What sqlc does not show, the migrations do.** With pgx, a nullable datetime
+is the same `pgtype.Timestamptz` as a NOT NULL one, and `UNIQUE` is not in the
+row type at all. A small reader of the migrations' Up parts (CREATE TABLE,
+ALTER TABLE ADD, DROP and RENAME COLUMN, ALTER COLUMN SET or DROP NOT NULL,
+CREATE UNIQUE INDEX on one column) answers those two questions. A column it
+never saw is NOT NULL and not unique.
+
+**It edits the model's struct, and merges the files that follow from the
+columns.** For each column the model lacks it adds the field above `CreatedAt`;
+for each field whose column a migration dropped or renamed away it removes the
+field and the comment lines directly above it. A field with no column that no
+migration ever dropped (a count or a joined name the reader added) is the
+reader's and is not touched. Everything else in the file
+(Validate, constants, other fields, comments) is not touched; `go/format`
+realigns the struct. The queries, the store and the factory are generated for
+the old columns and for the new, and merged into the reader's copy with
+`git merge-file`, as `app:update` merges: a copy nobody edited is replaced, an
+edit elsewhere is kept, an edit on the same lines gets conflict markers. The
+"old columns" are the model's own fields, so the common ancestor is what
+`g model` would have written for them.
+
+**What it leaves alone, and says so:** `Validate`, the `*_extra` files, the
+views, the controllers and the specs. The views and the controller carry the
+API's JSON, which a column does not decide; the specs do not list columns. For
+a removed field it lists the lines that still mention it, in the files that
+mention the model's type, since the compiler will say the rest.
+
+**Nullable columns.** Every generated column stays NOT NULL unless the attribute
+says `:null` (`archived_at:datetime:null`), as Rails' `null: true` does, and a
+sync finds a nullable column in whatever SQL was written. A nullable string,
+number or bool is a pointer in the row and in the model; a nullable datetime is
+`*time.Time` in the model through two helpers, written once to
+`db/adapter/nullable.go`. A nullable uuid is not written. The factory leaves a
+nullable column at NULL. A scaffold does not write nullable columns yet.
+
+**Refuses on a dirty git tree**, so the result is one diff to review or undo.
+Renames cannot be told from a drop and an add, so a rename removes the old
+field and adds the new, and the reader moves what the old name carried.
+
 
 ## 6. Configuration and deploy
 
@@ -769,7 +875,7 @@ Extraction, in order:
   helpers (product-specific), and its `spec/` (§3).
 - **What kchat would gain from the tool**, for when it is regenerated for
   real: the markers and `doctor`, `db seed` through the binary, pinned
-  sqlc, River in place of asynq (§12.2), and the `internal_controller`
+  sqlc, River in place of asynq (§12.2), and the `internal_controllers`
   namespace maps straight onto `g controller internal/...` with one file
   per controller, which its `conversations.go` already is.
    Where they disagree, one of them is wrong.

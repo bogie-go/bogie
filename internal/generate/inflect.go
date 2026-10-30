@@ -106,7 +106,7 @@ func lowerCamel(s string) string {
 	return strings.ToLower(c[:1]) + c[1:]
 }
 
-// paramName names the domain value a generated method takes. Normally the
+// paramName names the model value a generated method takes. Normally the
 // model's first letter, as Go prefers, but the method it lands in already has
 // a variable of its own: s for a *Store receiver, c for the *gin.Context an
 // action handles, f for a test's fake store. A model whose first letter is
@@ -124,4 +124,15 @@ func paramName(name, taken string) string {
 	// A model whose whole name is the taken letter. Nothing short is safe,
 	// so make it obviously its own thing.
 	return name + "Val"
+}
+
+// withArticle puts "a" or "an" before a name for the comments a generator
+// writes: an admin_product, a post.
+func withArticle(name string) string {
+	// user, uuid and unit begin with a vowel and sound like a "y".
+	yoo := strings.HasPrefix(name, "us") || strings.HasPrefix(name, "uni") || strings.HasPrefix(name, "uu")
+	if strings.ContainsRune("aeiou", rune(name[0])) && !yoo {
+		return "an " + name
+	}
+	return "a " + name
 }

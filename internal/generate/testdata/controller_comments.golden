@@ -41,7 +41,7 @@ func (ctl *CommentsController) SetupRoutes(router *gin.RouterGroup) {
 
 // Index handles GET /comments.
 //
-// A handler converts HTTP into domain values, calls one service function,
+// A handler converts HTTP into models, calls one service function,
 // and converts the result back. Nothing below app/controllers sees
 // *gin.Context.
 func (ctl *CommentsController) Index(c *gin.Context) {
@@ -50,7 +50,7 @@ func (ctl *CommentsController) Index(c *gin.Context) {
 
 // Show handles GET /comments/:id.
 //
-// A handler converts HTTP into domain values, calls one service function,
+// A handler converts HTTP into models, calls one service function,
 // and converts the result back. Nothing below app/controllers sees
 // *gin.Context.
 func (ctl *CommentsController) Show(c *gin.Context) {
@@ -59,7 +59,7 @@ func (ctl *CommentsController) Show(c *gin.Context) {
 
 // Create handles POST /comments.
 //
-// A handler converts HTTP into domain values, calls one service function,
+// A handler converts HTTP into models, calls one service function,
 // and converts the result back. Nothing below app/controllers sees
 // *gin.Context.
 func (ctl *CommentsController) Create(c *gin.Context) {
@@ -68,7 +68,7 @@ func (ctl *CommentsController) Create(c *gin.Context) {
 
 // Search handles GET /comments/search.
 //
-// A handler converts HTTP into domain values, calls one service function,
+// A handler converts HTTP into models, calls one service function,
 // and converts the result back. Nothing below app/controllers sees
 // *gin.Context.
 func (ctl *CommentsController) Search(c *gin.Context) {
@@ -79,7 +79,6 @@ package controllers_test
 
 import (
 	"net/http"
-	"net/http/httptest"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -87,36 +86,36 @@ import (
 
 var _ = Describe("GET /comments", func() {
 	It("is mounted", func() {
-		rec := httptest.NewRecorder()
-		app.Server.Router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/comments", nil))
-
-		Expect(rec.Code).NotTo(Equal(http.StatusNotFound))
+		Expect(app.Server.Router.Routes()).To(ContainElement(And(
+			HaveField("Method", http.MethodGet),
+			HaveField("Path", "/comments"),
+		)))
 	})
 })
 
-var _ = Describe("GET /comments/1", func() {
+var _ = Describe("GET /comments/:id", func() {
 	It("is mounted", func() {
-		rec := httptest.NewRecorder()
-		app.Server.Router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/comments/1", nil))
-
-		Expect(rec.Code).NotTo(Equal(http.StatusNotFound))
+		Expect(app.Server.Router.Routes()).To(ContainElement(And(
+			HaveField("Method", http.MethodGet),
+			HaveField("Path", "/comments/:id"),
+		)))
 	})
 })
 
 var _ = Describe("POST /comments", func() {
 	It("is mounted", func() {
-		rec := httptest.NewRecorder()
-		app.Server.Router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/comments", nil))
-
-		Expect(rec.Code).NotTo(Equal(http.StatusNotFound))
+		Expect(app.Server.Router.Routes()).To(ContainElement(And(
+			HaveField("Method", http.MethodPost),
+			HaveField("Path", "/comments"),
+		)))
 	})
 })
 
 var _ = Describe("GET /comments/search", func() {
 	It("is mounted", func() {
-		rec := httptest.NewRecorder()
-		app.Server.Router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/comments/search", nil))
-
-		Expect(rec.Code).NotTo(Equal(http.StatusNotFound))
+		Expect(app.Server.Router.Routes()).To(ContainElement(And(
+			HaveField("Method", http.MethodGet),
+			HaveField("Path", "/comments/search"),
+		)))
 	})
 })

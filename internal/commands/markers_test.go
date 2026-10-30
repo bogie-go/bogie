@@ -86,12 +86,12 @@ func TestGenerateControllerInANamespaceRoundTrips(t *testing.T) {
 	}
 	files := tree(t, root)
 	for file, want := range map[string][]string{
-		"app/controllers/application.go":                         {"Admin *admin_controller.Server\n\t// bogie:controllers", `"example.com/blog/app/controllers/admin_controller"`},
-		"app/application.go":                                     {"server.Admin = admin_controller.NewServer(log)\n\tserver.Admin.Reports = admin_controller.NewReportsController(log)\n\t// bogie:wire"},
-		"app/controllers/routes.go":                              {"s.Admin.SetupRoutes(&r.RouterGroup)\n\t// bogie:routes"},
-		"app/controllers/admin_controller/server.go":             {"Reports *ReportsController\n\t// bogie:controllers"},
-		"app/controllers/admin_controller/routes.go":             {"s.Reports.SetupRoutes(admin)\n\t// bogie:routes"},
-		"app/controllers/admin_controller/reports_controller.go": {"type ReportsController struct"},
+		"app/controllers/application.go":                          {"Admin *admin_controllers.Server\n\t// bogie:controllers", `"example.com/blog/app/controllers/admin_controllers"`},
+		"app/application.go":                                      {"server.Admin = admin_controllers.NewServer(log)\n\tserver.Admin.Reports = admin_controllers.NewReportsController(log)\n\t// bogie:wire"},
+		"app/controllers/routes.go":                               {"s.Admin.SetupRoutes(&r.RouterGroup)\n\t// bogie:routes"},
+		"app/controllers/admin_controllers/server.go":             {"Reports *ReportsController\n\t// bogie:controllers"},
+		"app/controllers/admin_controllers/routes.go":             {"s.Reports.SetupRoutes(admin)\n\t// bogie:routes"},
+		"app/controllers/admin_controllers/reports_controller.go": {"type ReportsController struct"},
 	} {
 		for _, w := range want {
 			if !strings.Contains(files[file], w) {
@@ -118,7 +118,7 @@ func TestGenerateControllerInANamespaceRoundTrips(t *testing.T) {
 	if strings.Count(files["app/application.go"], "server.Admin = ") != 1 {
 		t.Errorf("namespace constructed more than once:\n%s", files["app/application.go"])
 	}
-	if !strings.Contains(files["app/controllers/admin_controller/server.go"], "*AuditsController\n\t// bogie:controllers") {
+	if !strings.Contains(files["app/controllers/admin_controllers/server.go"], "*AuditsController\n\t// bogie:controllers") {
 		t.Error("second controller not registered in the namespace")
 	}
 
@@ -128,10 +128,10 @@ func TestGenerateControllerInANamespaceRoundTrips(t *testing.T) {
 		t.Fatalf("destroy: %v\n%s", err, out.String())
 	}
 	files = tree(t, root)
-	if _, ok := files["app/controllers/admin_controller/reports_controller.go"]; ok {
+	if _, ok := files["app/controllers/admin_controllers/reports_controller.go"]; ok {
 		t.Error("controller file not removed")
 	}
-	if _, ok := files["app/controllers/admin_controller/server.go"]; !ok {
+	if _, ok := files["app/controllers/admin_controllers/server.go"]; !ok {
 		t.Error("namespace removed while it still held a controller")
 	}
 	if strings.Contains(files["app/application.go"], "Reports") || !strings.Contains(files["app/application.go"], "server.Admin = ") {
@@ -145,12 +145,12 @@ func TestGenerateControllerInANamespaceRoundTrips(t *testing.T) {
 	}
 	files = tree(t, root)
 	for file := range files {
-		if strings.HasPrefix(file, "app/controllers/admin_controller/") {
+		if strings.HasPrefix(file, "app/controllers/admin_controllers/") {
 			t.Errorf("%s left behind", file)
 		}
 	}
 	for _, f := range []string{"app/controllers/application.go", "app/application.go", "app/controllers/routes.go"} {
-		if strings.Contains(files[f], "Admin") || strings.Contains(files[f], "admin_controller") {
+		if strings.Contains(files[f], "Admin") || strings.Contains(files[f], "admin_controllers") {
 			t.Errorf("%s still mentions the namespace:\n%s", f, files[f])
 		}
 	}
@@ -169,7 +169,7 @@ func TestGenerateControllerInANamespacePretendWritesNothing(t *testing.T) {
 	if len(after) != len(before) {
 		t.Errorf("files written under --pretend: %d before, %d after", len(before), len(after))
 	}
-	for _, want := range []string{"create  app/controllers/admin_controller/server.go", "Reports *ReportsController", "s.Reports.SetupRoutes(admin)"} {
+	for _, want := range []string{"create  app/controllers/admin_controllers/server.go", "Reports *ReportsController", "s.Reports.SetupRoutes(admin)"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("plan lacks %q:\n%s", want, out.String())
 		}

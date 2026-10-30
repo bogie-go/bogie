@@ -1,8 +1,8 @@
-==> app/controllers/admin_controller/server.go
-// Package admin_controller is the admin namespace: the controllers mounted under
+==> app/controllers/admin_controllers/server.go
+// Package admin_controllers is the admin namespace: the controllers mounted under
 // /admin. One file per
 // controller; the group and its shared middleware in routes.go.
-package admin_controller
+package admin_controllers
 
 import (
 	"log/slog"
@@ -22,8 +22,8 @@ type Server struct {
 func NewServer(log *slog.Logger) *Server {
 	return &Server{Log: log}
 }
-==> app/controllers/admin_controller/routes.go
-package admin_controller
+==> app/controllers/admin_controllers/routes.go
+package admin_controllers
 
 import "github.com/gin-gonic/gin"
 
@@ -34,8 +34,8 @@ func (s *Server) SetupRoutes(router *gin.RouterGroup) {
 	admin := router.Group("/admin")
 	// bogie:routes
 }
-==> app/controllers/admin_controller/admin_controller_suite_test.go
-package admin_controller_test
+==> app/controllers/admin_controllers/admin_controllers_suite_test.go
+package admin_controllers_test
 
 import (
 	"testing"
@@ -58,8 +58,8 @@ func TestAdmin(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Admin")
 }
-==> app/controllers/admin_controller/reports_controller.go
-package admin_controller
+==> app/controllers/admin_controllers/reports_controller.go
+package admin_controllers
 
 import (
 	"log/slog"
@@ -99,7 +99,7 @@ func (ctl *ReportsController) SetupRoutes(router *gin.RouterGroup) {
 
 // Index handles GET /admin/reports.
 //
-// A handler converts HTTP into domain values, calls one service function,
+// A handler converts HTTP into models, calls one service function,
 // and converts the result back. Nothing below app/controllers sees
 // *gin.Context.
 func (ctl *ReportsController) Index(c *gin.Context) {
@@ -108,18 +108,17 @@ func (ctl *ReportsController) Index(c *gin.Context) {
 
 // Show handles GET /admin/reports/:id.
 //
-// A handler converts HTTP into domain values, calls one service function,
+// A handler converts HTTP into models, calls one service function,
 // and converts the result back. Nothing below app/controllers sees
 // *gin.Context.
 func (ctl *ReportsController) Show(c *gin.Context) {
 	c.JSON(http.StatusNotImplemented, views.ErrorMessage("reports#show is not implemented yet"))
 }
-==> app/controllers/admin_controller/reports_controller_test.go
-package admin_controller_test
+==> app/controllers/admin_controllers/reports_controller_test.go
+package admin_controllers_test
 
 import (
 	"net/http"
-	"net/http/httptest"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -127,18 +126,18 @@ import (
 
 var _ = Describe("GET /admin/reports", func() {
 	It("is mounted", func() {
-		rec := httptest.NewRecorder()
-		app.Server.Router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/reports", nil))
-
-		Expect(rec.Code).NotTo(Equal(http.StatusNotFound))
+		Expect(app.Server.Router.Routes()).To(ContainElement(And(
+			HaveField("Method", http.MethodGet),
+			HaveField("Path", "/admin/reports"),
+		)))
 	})
 })
 
-var _ = Describe("GET /admin/reports/1", func() {
+var _ = Describe("GET /admin/reports/:id", func() {
 	It("is mounted", func() {
-		rec := httptest.NewRecorder()
-		app.Server.Router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/reports/1", nil))
-
-		Expect(rec.Code).NotTo(Equal(http.StatusNotFound))
+		Expect(app.Server.Router.Routes()).To(ContainElement(And(
+			HaveField("Method", http.MethodGet),
+			HaveField("Path", "/admin/reports/:id"),
+		)))
 	})
 })

@@ -72,13 +72,13 @@ import (
 )
 
 var _ = Describe("Post.Validate", func() {
+	var post models.Post
+
+	BeforeEach(func() {
+		post = factories.NewPost()
+	})
+
 	Context("with the factory's defaults", func() {
-		var post models.Post
-
-		BeforeEach(func() {
-			post = factories.NewPost()
-		})
-
 		It("is valid", func() {
 			Expect(post.Validate()).To(Succeed())
 		})
@@ -288,6 +288,9 @@ import (
 // parent's own factory:
 //
 //	factories.Post(t, s, func(v *models.Post) { v.AuthorID = parent.ID })
+//
+// Placeholders: the datetime defaults (PublishedAt) are one fixed instant. Set real
+// times where a spec depends on them, such as a window that starts before it ends.
 func NewPost(with ...func(*models.Post)) models.Post {
 	record := models.Post{
 		Title:       Sequence("title "),
@@ -374,8 +377,8 @@ type postsStore interface {
 const postsListLimit = 100
 
 // PostsController is the HTTP surface of posts: a JSON resource over the store. A
-// handler converts HTTP into domain values, calls one store method, and
-// converts the result back. Validation is the domain's and runs on save,
+// handler converts HTTP into models, calls one store method, and
+// converts the result back. Validation is the model's and runs on save,
 // which is why a bad value is a 422 from the store and not a binding rule
 // here. Nothing below app/controllers sees *gin.Context.
 type PostsController struct {
@@ -467,7 +470,7 @@ func (ctl *PostsController) Destroy(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// fail maps a domain error to a status, the one place that mapping lives:
+// fail maps a model error to a status, the one place that mapping lives:
 // not found is 404, a validation failure is 422, and anything
 // else is logged and answered 500 without leaking its text.
 func (ctl *PostsController) fail(c *gin.Context, err error) {
@@ -483,8 +486,8 @@ func (ctl *PostsController) fail(c *gin.Context, err error) {
 	}
 }
 
-// The controller converts between the domain and the wire. views never
-// imports domain, so this is where PostResponse is built.
+// The controller converts between the models and the wire. views never
+// imports models, so this is where PostResponse is built.
 
 func postView(p models.Post) views.PostResponse {
 	return views.PostResponse{

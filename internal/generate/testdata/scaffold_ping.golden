@@ -61,13 +61,13 @@ import (
 )
 
 var _ = Describe("Ping.Validate", func() {
+	var ping models.Ping
+
+	BeforeEach(func() {
+		ping = factories.NewPing()
+	})
+
 	Context("with the factory's defaults", func() {
-		var ping models.Ping
-
-		BeforeEach(func() {
-			ping = factories.NewPing()
-		})
-
 		It("is valid", func() {
 			Expect(ping.Validate()).To(Succeed())
 		})
@@ -381,8 +381,8 @@ type pingsStore interface {
 const pingsListLimit = 100
 
 // PingsController is the HTTP surface of pings: a JSON resource over the store. A
-// handler converts HTTP into domain values, calls one store method, and
-// converts the result back. Validation is the domain's and runs on save,
+// handler converts HTTP into models, calls one store method, and
+// converts the result back. Validation is the model's and runs on save,
 // which is why a bad value is a 422 from the store and not a binding rule
 // here. Nothing below app/controllers sees *gin.Context.
 type PingsController struct {
@@ -461,7 +461,7 @@ func (ctl *PingsController) Destroy(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// fail maps a domain error to a status, the one place that mapping lives:
+// fail maps a model error to a status, the one place that mapping lives:
 // not found is 404, a validation failure is 422, and anything
 // else is logged and answered 500 without leaking its text.
 func (ctl *PingsController) fail(c *gin.Context, err error) {
@@ -477,8 +477,8 @@ func (ctl *PingsController) fail(c *gin.Context, err error) {
 	}
 }
 
-// The controller converts between the domain and the wire. views never
-// imports domain, so this is where PingResponse is built.
+// The controller converts between the models and the wire. views never
+// imports models, so this is where PingResponse is built.
 
 func pingView(p models.Ping) views.PingResponse {
 	return views.PingResponse{

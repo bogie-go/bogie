@@ -1,0 +1,392 @@
+==> db/migrate/20261002093000_create_articles.sql
+-- +goose Up
+CREATE TABLE articles (
+    id         bigserial   PRIMARY KEY,
+    title      varchar     NOT NULL DEFAULT '',
+    subtitle   varchar,
+    views      integer,
+    published_at timestamptz,
+    edited_at  timestamptz NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- +goose Down
+DROP TABLE articles;
+==> db/queries/articles.sql
+-- Written by `bogie g model`: overwritten whole on the next run. A
+-- hand-written query goes in articles_extra.sql, not here.
+
+-- name: GetArticle :one
+SELECT * FROM articles WHERE id = $1;
+
+-- name: ListArticles :many
+SELECT * FROM articles ORDER BY created_at DESC, id DESC LIMIT $1;
+
+-- name: CreateArticle :one
+INSERT INTO articles (title, subtitle, views, published_at, edited_at) VALUES ($1, $2, $3, $4, $5) RETURNING *;
+
+-- name: UpdateArticle :one
+UPDATE articles SET title = $2, subtitle = $3, views = $4, published_at = $5, edited_at = $6, updated_at = now() WHERE id = $1 RETURNING *;
+
+-- name: DeleteArticle :execrows
+DELETE FROM articles WHERE id = $1;
+==> app/models/article.go
+package models
+
+import (
+	"time"
+)
+
+// Article is an article. Imports nothing third-party: ids are int64s here and
+// become bigint at the store boundary.
+type Article struct {
+	ID          int64
+	Title       string
+	Subtitle    *string
+	Views       *int32
+	PublishedAt *time.Time
+	EditedAt    time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// Validate is the model's validations. Wrap every
+// failure in ErrInvalid so a controller can answer 422 without knowing the
+// rule:
+//
+//	return fmt.Errorf("%w: title is required", ErrInvalid)
+func (a Article) Validate() error {
+	return nil
+}
+==> app/models/article_test.go
+package models_test
+
+import (
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"example.com/blog/app/models"
+	"example.com/blog/test/factories"
+)
+
+var _ = Describe("Article.Validate", func() {
+	var article models.Article
+
+	BeforeEach(func() {
+		article = factories.NewArticle()
+	})
+
+	Context("with the factory's defaults", func() {
+		It("is valid", func() {
+			Expect(article.Validate()).To(Succeed())
+		})
+	})
+
+	// Add a Context for each rule you put in Validate, for example a
+	// required title:
+	//
+	//	Context("with a blank title", func() {
+	//		BeforeEach(func() {
+	//			article.Title = ""
+	//		})
+	//
+	//		It("is refused", func() {
+	//			Expect(article.Validate()).To(MatchError(models.ErrInvalid))
+	//		})
+	//	})
+})
+==> db/adapter/articles.go
+package adapter
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"example.com/blog/app/models"
+	"example.com/blog/db/sqlc"
+)
+
+// Articles, as the models see them. Each method converts models.Article to and from
+// the row type sqlc generated, and maps pgx's "no rows" to models.ErrNotFound
+// so callers never import pgx to ask a question.
+//
+// Written by `bogie g model`: overwritten whole on the next run. A
+// hand-written addition goes in articles_extra.go, not here.
+
+// CreateArticle validates an article, inserts it, and returns it with its id and
+// timestamps. Validation runs on save, so every caller
+// gets it and none can forget it.
+func (s *Store) CreateArticle(ctx context.Context, a models.Article) (models.Article, error) {
+	if err := a.Validate(); err != nil {
+		return models.Article{}, err
+	}
+	row, err := s.q.CreateArticle(ctx, sqlc.CreateArticleParams{Title: a.Title, Subtitle: a.Subtitle, Views: a.Views, PublishedAt: timePtrToTimestamptz(a.PublishedAt), EditedAt: pgtype.Timestamptz{Time: a.EditedAt, Valid: true}})
+	if err != nil {
+		return models.Article{}, fmt.Errorf("store: create article: %w", err)
+	}
+	return articleFromRow(row), nil
+}
+
+// GetArticle finds one article. An id that is not a valid id is simply not found.
+func (s *Store) GetArticle(ctx context.Context, id string) (models.Article, error) {
+	pk, err := parseID(id)
+	if err != nil {
+		return models.Article{}, models.ErrNotFound
+	}
+	row, err := s.q.GetArticle(ctx, pk)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return models.Article{}, models.ErrNotFound
+	case err != nil:
+		return models.Article{}, fmt.Errorf("store: get article %s: %w", id, err)
+	}
+	return articleFromRow(row), nil
+}
+
+// ListArticles returns the newest articles first, at most limit of them.
+func (s *Store) ListArticles(ctx context.Context, limit int32) ([]models.Article, error) {
+	rows, err := s.q.ListArticles(ctx, limit)
+	if err != nil {
+		return nil, fmt.Errorf("store: list articles: %w", err)
+	}
+	out := make([]models.Article, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, articleFromRow(r))
+	}
+	return out, nil
+}
+
+// UpdateArticle validates an article, writes its columns, and returns the stored row.
+func (s *Store) UpdateArticle(ctx context.Context, a models.Article) (models.Article, error) {
+	if err := a.Validate(); err != nil {
+		return models.Article{}, err
+	}
+	pk := a.ID
+	row, err := s.q.UpdateArticle(ctx, sqlc.UpdateArticleParams{ID: pk, Title: a.Title, Subtitle: a.Subtitle, Views: a.Views, PublishedAt: timePtrToTimestamptz(a.PublishedAt), EditedAt: pgtype.Timestamptz{Time: a.EditedAt, Valid: true}})
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return models.Article{}, models.ErrNotFound
+	case err != nil:
+		return models.Article{}, fmt.Errorf("store: update article %v: %w", a.ID, err)
+	}
+	return articleFromRow(row), nil
+}
+
+// DeleteArticle removes an article, and says so if there was none.
+func (s *Store) DeleteArticle(ctx context.Context, id string) error {
+	pk, err := parseID(id)
+	if err != nil {
+		return models.ErrNotFound
+	}
+	n, err := s.q.DeleteArticle(ctx, pk)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			return fmt.Errorf("%w: article is still in use", models.ErrInvalid)
+		}
+		return fmt.Errorf("store: delete article %s: %w", id, err)
+	}
+	if n == 0 {
+		return models.ErrNotFound
+	}
+	return nil
+}
+
+func articleFromRow(r sqlc.Article) models.Article {
+	return models.Article{
+		ID:          r.ID,
+		Title:       r.Title,
+		Subtitle:    r.Subtitle,
+		Views:       r.Views,
+		PublishedAt: timestamptzToTimePtr(r.PublishedAt),
+		EditedAt:    r.EditedAt.Time,
+		CreatedAt:   r.CreatedAt.Time,
+		UpdatedAt:   r.UpdatedAt.Time,
+	}
+}
+==> db/adapter/articles_test.go
+package adapter_test
+
+import (
+	"strconv"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"example.com/blog/app/models"
+	"example.com/blog/test/factories"
+)
+
+var _ = Describe("Articles", func() {
+	Describe("GetArticle", func() {
+		DescribeTable("returns ErrNotFound",
+			func(id string) {
+				_, err := store.GetArticle(GinkgoT().Context(), id)
+				Expect(err).To(MatchError(models.ErrNotFound))
+			},
+			Entry("when the id is not a number", "nope"),
+			Entry("when the id is empty", ""),
+			Entry("when no article has that id", "999999999"),
+		)
+
+		Context("with a saved article", func() {
+			var record models.Article
+
+			BeforeEach(func() {
+				record = factories.Article(GinkgoT(), store)
+			})
+
+			It("finds the article by id", func() {
+				Expect(store.GetArticle(GinkgoT().Context(), strconv.FormatInt(record.ID, 10))).To(Equal(record))
+			})
+		})
+	})
+
+	Describe("ListArticles", func() {
+		Context("with a saved article", func() {
+			var record models.Article
+
+			BeforeEach(func() {
+				record = factories.Article(GinkgoT(), store)
+			})
+
+			It("includes the saved article", func() {
+				all, err := store.ListArticles(GinkgoT().Context(), 10)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(all).To(HaveLen(1))
+				Expect(all[0].ID).To(Equal(record.ID))
+			})
+		})
+	})
+
+	Describe("UpdateArticle", func() {
+		Context("with a saved article", func() {
+			var record models.Article
+
+			BeforeEach(func() {
+				record = factories.Article(GinkgoT(), store)
+			})
+
+			It("stores the change", func() {
+				record.Title = "Edited"
+				updated, err := store.UpdateArticle(GinkgoT().Context(), record)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(updated.ID).To(Equal(record.ID))
+				Expect(updated.Title).To(BeEquivalentTo("Edited"))
+			})
+		})
+
+		Context("when the article is not there", func() {
+			var missing models.Article
+
+			BeforeEach(func() {
+				missing = factories.NewArticle()
+				missing.ID = 999999999
+			})
+
+			It("is not found", func() {
+				_, err := store.UpdateArticle(GinkgoT().Context(), missing)
+				Expect(err).To(MatchError(models.ErrNotFound))
+			})
+		})
+	})
+
+	Describe("DeleteArticle", func() {
+		DescribeTable("returns ErrNotFound",
+			func(id string) {
+				Expect(store.DeleteArticle(GinkgoT().Context(), id)).To(MatchError(models.ErrNotFound))
+			},
+			Entry("when the id is not a number", "nope"),
+			Entry("when the id is empty", ""),
+			Entry("when no article has that id", "999999999"),
+		)
+
+		Context("with a saved article", func() {
+			var record models.Article
+
+			BeforeEach(func() {
+				record = factories.Article(GinkgoT(), store)
+			})
+
+			It("removes the article", func() {
+				id := strconv.FormatInt(record.ID, 10)
+				Expect(store.DeleteArticle(GinkgoT().Context(), id)).To(Succeed())
+				_, err := store.GetArticle(GinkgoT().Context(), id)
+				Expect(err).To(MatchError(models.ErrNotFound))
+			})
+		})
+	})
+})
+==> test/factories/articles.go
+package factories
+
+import (
+	"context"
+	"time"
+
+	"example.com/blog/app/models"
+	"example.com/blog/db/adapter"
+)
+
+// NewArticle is a valid article that is not saved: every attribute has a default,
+// and "with" overrides what the spec cares about.
+//
+// Written once by `bogie g model` and yours to edit: add an attribute's
+// default here when you add the column. Running the generator again leaves a
+// changed file alone unless --force.
+//
+// Placeholders: the datetime defaults (EditedAt) are one fixed instant. Set real
+// times where a spec depends on them, such as a window that starts before it ends.
+func NewArticle(with ...func(*models.Article)) models.Article {
+	record := models.Article{
+		Title:    Sequence("title "),
+		EditedAt: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+	}
+	for _, f := range with {
+		f(&record)
+	}
+	return record
+}
+
+// Article saves a NewArticle through the real store and fails the spec if it
+// cannot, so a spec reads as its arrangement and nothing else.
+func Article(t T, s *adapter.Store, with ...func(*models.Article)) models.Article {
+	t.Helper()
+	created, err := s.CreateArticle(context.Background(), NewArticle(with...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return created
+}
+==> db/adapter/nullable.go
+package adapter
+
+import (
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+// A nullable datetime column is a pgtype.Timestamptz in the row sqlc
+// generates and a *time.Time in the model: nil is NULL. These convert between
+// the two.
+
+func timestamptzToTimePtr(t pgtype.Timestamptz) *time.Time {
+	if !t.Valid {
+		return nil
+	}
+	return &t.Time
+}
+
+func timePtrToTimestamptz(t *time.Time) pgtype.Timestamptz {
+	if t == nil {
+		return pgtype.Timestamptz{}
+	}
+	return pgtype.Timestamptz{Time: *t, Valid: true}
+}

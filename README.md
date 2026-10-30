@@ -145,7 +145,8 @@ One command surface, spelled the same everywhere:
 | --- | --- |
 | `bogie new blog` | an empty API service (`--jobs` adds River, `--id=uuid` swaps the default bigint id scheme for uuid) |
 | `bogie g model post title:string` | migration, queries, model type, store, then sqlc |
-| `bogie g scaffold post …` | the model, JSON views and a wired controller |
+| `bogie g scaffold post …` | the model, JSON views and a wired controller; `--only index,show` writes just those actions; `admin/pages` is a model of its own (`admin_page`, table `admin_pages`) with its controller in the admin namespace |
+| `bogie g scaffold_controller admin/categories` | the HTTP half over a model that already exists, mounted under a namespace; the attributes are read from the model |
 | `bogie g controller posts index show` | a controller, registered as it is written |
 | `bogie g controller admin/reports` | a namespace is a package |
 | `bogie g job send_welcome` | a River worker on the same Postgres |
@@ -225,10 +226,10 @@ from decisions already made than make them again.
 **v0.5.x, single maintainer, MIT.** Working today: `bogie new` (with or
 without `--jobs`); `g`/`d` for `scaffold`, `model`, `migration`, `controller`,
 `service`, `seed`, `job`, `authentication` and `config`; `doctor`; the `db:*` and `credentials:*` tasks; `server` and
-`worker` (both live-reload under Air in development), `test`, `lint`, `ci`; and `app:update`.
+`worker` (both live-reload under Air in development), `test`, `lint`, `ci`; `model:sync`; and `app:update`.
 Generated apps test with Ginkgo v2 and Gomega: a `test/` tree (`testdb`,
 `testapp`, `factories`, `requests`) for what tests share, a suite file per
-package, and specs from every generator (v0.4.0 and v0.4.1). v0.4.2 words the generated model specs as one Describe per store method; v0.5.0 moves the layers: `app/models` (types), `db/sqlc` (generated), `db/adapter` (the Store). v0.5.1 drops the Rails wording, has `g model` write the model's own spec, and words the generated not-found tables as sentences.
+package, and specs from every generator (v0.4.0 and v0.4.1). v0.4.2 words the generated model specs as one Describe per store method; v0.5.0 moves the layers: `app/models` (types), `db/sqlc` (generated), `db/adapter` (the Store). v0.5.1 drops the Rails wording, has `g model` write the model's own spec, and words the generated not-found tables as sentences. v0.5.2 declares the model spec's variable and BeforeEach at the Describe, so its example Context compiles where it sits. v0.5.3 adds `--only ACTIONS` to `g scaffold` and `g scaffold_controller [NS/]RESOURCE`, the HTTP half of a scaffold for an existing model. v0.5.4 names a namespace package `admin_controllers` (plural, like every other directory) and lets `g scaffold admin/pages` make the model `admin_page`, as Rails does. v0.5.5 makes the generated "is mounted" spec look the route up instead of expecting a non-404, and keeps snake_case model names out of Go identifiers. v0.5.6 names the adapter suite "Adapter", says "model" where generated comments said "domain", camelCases route-group variables, and drops the `exit status 1` that `go run` adds after an app has already said what failed. v0.6.0 adds `bogie model:sync [TABLE]`, which follows a migration written by hand: it adds the field for each new column and removes the field for each dropped one, rewrites the queries, the store and the factory from the columns and merges them with your copy, and leaves Validate and everything else of yours alone; and the `:null` attribute modifier, for a column that may be NULL. v0.6.1 makes `model:sync` remove a field only when a migration dropped its column, so a field you added for a count or a joined name stays, and stops it running sqlc over files that have conflict markers. v0.6.2 gives a namespaced controller views of its own, flat and prefixed like a model (`app/views/admin_products.go`, `AdminProductResponse`), instead of sharing the public ones.
 
 Known gaps:
 

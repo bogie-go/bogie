@@ -9,7 +9,7 @@ import (
 
 // Model writes what `bogie generate model post title:string body:text`
 // produces: the create_<table> migration, a starter db/queries/<table>.sql,
-// the domain type, the hand-written half of the store that converts sqlc's
+// the model type, the hand-written half of the store that converts sqlc's
 // row type to it, its spec and its test factory. Running sqlc afterwards is the caller's job; the files here
 // are written to match what it will generate.
 func Model(module, name string, attrs []Attr, scheme IDScheme, now time.Time) ([]File, error) {
@@ -31,7 +31,7 @@ func Model(module, name string, attrs []Attr, scheme IDScheme, now time.Time) ([
 	if err != nil {
 		return nil, err
 	}
-	return []File{
+	files := []File{
 		migration,
 		{Path: "db/queries/" + table + ".sql", Content: queries(name, table, attrs)},
 		{Path: "app/models/" + name + ".go", Content: domainType(name, attrs, scheme)},
@@ -39,7 +39,54 @@ func Model(module, name string, attrs []Attr, scheme IDScheme, now time.Time) ([
 		{Path: "db/adapter/" + table + ".go", Content: store(module, name, table, attrs, scheme)},
 		{Path: "db/adapter/" + table + "_test.go", Content: storeTest(module, name, table, attrs, scheme)},
 		{Path: "test/factories/" + table + ".go", Content: factory(module, name, attrs, scheme)},
-	}, nil
+	}
+	if NeedsNullableHelpers(attrs) {
+		files = append(files, File{Path: NullableHelpersPath, Content: NullableHelpers})
+	}
+	return files, nil
+}
+
+// NullableHelpersPath is the file holding the two conversions a nullable
+// datetime column needs. Several models share it, so it is a file of its own.
+const NullableHelpersPath = "db/adapter/nullable.go"
+
+// NullableHelpers is that file. It is written once, with the first model that
+// has a nullable datetime, and is then the app's to edit.
+const NullableHelpers = `package adapter
+
+import (
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+// A nullable datetime column is a pgtype.Timestamptz in the row sqlc
+// generates and a *time.Time in the model: nil is NULL. These convert between
+// the two.
+
+func timestamptzToTimePtr(t pgtype.Timestamptz) *time.Time {
+	if !t.Valid {
+		return nil
+	}
+	return &t.Time
+}
+
+func timePtrToTimestamptz(t *time.Time) pgtype.Timestamptz {
+	if t == nil {
+		return pgtype.Timestamptz{}
+	}
+	return pgtype.Timestamptz{Time: *t, Valid: true}
+}
+`
+
+// NeedsNullableHelpers reports whether attrs has a nullable datetime.
+func NeedsNullableHelpers(attrs []Attr) bool {
+	for _, a := range attrs {
+		if a.Null && a.Type == "datetime" {
+			return true
+		}
+	}
+	return false
 }
 
 // modelTest is the model's own spec: a plain function call, no database. It
@@ -61,13 +108,13 @@ import (
 )
 
 var _ = Describe("%[3]s.Validate", func() {
+	var %[4]s models.%[3]s
+
+	BeforeEach(func() {
+		%[4]s = factories.New%[3]s()
+	})
+
 	Context("with the factory's defaults", func() {
-		var %[4]s models.%[3]s
-
-		BeforeEach(func() {
-			%[4]s = factories.New%[3]s()
-		})
-
 		It("is valid", func() {
 			Expect(%[4]s.Validate()).To(Succeed())
 		})
@@ -75,7 +122,7 @@ var _ = Describe("%[3]s.Validate", func() {
 `, module+"/app/models", module+"/test/factories", typ, v)
 	var text *Attr
 	for i := range attrs {
-		if attrs[i].Type == "string" || attrs[i].Type == "text" {
+		if !attrs[i].Null && (attrs[i].Type == "string" || attrs[i].Type == "text") {
 			text = &attrs[i]
 			break
 		}
@@ -180,10 +227,10 @@ func storeTest(module, name, table string, attrs []Attr, scheme IDScheme) string
 	Describe("Update%[1]s", func() {
 %[4]s	})
 
-	// No round trip here: a %[5]s belongs to a parent that has to be saved
+	// No round trip here: %[5]s belongs to a parent that has to be saved
 	// first. Make the parent with its factory and add the specs, with the
 	// reference set in the factory's "with" function.
-`, typ, getNotFound, deleteNotFound, updateMissing, word)
+`, typ, getNotFound, deleteNotFound, updateMissing, withArticle(word))
 	} else {
 		idExpr := "record.ID"
 		if scheme != IDUUID {
@@ -193,7 +240,7 @@ func storeTest(module, name, table string, attrs []Attr, scheme IDScheme) string
 		var change, check string
 		saves := "saves the " + word
 		for _, a := range attrs {
-			if _, lit := edited(a, scheme); lit != "" {
+			if _, lit := edited(a, scheme); lit != "" && !a.Null {
 				change = fmt.Sprintf("\t\t\t\trecord.%s = %s\n", a.goName(), lit)
 				check = fmt.Sprintf("\t\t\t\tExpect(updated.%s).To(BeEquivalentTo(%s))\n", a.goName(), lit)
 				saves = "stores the change"
@@ -314,9 +361,13 @@ func factory(module, name string, attrs []Attr, scheme IDScheme) string {
 	typ := Camel(name)
 	imports := map[string]bool{"context": true}
 	var fields strings.Builder
-	var refs []string
+	var refs, times []string
 	for _, a := range attrs {
 		var v string
+		// A nullable column starts as NULL: its zero value is a valid default.
+		if a.Null {
+			continue
+		}
 		switch a.Type {
 		case "string", "text":
 			v = fmt.Sprintf("Sequence(%q)", strings.ReplaceAll(a.Name, "_", " ")+" ")
@@ -327,6 +378,7 @@ func factory(module, name string, attrs []Attr, scheme IDScheme) string {
 		case "datetime":
 			v = "time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)"
 			imports["time"] = true
+			times = append(times, a.goName())
 		case "uuid":
 			v = "uuid.NewString()"
 			imports["github.com/google/uuid"] = true
@@ -363,6 +415,9 @@ func factory(module, name string, attrs []Attr, scheme IDScheme) string {
 	note := ""
 	if len(refs) > 0 {
 		note = fmt.Sprintf("//\n// Left at zero: %s. The parent has to exist first, so set it from the\n// parent's own factory:\n//\n//\tfactories.%s(t, s, func(v *models.%s) { v.%s = parent.ID })\n", strings.Join(refs, ", "), typ, typ, refs[0])
+	}
+	if len(times) > 0 {
+		note += fmt.Sprintf("//\n// Placeholders: the datetime defaults (%s) are one fixed instant. Set real\n// times where a spec depends on them, such as a window that starts before it ends.\n", strings.Join(times, ", "))
 	}
 	fmt.Fprintf(&b, `// New%[1]s is a valid %[2]s that is not saved: every attribute has a default,
 // and "with" overrides what the spec cares about.
@@ -434,7 +489,7 @@ func domainType(name string, attrs []Attr, scheme IDScheme) string {
 		fmt.Fprintf(&b, "\t%q\n", imp)
 	}
 	b.WriteString(")\n\n")
-	fmt.Fprintf(&b, "// %s is a %s. Imports nothing third-party: ids are %ss here and\n", typ, name, scheme.idDomain())
+	fmt.Fprintf(&b, "// %s is %s. Imports nothing third-party: ids are %ss here and\n", typ, withArticle(name), scheme.idDomain())
 	fmt.Fprintf(&b, "// become %s at the store boundary.\n", scheme)
 	fmt.Fprintf(&b, "type %s struct {\n", typ)
 	width := len("CreatedAt")
@@ -494,7 +549,7 @@ func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 	}
 
 	// Create
-	fmt.Fprintf(&b, "// Create%s validates a %s, inserts it, and returns it with its id and\n", typ, name)
+	fmt.Fprintf(&b, "// Create%s validates %s, inserts it, and returns it with its id and\n", typ, withArticle(name))
 	b.WriteString("// timestamps. Validation runs on save, so every caller\n")
 	b.WriteString("// gets it and none can forget it.\n")
 	fmt.Fprintf(&b, "func (s *Store) Create%s(ctx context.Context, %s models.%s) (models.%s, error) {\n", typ, recv, typ, typ)
@@ -515,7 +570,7 @@ func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 	} else {
 		fmt.Fprintf(&b, "\tif err != nil {\n\t\treturn models.%s{}, fmt.Errorf(\"store: create %s: %%w\", err)\n\t}\n", typ, name)
 	}
-	fmt.Fprintf(&b, "\treturn %sFromRow(row), nil\n}\n\n", name)
+	fmt.Fprintf(&b, "\treturn %sFromRow(row), nil\n}\n\n", lowerCamel(name))
 
 	// Get
 	fmt.Fprintf(&b, "// Get%s finds one %s. An id that is not a %s is simply not found.\n", typ, name, scheme.notFoundWord())
@@ -523,24 +578,24 @@ func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 	fmt.Fprintf(&b, "\tpk, err := %s(id)\n\tif err != nil {\n\t\treturn models.%s{}, models.ErrNotFound\n\t}\n", scheme.parseFunc(), typ)
 	fmt.Fprintf(&b, "\trow, err := s.q.Get%s(ctx, pk)\n\tswitch {\n\tcase errors.Is(err, pgx.ErrNoRows):\n\t\treturn models.%s{}, models.ErrNotFound\n", typ, typ)
 	fmt.Fprintf(&b, "\tcase err != nil:\n\t\treturn models.%s{}, fmt.Errorf(\"store: get %s %%s: %%w\", id, err)\n\t}\n", typ, name)
-	fmt.Fprintf(&b, "\treturn %sFromRow(row), nil\n}\n\n", name)
+	fmt.Fprintf(&b, "\treturn %sFromRow(row), nil\n}\n\n", lowerCamel(name))
 
 	// List
 	fmt.Fprintf(&b, "// List%s returns the newest %s first, at most limit of them.\n", Camel(table), table)
 	fmt.Fprintf(&b, "func (s *Store) List%s(ctx context.Context, limit int32) ([]models.%s, error) {\n", Camel(table), typ)
 	fmt.Fprintf(&b, "\trows, err := s.q.List%s(ctx, limit)\n\tif err != nil {\n\t\treturn nil, fmt.Errorf(\"store: list %s: %%w\", err)\n\t}\n", Camel(table), table)
-	fmt.Fprintf(&b, "\tout := make([]models.%s, 0, len(rows))\n\tfor _, r := range rows {\n\t\tout = append(out, %sFromRow(r))\n\t}\n\treturn out, nil\n}\n\n", typ, name)
+	fmt.Fprintf(&b, "\tout := make([]models.%s, 0, len(rows))\n\tfor _, r := range rows {\n\t\tout = append(out, %sFromRow(r))\n\t}\n\treturn out, nil\n}\n\n", typ, lowerCamel(name))
 
 	// Update
-	fmt.Fprintf(&b, "// Update%s validates a %s, writes its columns, and returns the stored row.\n", typ, name)
+	fmt.Fprintf(&b, "// Update%s validates %s, writes its columns, and returns the stored row.\n", typ, withArticle(name))
 	fmt.Fprintf(&b, "func (s *Store) Update%s(ctx context.Context, %s models.%s) (models.%s, error) {\n", typ, recv, typ, typ)
 	fmt.Fprintf(&b, "\tif err := %s.Validate(); err != nil {\n\t\treturn models.%s{}, err\n\t}\n", recv, typ)
 	if scheme == IDUUID {
-		// The domain's id is a string here too, so it gets the same
+		// The model's id is a string here too, so it gets the same
 		// malformed-id-is-not-found treatment a URL-sourced id gets.
 		fmt.Fprintf(&b, "\tpk, err := parseUUID(%s.ID)\n\tif err != nil {\n\t\treturn models.%s{}, models.ErrNotFound\n\t}\n", recv, typ)
 	} else {
-		// Nothing to parse: the domain's id is already this scheme's type.
+		// Nothing to parse: the model's id is already this scheme's type.
 		fmt.Fprintf(&b, "\tpk := %s.ID\n", recv)
 	}
 	b.WriteString(referenceChecks(recv, typ, attrs, scheme))
@@ -557,17 +612,17 @@ func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 		fmt.Fprintf(&b, "\tcase errors.As(err, &pgErr) && pgErr.Code == \"23505\":\n\t\treturn models.%s{}, fmt.Errorf(\"%%w: %s\", models.ErrInvalid)\n", typ, uniqueViolationMessage(uniq))
 	}
 	fmt.Fprintf(&b, "\tcase err != nil:\n\t\treturn models.%s{}, fmt.Errorf(\"store: update %s %%v: %%w\", %s.ID, err)\n\t}\n", typ, name, recv)
-	fmt.Fprintf(&b, "\treturn %sFromRow(row), nil\n}\n\n", name)
+	fmt.Fprintf(&b, "\treturn %sFromRow(row), nil\n}\n\n", lowerCamel(name))
 
 	// Delete
-	fmt.Fprintf(&b, "// Delete%s removes a %s, and says so if there was none.\n", typ, name)
+	fmt.Fprintf(&b, "// Delete%s removes %s, and says so if there was none.\n", typ, withArticle(name))
 	fmt.Fprintf(&b, "func (s *Store) Delete%s(ctx context.Context, id string) error {\n", typ)
 	fmt.Fprintf(&b, "\tpk, err := %s(id)\n\tif err != nil {\n\t\treturn models.ErrNotFound\n\t}\n", scheme.parseFunc())
 	fmt.Fprintf(&b, "\tn, err := s.q.Delete%s(ctx, pk)\n\tif err != nil {\n\t\tvar pgErr *pgconn.PgError\n\t\tif errors.As(err, &pgErr) && pgErr.Code == \"23503\" {\n\t\t\treturn fmt.Errorf(\"%%w: %s is still in use\", models.ErrInvalid)\n\t\t}\n\t\treturn fmt.Errorf(\"store: delete %s %%s: %%w\", id, err)\n\t}\n", typ, name, name)
 	b.WriteString("\tif n == 0 {\n\t\treturn models.ErrNotFound\n\t}\n\treturn nil\n}\n\n")
 
 	// fromRow
-	fmt.Fprintf(&b, "func %sFromRow(r sqlc.%s) models.%s {\n\treturn models.%s{\n", name, typ, typ, typ)
+	fmt.Fprintf(&b, "func %sFromRow(r sqlc.%s) models.%s {\n\treturn models.%s{\n", lowerCamel(name), typ, typ, typ)
 	width := len("CreatedAt:")
 	for _, a := range attrs {
 		if n := len(a.goName()) + 1; n > width {
@@ -649,7 +704,7 @@ func uniqueViolationMessage(uniq []Attr) string {
 
 func needsPgtype(attrs []Attr) bool {
 	for _, a := range attrs {
-		if strings.HasPrefix(kinds[a.Type].sqlcType, "pgtype.") && a.Type == "datetime" {
+		if a.Type == "datetime" && !a.Null {
 			return true
 		}
 	}

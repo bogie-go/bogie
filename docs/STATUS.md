@@ -1,7 +1,7 @@
 # Status
 
 Where Bogie stands, for whoever picks it up next, on whatever machine. Updated
-2026-10-27, at v0.5.1. `docs/DESIGN.md` is the design and the
+2026-10-30, at v0.6.2. `docs/DESIGN.md` is the design and the
 reasoning; this file is the state.
 
 ## Milestones
@@ -15,12 +15,13 @@ reasoning; this file is the state.
 | M4 dogfood: regenerate kchat's skeleton and diff | **done** 2026-10-03; found the Dockerfile and Kamal config missing, added them |
 | M5 publish: version from the git tag, first release, launch | **v0.1.0 tagged 2026-10-03** with `bin/release`. No Homebrew tap, decided the same day: `go install` is the one install. The launch essay remains |
 | M6 `app:update`: three-way merge against the version in `bogie.toml` | **done** 2026-10-03; tested across two of the day's commits |
+| `model:sync` and `:null`: follow a hand-written migration into the model, queries, store and factory | **done** 2026-10-29, v0.6.0 (2026-10-30), fixed in v0.6.1; DESIGN §5b |
 
 ## What works today
 
 Install: `go install github.com/bogie-go/bogie@latest` for the newest tag,
 `@main` for main, `go install .` from a clone. First release: v0.1.0,
-2026-10-03; latest: v0.5.1, 2026-10-27.
+2026-10-03; latest: v0.6.2, 2026-10-30.
 
     bogie new NAME [--module=PATH] [--id=bigint|uuid] [--jobs]
                                                  an empty service: it
@@ -38,6 +39,12 @@ Install: `go install github.com/bogie-go/bogie@latest` for the newest tag,
     bogie g scaffold post title:string body:text      the model, app/views/posts.go and a
                                                       PostsController with real handlers over
                                                       the store, registered; no service layer
+                                                      --only index,show writes just those;
+                                                      admin/posts is the model admin_post
+                                                      with its controller in the namespace
+    bogie g scaffold_controller admin/categories      the HTTP half over an existing model,
+                                                      mounted in a namespace; attributes read
+                                                      from app/models; --only too
     bogie g migration add_slug_to_posts slug:string:uniq
     bogie g controller comments index show create     one file, a <Name>Controller type with
                                                       its routes and actions, a test, and the
@@ -127,7 +134,7 @@ pushing; on a clean tree a green run signs off the commit.
   written. A namespace package carries its own `controllers` and `routes`
   markers, nested one level under the root's.
 - A controller is a Go type in one file; a namespace is a Go
-  package (`admin_controller/`). Decided 2026-10-03, DESIGN.md §5; the first
+  package (`admin_controllers/`). Decided 2026-10-03, DESIGN.md §5; the first
   cut had a package per controller, which is not what kchat has.
 - `bin/ci` here is the test of record for templates. A failed run leaves the
   scaffolded app under `/tmp/tmp.*` for a look; a green run removes it.

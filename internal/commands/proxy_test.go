@@ -199,3 +199,17 @@ func TestReloadWithoutItsConfigOrToolFallsBack(t *testing.T) {
 		t.Errorf("hint = %q, want the command that adds the tool", hint)
 	}
 }
+
+func TestGoRunStderrDropsOnlyGoRunsExitLine(t *testing.T) {
+	var out strings.Builder
+	w := goRunStderr{&out}
+	for _, chunk := range []string{"ecommerce: store: ping database\n", "exit status 1\n", "exit status 1 of the build\n", "partial exit status 1\n"} {
+		if n, err := w.Write([]byte(chunk)); err != nil || n != len(chunk) {
+			t.Fatalf("Write(%q) = %d, %v", chunk, n, err)
+		}
+	}
+	want := "ecommerce: store: ping database\nexit status 1 of the build\npartial exit status 1\n"
+	if out.String() != want {
+		t.Errorf("stderr = %q, want %q", out.String(), want)
+	}
+}
