@@ -21,7 +21,8 @@ Brings the Go side of each model in line with its table. The migrations are
 the schema: sqlc compiles them, and model:sync reads the columns from what
 sqlc makes of them, so a migration written by hand is as good as a generated
 one. For each column the model lacks it adds the field, and for each field
-whose column is gone it removes the field. The queries, the store and the
+whose column a migration dropped it removes the field. A field that never had
+a column (a count, a joined name) is yours and stays. The queries, the store and the
 factory are rewritten from the new columns and merged with your copy, the way
 app:update merges, so edits you made by hand stay; where a hand edit and the
 change touch the same lines the file gets conflict markers to resolve.
@@ -90,7 +91,7 @@ func modelSyncIn(root string, args []string, out io.Writer) error {
 	migrations := migrationSources(root)
 
 	var removed []removedField
-	changed, failed := 0, 0
+	changed, failed, conflicts := 0, 0, 0
 	for _, name := range names {
 		table := generate.Plural(name)
 		typ := generate.Camel(name)
@@ -159,6 +160,7 @@ func modelSyncIn(root string, args []string, out io.Writer) error {
 			}
 			if op == "conflict" {
 				failed++
+				conflicts++
 			}
 			if op != "" {
 				say(op, "%s", f.path)
@@ -192,7 +194,10 @@ func modelSyncIn(root string, args []string, out io.Writer) error {
 			say("still", "%s mentions %s, the field removed with %s.%s", hit, r.goName, r.table, r.field)
 		}
 	}
-	if changed > 0 && hasQueries(root) {
+	if conflicts > 0 {
+		// sqlc would only fail on the markers, and blame a query of yours.
+		say("skip", "sqlc generate: resolve the conflict markers first, then run it in db/ (go tool sqlc generate)")
+	} else if changed > 0 && hasQueries(root) {
 		say("run", "sqlc generate")
 		cmd := exec.Command("go", "tool", "sqlc", "generate")
 		cmd.Dir = filepath.Join(root, "db")

@@ -629,8 +629,10 @@ never saw is NOT NULL and not unique.
 
 **It edits the model's struct, and merges the files that follow from the
 columns.** For each column the model lacks it adds the field above `CreatedAt`;
-for each field bogie could have written whose column is gone it removes the
-field and the comment lines directly above it. Everything else in the file
+for each field whose column a migration dropped or renamed away it removes the
+field and the comment lines directly above it. A field with no column that no
+migration ever dropped (a count or a joined name the reader added) is the
+reader's and is not touched. Everything else in the file
 (Validate, constants, other fields, comments) is not touched; `go/format`
 realigns the struct. The queries, the store and the factory are generated for
 the old columns and for the new, and merged into the reader's copy with

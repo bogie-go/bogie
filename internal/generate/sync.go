@@ -149,10 +149,11 @@ func (p SyncPlan) InSync() bool { return len(p.Added) == 0 && len(p.Removed) == 
 
 // PlanSync compares a model's fields with the fields of the row type sqlc
 // generated for its table. A model field bogie did not write (a slice, a
-// struct, a type it has no column for) is not a column and is left alone.
-// One that bogie could have written, with no column behind it, was dropped
-// from the table. Order is kept: the model's own, then the new columns as the
-// table has them.
+// struct, a type it has no column for) is not a column and is left alone. So
+// is one that bogie could have written but that never had a column, a count
+// or a joined name the reader added: it is removed only when the migrations
+// dropped a column of that name. Order is kept: the model's own, then the new
+// columns as the table has them.
 func PlanSync(model, row []StructField, schema map[string]Column, scheme IDScheme) (SyncPlan, error) {
 	var p SyncPlan
 	inRow := map[string]StructField{}
@@ -171,10 +172,15 @@ func PlanSync(model, row []StructField, schema map[string]Column, scheme IDSchem
 		if !ok {
 			continue
 		}
+		rf, there := inRow[f.Name]
+		if !there && !schema[a.Name].Gone {
+			// Not a column, and never was: a count or a joined name the
+			// reader added. It is theirs.
+			continue
+		}
 		// The model cannot say it, but the store handles a unique violation.
 		a.Unique = schema[a.Name].Unique
 		p.Old = append(p.Old, a)
-		rf, there := inRow[f.Name]
 		if !there {
 			p.Removed = append(p.Removed, a)
 			continue
@@ -324,10 +330,15 @@ var (
 type Column struct {
 	Null   bool // it may be NULL: a datetime is the same pgtype either way
 	Unique bool // a UNIQUE column, which the store answers as "already taken"
+	// Gone is a column a migration dropped, or renamed away. A model field
+	// with no column is only removed when its column is known to be gone: a
+	// field the reader added for a computed value (a count, a joined name) has
+	// no column and never did.
+	Gone bool
 }
 
 // Columns reads the Up part of each migration, in order, and says what it
-// makes of each column of table. It follows the statements a migration is
+// makes of each column of table, and which it dropped. It follows the statements a migration is
 // made of: CREATE TABLE and ALTER TABLE with ADD, DROP and RENAME COLUMN and
 // ALTER COLUMN SET or DROP NOT NULL, and CREATE UNIQUE INDEX on one column; a
 // column it never saw is not in the map.
@@ -344,7 +355,7 @@ func Columns(migrations []string, table string) map[string]Column {
 				continue
 			}
 			if u := uniqueIndexRe.FindStringSubmatch(stmt); u != nil {
-				if c, ok := cols[strings.Trim(u[2], `" `)]; ok && u[1] == table && !strings.Contains(u[2], ",") {
+				if c, ok := cols[strings.Trim(u[2], `" `)]; ok && !c.Gone && u[1] == table && !strings.Contains(u[2], ",") {
 					c.Unique = true
 					cols[strings.Trim(u[2], `" `)] = c
 				}
@@ -439,13 +450,15 @@ func alterColumn(cols map[string]Column, action string) {
 		}
 		name := strings.TrimPrefix(strings.TrimPrefix(strings.TrimPrefix(action, "drop "), "column "), "if exists ")
 		name, _, _ = strings.Cut(name, " ")
-		delete(cols, trim(name))
+		c := cols[trim(name)]
+		c.Gone = true
+		cols[trim(name)] = c
 	case "alter":
 		rest := strings.TrimPrefix(strings.TrimPrefix(action, "alter "), "column ")
 		name, change, _ := strings.Cut(rest, " ")
 		name = trim(name)
 		c, ok := cols[name]
-		if !ok {
+		if !ok || c.Gone {
 			return
 		}
 		switch {
@@ -462,9 +475,10 @@ func alterColumn(cols map[string]Column, action string) {
 			return
 		}
 		from, to = trim(from), trim(strings.TrimSpace(to))
-		if v, ok := cols[from]; ok {
-			delete(cols, from)
+		if v, ok := cols[from]; ok && !v.Gone {
 			cols[to] = v
+			v.Gone = true
+			cols[from] = v
 		}
 	}
 }

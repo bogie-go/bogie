@@ -66,6 +66,8 @@ ALTER TABLE users DROP COLUMN seen_at;`,
 		"seen_at":     {Null: true, Unique: true},
 		"age":         {Null: true},
 		"about":       {Null: true},
+		"nickname":    {Null: true, Gone: true},
+		"bio":         {Null: true, Gone: true},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Columns =\n%v\nwant\n%v", got, want)
@@ -107,7 +109,7 @@ func TestSyncMatchesGeneratingTheNewColumns(t *testing.T) {
 
 				plan, err := PlanSync(
 					mustFields(t, fileContent(old, "app/models/article.go"), "Article"),
-					rowFields(to, scheme), schemaOf(to), scheme)
+					rowFields(to, scheme), schemaOf(from, to), scheme)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -144,7 +146,7 @@ func TestPlanSync(t *testing.T) {
 		{"ArchivedAt", "pgtype.Timestamptz"}, {"Age", "*int32"},
 		{"CreatedAt", "pgtype.Timestamptz"}, {"UpdatedAt", "pgtype.Timestamptz"},
 	}
-	plan, err := PlanSync(model, row, map[string]Column{"archived_at": {Null: true}}, IDBigint)
+	plan, err := PlanSync(model, row, map[string]Column{"archived_at": {Null: true}, "name": {Gone: true}}, IDBigint)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,6 +181,29 @@ func TestPlanSync(t *testing.T) {
 	}
 	if _, err := PlanSync(model, append(row, StructField{"OwnerID", "pgtype.UUID"}), map[string]Column{"owner_id": {Null: true}}, IDUUID); err == nil {
 		t.Error("a nullable uuid was accepted")
+	}
+}
+
+// A field the reader added for a value that is not stored, a count or a
+// joined name, has no column and never did: the sync must not take it for a
+// dropped one.
+func TestPlanSyncLeavesAFieldThatNeverHadAColumn(t *testing.T) {
+	model := []StructField{
+		{"ID", "int64"}, {"Name", "string"}, {"ProductCount", "int32"}, {"Title", "string"},
+		{"CreatedAt", "time.Time"}, {"UpdatedAt", "time.Time"},
+	}
+	row := []StructField{{"ID", "int64"}, {"Name", "string"}, {"CreatedAt", "pgtype.Timestamptz"}, {"UpdatedAt", "pgtype.Timestamptz"}}
+	plan, err := PlanSync(model, row, map[string]Column{"name": {}, "title": {Gone: true}}, IDBigint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Removed) != 1 || plan.Removed[0].Name != "title" {
+		t.Errorf("removed = %+v, want only title", plan.Removed)
+	}
+	for _, a := range append(plan.Old, plan.New...) {
+		if a.Name == "product_count" {
+			t.Errorf("product_count is in the plan: %+v", plan)
+		}
 	}
 }
 
@@ -316,10 +341,15 @@ func rowFields(attrs []Attr, scheme IDScheme) []StructField {
 	return append(fields, StructField{"CreatedAt", "pgtype.Timestamptz"}, StructField{"UpdatedAt", "pgtype.Timestamptz"})
 }
 
-// schemaOf is what the migrations would say of these attributes.
-func schemaOf(attrs []Attr) map[string]Column {
+// schemaOf is what the migrations would say of the attributes a table has
+// after going from one set to another: the columns it has, and the ones it
+// lost.
+func schemaOf(from, to []Attr) map[string]Column {
 	out := map[string]Column{}
-	for _, a := range attrs {
+	for _, a := range from {
+		out[a.Name] = Column{Null: a.Null, Unique: a.Unique, Gone: true}
+	}
+	for _, a := range to {
 		out[a.Name] = Column{Null: a.Null, Unique: a.Unique}
 	}
 	return out
