@@ -113,10 +113,16 @@ generators() {
   # This app has no jobs; the first `g job` adds River itself, the same way
   # `app:update` merges a layout change, before writing the job as usual. The
   # app's own bin/ci below then also covers the worker role it just gained.
+  # --pretend first: it must not add River, or anything else.
+  "$b" g job send_welcome --pretend || return 1
+  test ! -d app/jobs || { echo "g job --pretend wrote files"; return 1; }
   "$b" g job send_welcome || return 1
   # model:sync follows a migration written by hand: one column added (a
   # nullable datetime among them), one dropped, the Validate we edited kept.
-  "$b" g model reading note:string count:integer || return 1
+  # A uuid column in an app whose keys are bigints needs the uuid helpers,
+  # which only a uuid app has from the start.
+  "$b" g model reading note:string count:integer token:uuid || return 1
+  test -f db/adapter/uuid.go || return 1
   cat >> app/models/reading.go <<'GO'
 
 // Visible is mine, and must survive the sync.
@@ -284,7 +290,6 @@ jobs() {
   (cd "$CI_JOBS_DIR" && "$CI_APP_DIR/bogie" new blog --module=example.com/blog --jobs) || return 1
   cd "$CI_JOBS_DIR/blog" || return 1
   b="$CI_APP_DIR/bogie"
-  "$b" g job send_welcome || return 1
   "$b" g job send_welcome || return 1
   "$b" doctor || return 1
   cd "$OLDPWD" || return 1

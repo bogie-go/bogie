@@ -173,6 +173,9 @@ func PlanSync(model, row []StructField, schema map[string]Column, scheme IDSchem
 			continue
 		}
 		rf, there := inRow[f.Name]
+		if a.Type == "string" && (rf.Type == "pgtype.UUID" || schema[a.Name].UUID) {
+			a.Type = "uuid"
+		}
 		if !there && !schema[a.Name].Gone {
 			// Not a column, and never was: a count or a joined name the
 			// reader added. It is theirs.
@@ -335,6 +338,10 @@ type Column struct {
 	// field the reader added for a computed value (a count, a joined name) has
 	// no column and never did.
 	Gone bool
+	// UUID is a uuid column. A Go string is a string and a uuid alike, so the
+	// model cannot say; sqlc can for a column that is there, and the
+	// migration for one that is gone.
+	UUID bool
 }
 
 // Columns reads the Up part of each migration, in order, and says what it
@@ -428,6 +435,7 @@ func addColumn(cols map[string]Column, def string) {
 	cols[name] = Column{
 		Null:   !strings.Contains(rest, "not null") && !strings.Contains(rest, "primary key"),
 		Unique: uniqueWordRe.MatchString(rest),
+		UUID:   rest == "uuid" || strings.HasPrefix(rest, "uuid "),
 	}
 }
 

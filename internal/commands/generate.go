@@ -287,15 +287,33 @@ func generateIn(root string, args []string, out io.Writer) error {
 			return fmt.Errorf("generate service: %w", err)
 		}
 	case "job":
+		jobsMissing := false
 		if _, err := os.Stat(filepath.Join(root, "app", "jobs", "jobs.go")); err != nil {
-			say("%12s  this app has no app/jobs yet; adding --jobs\n", "note")
-			if err := enableJobs(root, out); err != nil {
-				return fmt.Errorf("generate job: %w", err)
+			if *pretend {
+				// Adding --jobs rewrites a dozen files and tidies the modules,
+				// so --pretend only says it would.
+				say("%12s  this app has no app/jobs yet; --jobs would be added first\n", "note")
+				jobsMissing = true
+			} else {
+				say("%12s  this app has no app/jobs yet; adding --jobs\n", "note")
+				if err := enableJobs(root, out); err != nil {
+					return fmt.Errorf("generate job: %w", err)
+				}
 			}
 		}
 		files, wires, err = generate.Job(module, name)
 		if err != nil {
 			return fmt.Errorf("generate job: %w", err)
+		}
+		if jobsMissing {
+			// app/jobs/jobs.go, with its markers, does not exist to be checked.
+			would := wires
+			defer func() {
+				for _, w := range would {
+					say("%12s  %s: %s\n", "insert", w.File, w.Line)
+				}
+			}()
+			wires = nil
 		}
 	case "seed":
 		files, wires, err = generate.Seed(module, name)

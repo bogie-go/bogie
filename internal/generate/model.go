@@ -43,7 +43,63 @@ func Model(module, name string, attrs []Attr, scheme IDScheme, now time.Time) ([
 	if NeedsNullableHelpers(attrs) {
 		files = append(files, File{Path: NullableHelpersPath, Content: NullableHelpers})
 	}
+	if NeedsUUIDHelpers(attrs, scheme) {
+		files = append(files, File{Path: UUIDHelpersPath, Content: UUIDHelpers})
+	}
 	return files, nil
+}
+
+// UUIDHelpersPath is the file holding the two conversions a uuid column
+// needs. An app whose keys are uuids has it from `bogie new`; an app whose
+// keys are bigints gets it with the first model that has a uuid column.
+const UUIDHelpersPath = "db/adapter/uuid.go"
+
+// UUIDHelpers is that file for a bigint app, the same functions the uuid
+// scheme's app starts with. It is written once and is then the app's to edit.
+const UUIDHelpers = `package adapter
+
+import (
+	"fmt"
+
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+// The models speak strings; Postgres speaks uuid. Converting here rather than
+// in app/models is what lets it import nothing third-party.
+
+func parseUUID(s string) (pgtype.UUID, error) {
+	var id pgtype.UUID
+	if err := id.Scan(s); err != nil {
+		return pgtype.UUID{}, fmt.Errorf("store: %q is not a uuid: %w", s, err)
+	}
+	return id, nil
+}
+
+func uuidString(id pgtype.UUID) string {
+	if !id.Valid {
+		return ""
+	}
+	v, err := id.Value()
+	if err != nil {
+		return ""
+	}
+	s, _ := v.(string)
+	return s
+}
+`
+
+// NeedsUUIDHelpers reports whether attrs has a uuid column in an app whose
+// keys are not uuids, which is the one app without the helpers already.
+func NeedsUUIDHelpers(attrs []Attr, scheme IDScheme) bool {
+	if scheme == IDUUID {
+		return false
+	}
+	for _, a := range attrs {
+		if a.Type == "uuid" {
+			return true
+		}
+	}
+	return false
 }
 
 // NullableHelpersPath is the file holding the two conversions a nullable
