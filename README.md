@@ -223,7 +223,7 @@ from decisions already made than make them again.
 
 ## Status
 
-**v0.5.x, single maintainer, MIT.** Working today: `bogie new` (with or
+**v0.6.x, single maintainer, MIT.** Working today: `bogie new` (with or
 without `--jobs`); `g`/`d` for `scaffold`, `model`, `migration`, `controller`,
 `service`, `seed`, `job`, `authentication` and `config`; `doctor`; the `db:*` and `credentials:*` tasks; `server` and
 `worker` (both live-reload under Air in development), `test`, `lint`, `ci`; `model:sync`; and `app:update`.

@@ -2,7 +2,7 @@
 
 Thanks for looking. Read this first, because a few things here are unusual:
 there is **no hosted CI**, the layout is **by role on purpose**, and the
-project has **one maintainer** and is at **v0.5.x**.
+project has **one maintainer** and is at **v0.6.x**.
 
 ## Before you write code
 
