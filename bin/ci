@@ -123,6 +123,7 @@ generators() {
   # which only a uuid app has from the start.
   "$b" g model reading note:string count:integer token:uuid || return 1
   test -f db/adapter/uuid.go || return 1
+  grep -q "func (a \*App) Put" test/testapp/testapp.go || return 1
   cat >> app/models/reading.go <<'GO'
 
 // Visible is mine, and must survive the sync.
