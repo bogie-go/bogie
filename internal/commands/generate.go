@@ -66,7 +66,8 @@ Generators:
                                     struct in config/<group>.go, registered in
                                     config.go, with a line per key in the
                                     development credentials. Types: string
-                                    (default) int bool duration; flags: req
+                                    (default) int bool duration (integer and
+                                    boolean work too); flags: req
                                     (production refuses to boot without it),
                                     secret (the same, never given a made-up
                                     value). smtp.address is SMTP_ADDRESS;
@@ -83,6 +84,7 @@ Generators:
 Attributes are field:type, with :index, :uniq or :null after the type (a column
 is NOT NULL unless it says :null). Types:
   string text integer bigint boolean datetime uuid jsonb references
+(int and bool are accepted too, as in g config, which takes integer and boolean.)
 A field with no :type defaults to string. A references field
 names the other model: post:references is post_id.
 

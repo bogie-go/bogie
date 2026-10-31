@@ -145,6 +145,11 @@ func kindFor(a Attr, scheme IDScheme) kind {
 	return k
 }
 
+// attrAliases are accepted spellings that resolve to a type in kinds. `bogie g
+// config` takes int and bool; scaffold, model and migration take integer and
+// boolean. Each now takes both.
+var attrAliases = map[string]string{"int": "integer", "bool": "boolean"}
+
 // nullable is k for a column that may be NULL. With emit_pointers_for_null_types
 // sqlc emits a pointer for a string, number or bool, and the model holds the
 // same pointer. A datetime stays a pgtype in the row and becomes *time.Time in
@@ -194,6 +199,10 @@ func ParseAttrs(args []string) ([]Attr, error) {
 		typ := m[2]
 		if typ == "" {
 			typ = "string"
+		}
+		// The names `bogie g config` uses, accepted here too, so one habit works.
+		if canon, ok := attrAliases[typ]; ok {
+			typ = canon
 		}
 		attr := Attr{Name: m[1], Type: typ}
 		for _, mod := range strings.Split(strings.TrimPrefix(m[3], ":"), ":") {
