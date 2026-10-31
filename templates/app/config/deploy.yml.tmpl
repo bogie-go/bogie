@@ -85,8 +85,9 @@ builder:
 # `app exec --reuse` runs in the container that is up, so it takes the whole
 # command (`app exec --reuse "{{.Name}} db seed"`). Without --reuse Kamal starts
 # a new container through the ENTRYPOINT, so leave the binary off:
-# `app exec "db seed"`.
+# `app exec "db seed"`. `status` asks the web role only: a job container serves
+# no HTTP, so asking it would fail.
 aliases:
   logs: app logs -f
   shell: app exec --interactive --reuse "sh"
-  status: app exec --reuse "wget -qO- http://localhost:8080/healthz"
+  status: app exec --reuse -r web "wget -qO- http://localhost:8080/healthz"

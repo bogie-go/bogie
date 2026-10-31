@@ -295,7 +295,10 @@ jobs() {
   "$b" doctor || return 1
   # The image's ENTRYPOINT is the binary, so the job role's cmd is only the
   # argument: "blog worker" would run "blog blog worker" and serve again.
-  grep -q '^    cmd: worker$' config/deploy.yml || { echo "config/deploy.yml: the job role's cmd should be 'worker'"; return 1; }
+  for f in config/deploy.yml config/deploy.production.yml; do
+    grep -q '^    cmd: worker$' "$f" || { echo "$f: the job role's cmd should be 'worker'"; return 1; }
+  done
+  grep -q 'status: app exec --reuse -r web ' config/deploy.yml || { echo "config/deploy.yml: the status alias should ask the web role only"; return 1; }
   cd "$OLDPWD" || return 1
   "$CI_JOBS_DIR/blog/bin/ci" || return 1
   cd "$CI_JOBS_DIR/blog" && "$b" d job send_welcome && "$b" doctor && cd "$OLDPWD" || return 1
