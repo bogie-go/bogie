@@ -16,11 +16,14 @@ servers:
     - CHANGE-ME.example.com{{if .Jobs}}
   # The worker is this same image started with a different argument, so a
   # web container and a job container cannot be built from different
-  # commits. Same host as web until the queue needs its own.
+  # commits. Same host as web until the queue needs its own. The image's
+  # ENTRYPOINT is already `{{.Name}}`, so `cmd` is only its argument:
+  # `cmd: {{.Name}} worker` would run `{{.Name}} {{.Name}} worker`, which
+  # serves again instead of working.
   job:
     hosts:
       - CHANGE-ME.example.com
-    cmd: {{.Name}} worker{{end}}
+    cmd: worker{{end}}
 
 proxy:
   ssl: true
@@ -79,6 +82,10 @@ builder:
 # by the container itself at boot, from the migrations in the binary, so the
 # database only has to exist.
 
+# `app exec --reuse` runs in the container that is up, so it takes the whole
+# command (`app exec --reuse "{{.Name}} db seed"`). Without --reuse Kamal starts
+# a new container through the ENTRYPOINT, so leave the binary off:
+# `app exec "db seed"`.
 aliases:
   logs: app logs -f
   shell: app exec --interactive --reuse "sh"

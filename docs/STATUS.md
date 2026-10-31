@@ -1,7 +1,7 @@
 # Status
 
 Where Bogie stands, for whoever picks it up next, on whatever machine. Updated
-2026-10-30, at v0.6.5. `docs/DESIGN.md` is the design and the
+2026-10-30, at v0.6.6. `docs/DESIGN.md` is the design and the
 reasoning; this file is the state.
 
 ## Milestones
@@ -21,7 +21,7 @@ reasoning; this file is the state.
 
 Install: `go install github.com/bogie-go/bogie@latest` for the newest tag,
 `@main` for main, `go install .` from a clone. First release: v0.1.0,
-2026-10-03; latest: v0.6.5, 2026-10-30.
+2026-10-03; latest: v0.6.6, 2026-10-30.
 
     bogie new NAME [--module=PATH] [--id=bigint|uuid] [--jobs]
                                                  an empty service: it

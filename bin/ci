@@ -293,6 +293,9 @@ jobs() {
   b="$CI_APP_DIR/bogie"
   "$b" g job send_welcome || return 1
   "$b" doctor || return 1
+  # The image's ENTRYPOINT is the binary, so the job role's cmd is only the
+  # argument: "blog worker" would run "blog blog worker" and serve again.
+  grep -q '^    cmd: worker$' config/deploy.yml || { echo "config/deploy.yml: the job role's cmd should be 'worker'"; return 1; }
   cd "$OLDPWD" || return 1
   "$CI_JOBS_DIR/blog/bin/ci" || return 1
   cd "$CI_JOBS_DIR/blog" && "$b" d job send_welcome && "$b" doctor && cd "$OLDPWD" || return 1
