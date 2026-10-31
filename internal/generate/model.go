@@ -504,7 +504,9 @@ func factory(module, name string, attrs []Attr, scheme IDScheme) string {
 //
 // Written once by `+"`bogie g model`"+` and yours to edit: add an attribute's
 // default here when you add the column. Running the generator again leaves a
-// changed file alone unless --force.
+// changed file alone unless --force. The exception is `+"`bogie model:sync`"+`:
+// when a migration adds or drops a column it merges the new default into this
+// file and keeps your edits (a clash leaves conflict markers).
 %[4]sfunc New%[1]s(with ...func(*models.%[1]s)) models.%[1]s {
 	record := models.%[1]s{
 %[3]s	}

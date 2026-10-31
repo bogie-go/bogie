@@ -1,0 +1,42 @@
+package migrate_test
+
+import (
+	"errors"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"{{.Module}}/app/services/migrate"
+)
+
+var _ = Describe("UpError", func() {
+	Context("when goose found a migration older than the newest applied", func() {
+		var err error
+
+		BeforeEach(func() {
+			err = migrate.UpError(errors.New("detected 1 missing (out-of-order) migration: [20260101000000_x.sql]"))
+		})
+
+		It("keeps goose's message", func() {
+			Expect(err).To(MatchError(ContainSubstring("detected 1 missing (out-of-order) migration")))
+		})
+
+		It("says to rename the file with a later timestamp", func() {
+			Expect(err).To(MatchError(ContainSubstring("rename the new file with a timestamp after it")))
+		})
+	})
+
+	Context("when Up failed for another reason", func() {
+		var cause, err error
+
+		BeforeEach(func() {
+			cause = errors.New("connection refused")
+			err = migrate.UpError(cause)
+		})
+
+		It("wraps the cause and adds no hint", func() {
+			Expect(err).To(MatchError(cause))
+			Expect(err).NotTo(MatchError(ContainSubstring("rename")))
+		})
+	})
+})

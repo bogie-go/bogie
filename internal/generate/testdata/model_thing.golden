@@ -325,7 +325,9 @@ import (
 //
 // Written once by `bogie g model` and yours to edit: add an attribute's
 // default here when you add the column. Running the generator again leaves a
-// changed file alone unless --force.
+// changed file alone unless --force. The exception is `bogie model:sync`:
+// when a migration adds or drops a column it merges the new default into this
+// file and keeps your edits (a clash leaves conflict markers).
 func NewThing(with ...func(*models.Thing)) models.Thing {
 	record := models.Thing{
 		Name: Sequence("name "),
