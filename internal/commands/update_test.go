@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/bogie-go/bogie/internal/generate"
 )
 
 func TestMergeDecidesEachFile(t *testing.T) {
@@ -309,10 +311,68 @@ func TestWarnRetiredNamesEachFileAndTouchesNothing(t *testing.T) {
 	}
 }
 
+func TestCrossesLayoutBreak(t *testing.T) {
+	for _, c := range []struct {
+		old, current string
+		want         bool
+	}{
+		{"v0.4.1", "v0.5.0", true},
+		{"v0.4.1", "v0.5.1", true},
+		{"v0.2.12", "v0.5.1", true},
+		{"v0.4.2-0.20261020120000-abcdef123456", "v0.5.0", true},
+		{"v0.4.1", "v0.5.1+dirty", true},
+		{"v0.5.0", "v0.5.1", false},
+		{"v0.5.1", "v0.5.1", false},
+		{"v0.4.0", "v0.4.1", false},
+		{"v0.4.1", "v0.5.0-rc1", false},
+		{"v0.4.1", "dev", false},
+		{"v0.4.1", "v0.0.0-20261020120000-abcdef123456+dirty", false},
+		{"", "v0.5.1", false},
+		{"v0.4", "v0.5.1", false},
+	} {
+		if got := crossesLayoutBreak(c.old, c.current); got != c.want {
+			t.Errorf("crossesLayoutBreak(%q, %q) = %v, want %v", c.old, c.current, got, c.want)
+		}
+	}
+}
+
 func TestWarnRetiredIsSilentWithNothingRetired(t *testing.T) {
 	var out bytes.Buffer
 	warnRetired(&out, []result{{"a.go", opIdentical, nil}}, nil, nil, "v1", "v2")
 	if out.Len() != 0 {
 		t.Errorf("output = %q, want none", out.String())
+	}
+}
+
+func TestLayoutBreakNoticeNamesTheMoveAndUUIDHelper(t *testing.T) {
+	root := t.TempDir()
+	models := filepath.Join(root, "app", "models")
+	if err := os.MkdirAll(models, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bigint := layoutBreakNotice(root, Settings{Version: "v0.4.1", IDScheme: generate.IDBigint}, "v0.5.1")
+	for _, want := range []string{"v0.5.0", "app/models/models.go", "v0.4.1", "v0.5.1", layoutBreakGuide, "--pretend"} {
+		if !strings.Contains(bigint, want) {
+			t.Errorf("notice lacks %q:\n%s", want, bigint)
+		}
+	}
+	if strings.Contains(bigint, "uuid.go") {
+		t.Errorf("a bigint app has no uuid.go to retire:\n%s", bigint)
+	}
+
+	// A uuid app without the file (never generated a model) has nothing to name;
+	// with it, the notice lists it as retired.
+	uuid := Settings{Version: "v0.4.1", IDScheme: generate.IDUUID}
+	if n := layoutBreakNotice(root, uuid, "v0.5.1"); strings.Contains(n, "uuid.go") {
+		t.Errorf("no uuid.go on disk, yet named:\n%s", n)
+	}
+	if err := os.WriteFile(filepath.Join(models, "uuid.go"), []byte("package models\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if n := layoutBreakNotice(root, uuid, "v0.5.1"); !strings.Contains(n, "retired  app/models/uuid.go") {
+		t.Errorf("uuid.go not listed as retired:\n%s", n)
+	}
+	if n := layoutBreakNotice(root, Settings{Version: "v0.4.1", IDScheme: generate.IDBigint}, "v0.5.1"); strings.Contains(n, "uuid.go") {
+		t.Errorf("a bigint app's notice names uuid.go:\n%s", n)
 	}
 }
