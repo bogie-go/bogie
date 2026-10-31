@@ -109,3 +109,31 @@ func TestFindUsesNarrowsByTheModelsType(t *testing.T) {
 		t.Errorf("uses = %v", got)
 	}
 }
+
+// --pretend writes nothing, even where a job first means adding --jobs to the
+// whole app.
+func TestJobPretendWritesNothing(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "go.mod", "module example.com/blog\n\ngo 1.25\n")
+	writeFile(t, root, Marker, "bogie = \"v0.0.0\"\nname = \"blog\"\nmodule = \"example.com/blog\"\n")
+	var out strings.Builder
+	if err := generateIn(root, []string{"job", "send_welcome", "--pretend"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	var found []string
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			rel, _ := filepath.Rel(root, path)
+			found = append(found, rel)
+		}
+		return nil
+	})
+	if len(found) != 2 {
+		t.Errorf("files after --pretend: %v", found)
+	}
+	for _, want := range []string{"--jobs would be added first", "create  app/jobs/send_welcome.go", "insert  app/jobs/jobs.go"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output lacks %q:\n%s", want, out.String())
+		}
+	}
+}

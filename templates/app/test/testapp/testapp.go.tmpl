@@ -76,6 +76,11 @@ func (a *App) Post(path string, body any) *Request {
 	return a.request(http.MethodPost, path).Body(body)
 }
 
+// Put starts a PUT request with a JSON body.
+func (a *App) Put(path string, body any) *Request {
+	return a.request(http.MethodPut, path).Body(body)
+}
+
 // Patch starts a PATCH request with a JSON body.
 func (a *App) Patch(path string, body any) *Request {
 	return a.request(http.MethodPatch, path).Body(body)

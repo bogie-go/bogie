@@ -43,7 +43,63 @@ func Model(module, name string, attrs []Attr, scheme IDScheme, now time.Time) ([
 	if NeedsNullableHelpers(attrs) {
 		files = append(files, File{Path: NullableHelpersPath, Content: NullableHelpers})
 	}
+	if NeedsUUIDHelpers(attrs, scheme) {
+		files = append(files, File{Path: UUIDHelpersPath, Content: UUIDHelpers})
+	}
 	return files, nil
+}
+
+// UUIDHelpersPath is the file holding the two conversions a uuid column
+// needs. An app whose keys are uuids has it from `bogie new`; an app whose
+// keys are bigints gets it with the first model that has a uuid column.
+const UUIDHelpersPath = "db/adapter/uuid.go"
+
+// UUIDHelpers is that file for a bigint app, the same functions the uuid
+// scheme's app starts with. It is written once and is then the app's to edit.
+const UUIDHelpers = `package adapter
+
+import (
+	"fmt"
+
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+// The models speak strings; Postgres speaks uuid. Converting here rather than
+// in app/models is what lets it import nothing third-party.
+
+func parseUUID(s string) (pgtype.UUID, error) {
+	var id pgtype.UUID
+	if err := id.Scan(s); err != nil {
+		return pgtype.UUID{}, fmt.Errorf("store: %q is not a uuid: %w", s, err)
+	}
+	return id, nil
+}
+
+func uuidString(id pgtype.UUID) string {
+	if !id.Valid {
+		return ""
+	}
+	v, err := id.Value()
+	if err != nil {
+		return ""
+	}
+	s, _ := v.(string)
+	return s
+}
+`
+
+// NeedsUUIDHelpers reports whether attrs has a uuid column in an app whose
+// keys are not uuids, which is the one app without the helpers already.
+func NeedsUUIDHelpers(attrs []Attr, scheme IDScheme) bool {
+	if scheme == IDUUID {
+		return false
+	}
+	for _, a := range attrs {
+		if a.Type == "uuid" {
+			return true
+		}
+	}
+	return false
 }
 
 // NullableHelpersPath is the file holding the two conversions a nullable
@@ -172,6 +228,27 @@ func storeTest(module, name, table string, attrs []Attr, scheme IDScheme) string
 		}
 	}
 
+	// A reference that names no row is invalid, not a database error.
+	nothing := ""
+	for _, a := range attrs {
+		if a.Type == "references" {
+			nothing += fmt.Sprintf("\t\t\t\tmissing.%s = %s\n", a.goName(), missingID)
+		}
+	}
+	createMissing := fmt.Sprintf(`		Context("when a reference names nothing", func() {
+			var missing models.%[1]s
+
+			BeforeEach(func() {
+				missing = factories.New%[1]s()
+%[2]s			})
+
+			It("is invalid", func() {
+				_, err := store.Create%[1]s(GinkgoT().Context(), missing)
+				Expect(err).To(MatchError(models.ErrInvalid))
+			})
+		})
+`, typ, nothing)
+
 	imports := []string{"\t. \"github.com/onsi/ginkgo/v2\"", "\t. \"github.com/onsi/gomega\""}
 	var b strings.Builder
 	var specs strings.Builder
@@ -227,10 +304,13 @@ func storeTest(module, name, table string, attrs []Attr, scheme IDScheme) string
 	Describe("Update%[1]s", func() {
 %[4]s	})
 
+	Describe("Create%[1]s", func() {
+%[6]s	})
+
 	// No round trip here: %[5]s belongs to a parent that has to be saved
 	// first. Make the parent with its factory and add the specs, with the
 	// reference set in the factory's "with" function.
-`, typ, getNotFound, deleteNotFound, updateMissing, withArticle(word))
+`, typ, getNotFound, deleteNotFound, updateMissing, withArticle(word), createMissing)
 	} else {
 		idExpr := "record.ID"
 		if scheme != IDUUID {
@@ -424,7 +504,9 @@ func factory(module, name string, attrs []Attr, scheme IDScheme) string {
 //
 // Written once by `+"`bogie g model`"+` and yours to edit: add an attribute's
 // default here when you add the column. Running the generator again leaves a
-// changed file alone unless --force.
+// changed file alone unless --force. The exception is `+"`bogie model:sync`"+`:
+// when a migration adds or drops a column it merges the new default into this
+// file and keeps your edits (a clash leaves conflict markers).
 %[4]sfunc New%[1]s(with ...func(*models.%[1]s)) models.%[1]s {
 	record := models.%[1]s{
 %[3]s	}
@@ -515,7 +597,7 @@ func domainType(name string, attrs []Attr, scheme IDScheme) string {
 func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 	typ := Camel(name)
 	recv := paramName(name, "s")
-	uniq := uniqueAttrs(attrs)
+	viol := violations(attrs)
 	var b strings.Builder
 	b.WriteString("package adapter\n\n")
 	// pgconn is always needed now: every Delete classifies a foreign-key
@@ -565,8 +647,12 @@ func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 	default:
 		fmt.Fprintf(&b, "\trow, err := s.q.Create%s(ctx, sqlc.Create%sParams{%s})\n", typ, typ, createParams(recv))
 	}
-	if len(uniq) > 0 {
-		fmt.Fprintf(&b, "\tif err != nil {\n\t\tvar pgErr *pgconn.PgError\n\t\tif errors.As(err, &pgErr) && pgErr.Code == \"23505\" {\n\t\t\treturn models.%s{}, fmt.Errorf(\"%%w: %s\", models.ErrInvalid)\n\t\t}\n\t\treturn models.%s{}, fmt.Errorf(\"store: create %s: %%w\", err)\n\t}\n", typ, uniqueViolationMessage(uniq), typ, name)
+	if len(viol) > 0 {
+		b.WriteString("\tif err != nil {\n\t\tvar pgErr *pgconn.PgError\n")
+		for _, v := range viol {
+			fmt.Fprintf(&b, "\t\tif errors.As(err, &pgErr) && pgErr.Code == %q {\n\t\t\treturn models.%s{}, fmt.Errorf(\"%%w: %s\", models.ErrInvalid)\n\t\t}\n", v.code, typ, v.message)
+		}
+		fmt.Fprintf(&b, "\t\treturn models.%s{}, fmt.Errorf(\"store: create %s: %%w\", err)\n\t}\n", typ, name)
 	} else {
 		fmt.Fprintf(&b, "\tif err != nil {\n\t\treturn models.%s{}, fmt.Errorf(\"store: create %s: %%w\", err)\n\t}\n", typ, name)
 	}
@@ -604,12 +690,12 @@ func store(module, name, table string, attrs []Attr, scheme IDScheme) string {
 	} else {
 		fmt.Fprintf(&b, "\trow, err := s.q.Update%s(ctx, sqlc.Update%sParams{ID: pk, %s})\n", typ, typ, createParams(recv))
 	}
-	if len(uniq) > 0 {
+	if len(viol) > 0 {
 		b.WriteString("\tvar pgErr *pgconn.PgError\n")
 	}
 	fmt.Fprintf(&b, "\tswitch {\n\tcase errors.Is(err, pgx.ErrNoRows):\n\t\treturn models.%s{}, models.ErrNotFound\n", typ)
-	if len(uniq) > 0 {
-		fmt.Fprintf(&b, "\tcase errors.As(err, &pgErr) && pgErr.Code == \"23505\":\n\t\treturn models.%s{}, fmt.Errorf(\"%%w: %s\", models.ErrInvalid)\n", typ, uniqueViolationMessage(uniq))
+	for _, v := range viol {
+		fmt.Fprintf(&b, "\tcase errors.As(err, &pgErr) && pgErr.Code == %q:\n\t\treturn models.%s{}, fmt.Errorf(\"%%w: %s\", models.ErrInvalid)\n", v.code, typ, v.message)
 	}
 	fmt.Fprintf(&b, "\tcase err != nil:\n\t\treturn models.%s{}, fmt.Errorf(\"store: update %s %%v: %%w\", %s.ID, err)\n\t}\n", typ, name, recv)
 	fmt.Fprintf(&b, "\treturn %sFromRow(row), nil\n}\n\n", lowerCamel(name))
@@ -675,6 +761,31 @@ func looksPlural(name string) bool {
 	}
 	s := Singular(name)
 	return s != name && Plural(s) == name
+}
+
+// violation is a Postgres constraint error a save answers as ErrInvalid.
+type violation struct{ code, message string }
+
+// violations are the constraint errors Create and Update turn into
+// ErrInvalid: a duplicate value (23505) for the unique columns, and a
+// foreign key naming nothing (23503) for the references columns. A model
+// with neither never needs to tell these apart from any other database
+// error.
+func violations(attrs []Attr) []violation {
+	var out []violation
+	if uniq := uniqueAttrs(attrs); len(uniq) > 0 {
+		out = append(out, violation{"23505", uniqueViolationMessage(uniq)})
+	}
+	var refs []string
+	for _, a := range attrs {
+		if a.Type == "references" {
+			refs = append(refs, a.Name)
+		}
+	}
+	if len(refs) > 0 {
+		out = append(out, violation{"23503", strings.Join(refs, " or ") + " does not exist"})
+	}
+	return out
 }
 
 // uniqueAttrs is attrs that must be unique, in order: a model with none of

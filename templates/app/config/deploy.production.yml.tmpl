@@ -18,10 +18,11 @@ service: {{.Name}}
 servers:
   web:
     - CHANGE-ME.example.com{{if .Jobs}}
+  # `cmd` is the ENTRYPOINT's argument, as in deploy.yml: not `{{.Name}} worker`.
   job:
     hosts:
       - CHANGE-ME.example.com
-    cmd: {{.Name}} worker{{end}}
+    cmd: worker{{end}}
 
 proxy:
   ssl: true

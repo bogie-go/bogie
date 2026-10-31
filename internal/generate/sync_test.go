@@ -90,6 +90,8 @@ func TestSyncMatchesGeneratingTheNewColumns(t *testing.T) {
 		{"remove from the middle", []string{"a:string", "b:integer", "c:boolean"}, []string{"a:string", "c:boolean"}},
 		{"add and remove", []string{"a:string", "b:integer"}, []string{"a:string", "c:datetime", "d:text"}},
 		{"add a reference", []string{"title:string"}, []string{"title:string", "owner:references"}},
+		{"add to a model with a uuid column", []string{"title:string", "token:uuid"}, []string{"title:string", "token:uuid", "role:string"}},
+		{"remove a uuid column", []string{"title:string", "token:uuid"}, []string{"title:string"}},
 		{"add a unique column", []string{"title:string"}, []string{"title:string", "email:string:uniq"}},
 		{"remove the last column", []string{"title:string"}, nil},
 		{"add to a model with none", nil, []string{"title:string"}},
@@ -347,10 +349,10 @@ func rowFields(attrs []Attr, scheme IDScheme) []StructField {
 func schemaOf(from, to []Attr) map[string]Column {
 	out := map[string]Column{}
 	for _, a := range from {
-		out[a.Name] = Column{Null: a.Null, Unique: a.Unique, Gone: true}
+		out[a.Name] = Column{Null: a.Null, Unique: a.Unique, Gone: true, UUID: a.Type == "uuid"}
 	}
 	for _, a := range to {
-		out[a.Name] = Column{Null: a.Null, Unique: a.Unique}
+		out[a.Name] = Column{Null: a.Null, Unique: a.Unique, UUID: a.Type == "uuid"}
 	}
 	return out
 }
@@ -373,5 +375,29 @@ func TestModelSpecsSkipNullableColumns(t *testing.T) {
 func TestScaffoldRefusesNullableColumns(t *testing.T) {
 	if _, _, err := Scaffold("example.com/blog", "", "", "article", attrs(t, "title:string", "subtitle:string:null"), IDBigint, at, nil); err == nil {
 		t.Error("a scaffold with a nullable column was written")
+	}
+}
+
+// The uuid conversions come with a uuid app from `new`; a bigint app has none
+// until a model has a uuid column.
+func TestModelWithAUUIDColumnWritesItsHelpers(t *testing.T) {
+	for _, c := range []struct {
+		scheme IDScheme
+		want   bool
+	}{{IDBigint, true}, {IDUUID, false}} {
+		files, err := Model("example.com/blog", "device", attrs(t, "token:uuid", "name:string"), c.scheme, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := fileContent(files, UUIDHelpersPath) != ""; got != c.want {
+			t.Errorf("%s app: helpers written = %v, want %v", c.scheme, got, c.want)
+		}
+	}
+	files, err := Model("example.com/blog", "device", attrs(t, "name:string", "owner:references"), IDBigint, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fileContent(files, UUIDHelpersPath) != "" {
+		t.Error("a model with no uuid column wrote the helpers")
 	}
 }

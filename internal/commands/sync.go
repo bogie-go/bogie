@@ -172,6 +172,12 @@ func modelSyncIn(root string, args []string, out io.Writer) error {
 			}
 			say("create", "%s", generate.NullableHelpersPath)
 		}
+		if generate.NeedsUUIDHelpers(plan.Added, settings.IDScheme) && !adapterHas(root, "func parseUUID") {
+			if err := write(generate.UUIDHelpersPath, []byte(generate.UUIDHelpers)); err != nil {
+				return fmt.Errorf("model:sync: %w", err)
+			}
+			say("create", "%s", generate.UUIDHelpersPath)
+		}
 		for _, left := range []struct{ path, why string }{
 			{"app/views/" + table + ".go", "the JSON the API sends and takes is yours; add the field there if it should carry it"},
 			{"app/controllers/" + table + "_controller.go", "what a request may set is yours"},

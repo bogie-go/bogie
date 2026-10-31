@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"strings"
 	"time"
 
 {{if .Jobs}}	"github.com/jackc/pgx/v5/pgxpool"
@@ -58,6 +59,16 @@ func provider(databaseURL string) (*goose.Provider, *sql.DB, error) {
 // nothing to apply.
 func nothingToDo(err error) bool { return errors.Is(err, goose.ErrNoMigrations) }
 
+// upError wraps a failed Up. goose names an out-of-order migration (one older
+// than the newest applied) but not the way out, so this says it.
+func upError(err error) error {
+	if strings.Contains(err.Error(), "out-of-order") {
+		return fmt.Errorf("migrate: up: %w: a migration file is older than the newest one already applied; "+
+			"rename the new file with a timestamp after it (only if no other database has applied it yet)", err)
+	}
+	return fmt.Errorf("migrate: up: %w", err)
+}
+
 // Run applies every pending migration.
 //
 // goose takes a Postgres advisory lock for the duration, so this stays correct
@@ -84,7 +95,7 @@ func Run(ctx context.Context, databaseURL string, log *slog.Logger) error {
 		return fmt.Errorf("migrate: version: %w", err)
 	}
 	if _, err := p.Up(ctx); err != nil {
-		return fmt.Errorf("migrate: up: %w", err)
+		return upError(err)
 	}
 	after, err := p.GetDBVersion(ctx)
 	if err != nil {
