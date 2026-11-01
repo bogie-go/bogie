@@ -32,10 +32,11 @@ Generators:
                                     index,show writes just those actions,
                                     with their routes, views and specs
                                     (the model half is written in full).
-                                    admin/NAME is a model of its own, as in
-                                    Rails: admin_page, table admin_pages,
-                                    its controller PagesController in the
-                                    admin namespace at /admin/pages
+                                    admin/NAME is a model of its own, the
+                                    namespace in its name: admin_page,
+                                    table admin_pages, its controller
+                                    PagesController in the admin
+                                    namespace at /admin/pages
   scaffold_controller [NS/]RESOURCE the HTTP half of a scaffold for a model
                                     that already exists, read from
                                     app/models: admin/categories mounts the
@@ -394,9 +395,9 @@ func generateIn(root string, args []string, out io.Writer) error {
 			return fmt.Errorf("generate model: %w", err)
 		}
 	case "scaffold":
-		// admin/products is a model of its own, as in Rails: admin_product,
-		// table admin_products, with its controller in the admin namespace
-		// under the short name. The existing model's controller is
+		// admin/products is a model of its own, the namespace in its name:
+		// admin_product, table admin_products, with its controller in the
+		// admin namespace under the short name. The existing model's controller is
 		// scaffold_controller.
 		ns, res, model, err := generate.ParseScaffoldName(positional[0])
 		if err != nil {
