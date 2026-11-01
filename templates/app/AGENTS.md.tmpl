@@ -226,8 +226,8 @@ too once it holds no controller.
 
 Only the controller gets a package; the model, the store and the views are flat,
 the namespace in front of their names. `bogie g scaffold admin/pages title:string`
-makes a model of its own, as Rails does: `admin_page`, table `admin_pages`,
-`app/models/admin_page.go`, all flat, with `PagesController` in the admin
+makes a model of its own, the namespace in its name: `admin_page`, table
+`admin_pages`, `app/models/admin_page.go`, all flat, with `PagesController` in the admin
 package at `/admin/pages`. To put an admin controller over a model that
 exists, say `categories`, use `bogie g scaffold_controller admin/categories`:
 it reads the model and writes only the controller, its spec and views of its own,

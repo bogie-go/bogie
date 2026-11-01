@@ -52,8 +52,8 @@ func ParseOnly(spec string) ([]string, error) {
 // ns and res place the controller: the namespace to mount it under ("" for the
 // root) and its resource name, plural ("" for the table's own). A namespaced
 // scaffold is a model of its own, named with the namespace (admin_product, table
-// admin_products) as Rails prefixes it, whose controller keeps the short name
-// (ProductsController, at /admin/products).
+// admin_products), the namespace as a prefix, whose controller keeps the
+// short name (ProductsController, at /admin/products).
 //
 // only limits the HTTP half to those actions (nil is all five): their routes,
 // handlers, views and request specs. The model half is written in full either
@@ -78,7 +78,7 @@ func Scaffold(module, ns, res, name string, attrs []Attr, scheme IDScheme, now t
 // ParseScaffoldName splits what `g scaffold` accepts, post or admin/posts, into
 // the namespace ("" for none), the controller's resource name (the plural of
 // the last segment) and the model's name. A namespace is part of the model's
-// name, as Rails prefixes it: admin/posts is the model admin_post with the
+// name, the namespace as a prefix: admin/posts is the model admin_post with the
 // table admin_posts, and its controller is PostsController in the admin
 // namespace.
 func ParseScaffoldName(spec string) (ns, res, model string, err error) {
