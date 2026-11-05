@@ -153,6 +153,7 @@ One command surface, spelled the same everywhere:
 | `bogie g config smtp address:req port:int=1025 password:secret` | a typed group of the credentials file, registered, with development values; `smtp.address` is `SMTP_ADDRESS` |
 | `bogie g authentication secret\|token\|api_key` | a middleware for a route group (shared secret, JWT bearer token, or hashed API key), its config and credentials entry, and a `WithSecret` / `WithUser` / `WithAPIKey` helper; you mount the routes it guards |
 | `bogie db:migrate`, `db:rollback`, `db:seed` | run by the app's own binary |
+| `bogie db:status` | host, port, database, Postgres version, latest goose migration and how many are pending, and how many tables; read-only, same settings as `bogie server` |
 | `bogie credentials:edit` | an encrypted file, key never committed |
 | `bogie s`, `bogie t`, `bin/ci` | serve with live reload, test, and the whole pipeline |
 

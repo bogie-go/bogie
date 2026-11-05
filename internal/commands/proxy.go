@@ -153,12 +153,23 @@ func withArgs(steps [][]string, args []string) [][]string {
 // itself, db: or credentials:.
 func knownFamily(command string) bool {
 	prefix := command[:strings.Index(command, ":")+1]
-	for name := range tasks {
+	for _, name := range taskNames() {
 		if strings.HasPrefix(name, prefix) {
 			return true
 		}
 	}
 	return false
+}
+
+// taskNames is every colon task Bogie spells itself: the ones it proxies
+// into the app, and the ones it runs (db:status). A typo should be able to
+// name either.
+func taskNames() []string {
+	names := make([]string, 0, len(tasks)+len(toolTasks))
+	for name := range tasks {
+		names = append(names, name)
+	}
+	return append(names, toolTasks...)
 }
 
 func unknown(command string) error {
@@ -167,7 +178,7 @@ func unknown(command string) error {
 		prefix = command[:i+1]
 	}
 	var near []string
-	for name := range tasks {
+	for _, name := range taskNames() {
 		if strings.HasPrefix(name, prefix) {
 			near = append(near, name)
 		}

@@ -32,7 +32,7 @@ Install: `go install github.com/bogie-go/bogie@latest` for the newest tag,
                                                  on save in development (Air, .air.toml);
                                                  production runs the compiled binary
     bogie db:prepare db:migrate db:rollback db:migrate:status db:migrate:redo
-          db:reset db:seed db:create db:drop db:version
+          db:reset db:seed db:create db:drop db:version db:status
     bogie credentials:edit [-e production] | credentials:show | credentials:get
     bogie g model comment body:text post:references   migration, queries, domain type,
                                                       store methods, store test; runs sqlc

@@ -32,7 +32,7 @@ Inside an app (found by its bogie.toml, from any subdirectory):
   lint                     gofmt, vet, golangci-lint
   ci                       every check, locally, then sign off (bin/ci)
 
-  db:create  db:drop  db:prepare  db:reset  db:seed
+  db:create  db:drop  db:prepare  db:reset  db:seed  db:status
   db:migrate  db:migrate:status  db:migrate:redo  db:rollback  db:version
   credentials:edit  credentials:show  credentials:get   [-e ENVIRONMENT]
 
@@ -40,7 +40,7 @@ Inside an app (found by its bogie.toml, from any subdirectory):
   help                     this text
 
 The app's own binary spells these with spaces (` + "`blog db prepare`" + `), and
-that form works here too: bogie db prepare, bogie migrate status.
+that form works here too: bogie db prepare, bogie db status, bogie migrate status.
 `
 
 func main() {
@@ -65,8 +65,18 @@ func main() {
 		err = commands.ModelSync(os.Args[2:], os.Stdout)
 	case "app:update":
 		err = commands.Update(os.Args[2:], os.Stdout)
-	case "server", "worker", "routes", "test", "lint", "ci", "db", "migrate", "credentials":
+	case "server", "worker", "routes", "test", "lint", "ci", "migrate", "credentials":
 		err = commands.Proxy(command, os.Args[2:], os.Stdout)
+	case "db":
+		// `bogie db status` is the space spelling of db:status. The app's
+		// binary has no status subcommand; the tool answers it itself.
+		if len(os.Args) > 2 && os.Args[2] == "status" {
+			err = commands.DBStatus(os.Args[3:], os.Stdout)
+			break
+		}
+		err = commands.Proxy(command, os.Args[2:], os.Stdout)
+	case "db:status":
+		err = commands.DBStatus(os.Args[2:], os.Stdout)
 	case "db:create", "db:drop", "db:prepare", "db:setup", "db:reset", "db:seed",
 		"db:migrate", "db:migrate:status", "db:migrate:redo", "db:rollback", "db:version",
 		"credentials:edit", "credentials:show", "credentials:get":
