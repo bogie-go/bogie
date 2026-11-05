@@ -2,7 +2,10 @@ module github.com/bogie-go/bogie
 
 go 1.25
 
-require github.com/bogie-go/credentials v1.6.0
+require (
+	github.com/bogie-go/credentials v1.6.0
+	github.com/robfig/cron/v3 v3.0.1
+)
 
 require (
 	github.com/fsnotify/fsnotify v1.7.0 // indirect

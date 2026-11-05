@@ -4,6 +4,8 @@
 // business row or not at all.
 //
 // `bogie g job send_welcome` writes a job and registers it below.
+// `bogie g job daily_digest --every "0 9 * * *"` also registers it as a
+// periodic job: River enqueues it on that cron schedule.
 package jobs
 
 import (
@@ -12,17 +14,23 @@ import (
 	"github.com/riverqueue/river"
 )
 
-// Workers is every worker the queue can run, and whether there is one. Each
-// is registered on one line above the marker, with the dependencies it
-// declares; `bogie g job` inserts that line and `bogie d job` removes it.
+// Workers is every worker the queue can run, the periodic jobs among them,
+// and whether any worker is registered. Each worker is one line above the
+// marker, with the dependencies it declares; a periodic job adds a second
+// line that appends its schedule. `bogie g job` inserts those lines and
+// `bogie d job` removes them.
 //
-// River refuses an empty bundle, and a new app has no jobs yet, so the second
-// value lets app/application.go run insert-only until the first one exists.
-func Workers(log *slog.Logger) (*river.Workers, bool) {
+// River refuses an empty bundle, and a new app has no jobs yet, so the third
+// value lets app/application.go run insert-only until the first worker
+// exists. Periodic jobs are handed to the client with the workers; River
+// enqueues them only from the elected leader, once a client is started, so
+// the web process never does.
+func Workers(log *slog.Logger) (*river.Workers, []*river.PeriodicJob, bool) {
 	workers := river.NewWorkers()
+	var periodic []*river.PeriodicJob
 	registered := 0
 	// bogie:jobs
-	return workers, registered > 0
+	return workers, periodic, registered > 0
 }
 
 // add registers one worker and counts it.
