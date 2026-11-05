@@ -450,7 +450,13 @@ func factory(module, name string, attrs []Attr, scheme IDScheme) string {
 		}
 		switch a.Type {
 		case "string", "text":
-			v = fmt.Sprintf("Sequence(%q)", strings.ReplaceAll(a.Name, "_", " ")+" ")
+			if a.Owner {
+				// One owner for every record a factory makes, so a policied
+				// spec can sign in as that subject and see all of them.
+				v = fmt.Sprintf("%q", ownerID)
+			} else {
+				v = fmt.Sprintf("Sequence(%q)", strings.ReplaceAll(a.Name, "_", " ")+" ")
+			}
 		case "integer", "bigint":
 			v = "1"
 		case "boolean":

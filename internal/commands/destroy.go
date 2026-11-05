@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/bogie-go/bogie/internal/generate"
@@ -34,6 +35,7 @@ touched; a file you added to a package by hand stays.
   bogie d job send_welcome
   bogie d seed demo_posts
   bogie d authentication token
+  bogie d policy post
   bogie d config smtp
   bogie d model comment
   bogie d migration add_slug_to_posts
@@ -92,7 +94,7 @@ func destroyIn(root string, args []string, out io.Writer) error {
 	// column need the app's recorded scheme.
 	var settings Settings
 	var scheme generate.IDScheme
-	if generator == "migration" || generator == "model" || generator == "scaffold" || generator == "authentication" {
+	if generator == "migration" || generator == "model" || generator == "scaffold" || generator == "authentication" || generator == "policy" {
 		settings, err = readSettings(root)
 		if err != nil {
 			return fmt.Errorf("destroy %s: %w", generator, err)
@@ -121,6 +123,14 @@ func destroyIn(root string, args []string, out io.Writer) error {
 			wires = generate.WirePrefixes(ns, ctl)
 			if generator == "scaffold_controller" && ns != "" {
 				files = append(files, generate.File{Path: generate.ViewsPath(ns, generate.Singular(ctl))})
+			}
+			// --policy on scaffold_controller writes the policy and the
+			// service too. The model stays.
+			if generator == "scaffold_controller" {
+				model := generate.Singular(ctl)
+				if _, statErr := os.Stat(filepath.Join(root, "app", "policies", model+"_policy.go")); statErr == nil {
+					files = append(files, policyFiles(root, model)...)
+				}
 			}
 		}
 		if err == nil && ns != "" {
@@ -184,12 +194,26 @@ func destroyIn(root string, args []string, out io.Writer) error {
 			if err == nil && ns != "" {
 				files, wires = dropEmptyNamespace(root, ns, files, wires)
 			}
+			// A scaffold run with --policy also wrote the policy and its
+			// service. They go with the resource. A scaffold without one
+			// has nothing to remove here.
+			if err == nil {
+				if _, statErr := os.Stat(filepath.Join(root, "app", "policies", name+"_policy.go")); statErr == nil {
+					files = append(files, policyFiles(root, name)...)
+				}
+			}
 		}
 		// sqlc writes a file per query file and never removes one whose
 		// source is gone, so the generated half goes too.
 		files = append(files,
 			generate.File{Path: "db/sqlc/" + generate.Plural(name) + ".sql.go"})
 		runSqlc = true
+	case "policy":
+		if policyWired(root, name) {
+			err = fmt.Errorf("the %s controller is wired to this policy's service; bogie d scaffold %s removes the resource and the policy together", generate.Plural(name), name)
+			break
+		}
+		files = policyFiles(root, name)
 	case "migration":
 		var f generate.File
 		f, err = generate.Migration(name, nil, scheme, time.Time{})
@@ -222,7 +246,7 @@ func destroyIn(root string, args []string, out io.Writer) error {
 		}
 		// A controller or service package directory goes once it is empty.
 		// The layout's own directories (db/migrate, app/models, ...) stay.
-		if generator == "controller" || generator == "scaffold_controller" || generator == "scaffold" || generator == "service" {
+		if generator == "controller" || generator == "scaffold_controller" || generator == "scaffold" || generator == "service" || generator == "policy" {
 			_ = os.Remove(filepath.Dir(abs))
 		}
 	}
@@ -259,6 +283,37 @@ func destroyIn(root string, args []string, out io.Writer) error {
 		}
 	}
 	return nil
+}
+
+// policyFiles are one model's policy and, when it is the last one on disk,
+// the shared actor. The caller reports a path that is already gone as absent.
+func policyFiles(root, name string) []generate.File {
+	files := generate.PolicyResourcePaths(name)
+	if !otherPolicies(root, name) {
+		files = append(files, generate.PolicySharedPaths()...)
+	}
+	return files
+}
+
+// otherPolicies reports whether a policy file other than name's is on disk.
+func otherPolicies(root, name string) bool {
+	matches, _ := filepath.Glob(filepath.Join(root, "app", "policies", "*_policy.go"))
+	for _, m := range matches {
+		if strings.TrimSuffix(filepath.Base(m), "_policy.go") != name {
+			return true
+		}
+	}
+	return false
+}
+
+// policyWired reports whether application.go constructs this policy's service,
+// which is what a policied scaffold inserts on the controller's wire line.
+func policyWired(root, name string) bool {
+	src, err := os.ReadFile(filepath.Join(root, "app", "application.go"))
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(src), generate.Plural(name)+".New(")
 }
 
 // dropEmptyNamespace adds a namespace's own files and the root lines that

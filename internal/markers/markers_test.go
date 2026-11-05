@@ -113,6 +113,22 @@ func TestPruneImportsDropsTheUnreferenced(t *testing.T) {
 // A versioned import path (.../pgx/v5) names a package by the segment
 // before the version, not "v5" itself: pgx.Tx, never v5.Tx. Pruning must
 // look for that name, or it drops an import still in use.
+func TestPruneImportsIgnoresAComment(t *testing.T) {
+	src := []byte(`package app
+
+import (
+	"example.com/blog/app/services/posts"
+)
+
+// server.Posts = controllers.NewPostsController(posts.New(store), log)
+func f() {}
+`)
+	out := string(PruneImports(src))
+	if strings.Contains(out, "services/posts") {
+		t.Errorf("import kept because a comment mentioned it:\n%s", out)
+	}
+}
+
 func TestPruneImportsKeepsAVersionedImportStillUsed(t *testing.T) {
 	src := []byte(`package app
 

@@ -200,11 +200,29 @@ func PruneImports(src []byte) []byte {
 				name = segs[len(segs)-2]
 			}
 		}
-		if name == "_" || regexp.MustCompile(`\b`+regexp.QuoteMeta(name)+`\.`).MatchString(rest) {
+		// Comments do not count. application.go's example of a wire line
+		// mentions posts.New; that must not keep the import after the real
+		// line is removed.
+		if name == "_" || regexp.MustCompile(`\b`+regexp.QuoteMeta(name)+`\.`).MatchString(withoutComments(rest)) {
 			kept = append(kept, l)
 		}
 	}
 	return []byte(s[:open] + strings.Join(kept, "\n") + s[open+closeAt:])
+}
+
+// withoutComments drops // line comments so a mention in a comment is not
+// a use of an import. It does not try to parse strings; these files do not
+// put // inside one.
+func withoutComments(s string) string {
+	var b strings.Builder
+	for _, line := range strings.Split(s, "\n") {
+		if i := strings.Index(line, "//"); i >= 0 {
+			line = line[:i]
+		}
+		b.WriteString(line)
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 // Format is gofmt, in process: sorts imports and realigns what an insertion

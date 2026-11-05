@@ -305,24 +305,41 @@ type Maker struct {
 // Claims is what a verified token says.
 type Claims struct {
 	// Subject is who the token was minted for: the caller's user id, usually.
-	Subject   string
+	Subject string
+	// Role is the role string the token carried, or empty when it carried
+	// none. There is no role table; a policy decides what the string means.
+	Role      string
 	ExpiresAt time.Time
 	// ID is the token's own id, for a revocation list if you keep one.
 	ID string
 }
 
-// Mint signs a token for subject that expires after ttl.
+// signedClaims is the JWT payload: the registered claims plus an optional role.
+type signedClaims struct {
+	Role string `+"`"+`json:"role,omitempty"`+"`"+`
+	jwt.RegisteredClaims
+}
+
+// Mint signs a token for subject that expires after ttl, with no role.
 func (m Maker) Mint(subject string, ttl time.Duration) (string, error) {
+	return m.MintFor(subject, "", ttl)
+}
+
+// MintFor signs a token for subject in role. An empty role is the same as Mint.
+func (m Maker) MintFor(subject, role string, ttl time.Duration) (string, error) {
 	if subject == "" {
 		return "", fmt.Errorf("%%w: empty subject", ErrInvalid)
 	}
 	now := time.Now()
-	claims := jwt.RegisteredClaims{
-		Issuer:    m.Issuer,
-		Subject:   subject,
-		IssuedAt:  jwt.NewNumericDate(now),
-		ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
-		ID:        uuid.NewString(),
+	claims := signedClaims{
+		Role: role,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    m.Issuer,
+			Subject:   subject,
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
+			ID:        uuid.NewString(),
+		},
 	}
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(m.Secret)
 }
@@ -331,7 +348,7 @@ func (m Maker) Mint(subject string, ttl time.Duration) (string, error) {
 // claims. The method is pinned to HS256 so a token claiming "none" or an
 // asymmetric algorithm is refused before the key is consulted.
 func (m Maker) Verify(raw string) (Claims, error) {
-	var claims jwt.RegisteredClaims
+	var claims signedClaims
 	_, err := jwt.ParseWithClaims(raw, &claims, func(*jwt.Token) (any, error) { return m.Secret, nil },
 		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
 		jwt.WithIssuer(m.Issuer),
@@ -345,7 +362,7 @@ func (m Maker) Verify(raw string) (Claims, error) {
 	case claims.Subject == "":
 		return Claims{}, ErrInvalid
 	}
-	return Claims{Subject: claims.Subject, ExpiresAt: claims.ExpiresAt.Time, ID: claims.ID}, nil
+	return Claims{Subject: claims.Subject, Role: claims.Role, ExpiresAt: claims.ExpiresAt.Time, ID: claims.ID}, nil
 }
 `, setting.Path(), setting.Env())},
 		{Path: "app/services/token/token_suite_test.go", Content: suiteFile("token", "Token")},
@@ -384,6 +401,7 @@ var _ = Describe("Maker", func() {
 
 			It("verifies", func() { Expect(err).NotTo(HaveOccurred()) })
 			It("gives back the subject", func() { Expect(claims.Subject).To(Equal("user-42")) })
+			It("carries no role unless one was minted", func() { Expect(claims.Role).To(BeEmpty()) })
 			It("carries an id", func() { Expect(claims.ID).NotTo(BeEmpty()) })
 			It("expires in the future", func() { Expect(claims.ExpiresAt).To(BeTemporally(">", time.Now())) })
 		})
@@ -440,6 +458,19 @@ var _ = Describe("Maker", func() {
 			It("refuses to mint", func() { Expect(err).To(HaveOccurred()) })
 		})
 	})
+
+	Describe("MintFor", func() {
+		Context("with a role", func() {
+			BeforeEach(func() {
+				raw, err = maker.MintFor("user-42", "admin", time.Minute)
+				Expect(err).NotTo(HaveOccurred())
+				claims, err = maker.Verify(raw)
+			})
+
+			It("keeps the role", func() { Expect(claims.Role).To(Equal("admin")) })
+			It("keeps the subject", func() { Expect(claims.Subject).To(Equal("user-42")) })
+		})
+	})
 })
 `, a.module+"/app/services/token")},
 		{Path: "app/middlewares/require_user.go", Content: fmt.Sprintf(`package middlewares
@@ -460,13 +491,17 @@ type userTokens interface {
 	Verify(raw string) (token.Claims, error)
 }
 
-const subjectKey = "subject"
+const (
+	subjectKey = "subject"
+	roleKey    = "role"
+)
 
 // RequireUser guards routes for a signed-in user: a bearer token in the
 // Authorization header that the token service verifies. The token's subject
-// is then on the context for handlers, through Subject. Who the subject is,
-// a user id usually, is for the caller and the handler to agree on;
-// nothing is loaded here.
+// and role are then on the context for handlers, through Subject and Role.
+// Who the subject is, a user id usually, is for the caller and the handler
+// to agree on; nothing is loaded here, and a role is only the string the
+// token carried.
 func RequireUser(tokens userTokens) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		raw, ok := strings.CutPrefix(c.GetHeader("Authorization"), "Bearer ")
@@ -482,6 +517,7 @@ func RequireUser(tokens userTokens) gin.HandlerFunc {
 			return
 		}
 		c.Set(subjectKey, claims.Subject)
+		c.Set(roleKey, claims.Role)
 		c.Next()
 	}
 }
@@ -489,6 +525,10 @@ func RequireUser(tokens userTokens) gin.HandlerFunc {
 // Subject is who the request's token was minted for, or "" on a route that
 // RequireUser does not guard.
 func Subject(c *gin.Context) string { return c.GetString(subjectKey) }
+
+// Role is the role string the request's token carried, or "" when it carried
+// none or RequireUser does not guard the route.
+func Role(c *gin.Context) string { return c.GetString(roleKey) }
 `, a.module+"/app/services/token", a.module+"/app/views", a.name)},
 		{Path: "app/middlewares/require_user_test.go", Content: fmt.Sprintf(`package middlewares_test
 
@@ -591,7 +631,8 @@ func (s *Server) Tokens() token.Maker {
 //
 //	s.Posts.SetupRoutes(s.WithUser(&r.RouterGroup))
 //
-// and in a handler, middlewares.Subject(c) is the token's subject.
+// and in a handler, middlewares.Subject(c) is the token's subject and
+// middlewares.Role(c) is the role string it carried, or "".
 func (s *Server) WithUser(r *gin.RouterGroup) *gin.RouterGroup {
 	return r.Group("", middlewares.RequireUser(s.Tokens()))
 }

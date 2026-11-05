@@ -45,9 +45,11 @@ func ParseOnly(spec string) ([]string, error) {
 // produces: the model (everything Model writes),
 // the wire shapes in app/views, and a controller with real handlers, a request
 // test, and the three lines that register it with the store
-// passed in. No service: the controller talks to the store, and the store
-// validates on save, and a controller talks to the model (docs/DESIGN.md
-// §5). The model is named in the singular and the rest in the plural.
+// passed in. No service, unless policy is set: then a service checks the
+// policy and the controller calls that, mapping a denial to 403. Otherwise
+// the controller talks to the store, and the store validates on save
+// (docs/DESIGN.md §5). The model is named in the singular and the rest in
+// the plural.
 //
 // ns and res place the controller: the namespace to mount it under ("" for the
 // root) and its resource name, plural ("" for the table's own). A namespaced
@@ -58,21 +60,44 @@ func ParseOnly(spec string) ([]string, error) {
 // only limits the HTTP half to those actions (nil is all five): their routes,
 // handlers, views and request specs. The model half is written in full either
 // way.
-func Scaffold(module, ns, res, name string, attrs []Attr, scheme IDScheme, now time.Time, only []string) ([]File, []Wire, error) {
+//
+// policy writes the policy, the service that calls it, and a controller that
+// calls the service. The model gains a user_id string when it does not have
+// one, and the routes mount on the signed-in group. A namespace decides that
+// group in its own routes.go, so a policied scaffold is at the root.
+func Scaffold(module, ns, res, name string, attrs []Attr, scheme IDScheme, now time.Time, only []string, policy bool) ([]File, []Wire, error) {
 	for _, a := range attrs {
 		if a.Null {
 			return nil, nil, fmt.Errorf("%s:null: a scaffold's views and controller do not write nullable columns; use g model, then write the controller", a.Name)
+		}
+	}
+	if policy {
+		if ns != "" {
+			return nil, nil, fmt.Errorf("--policy mounts the resource on the signed-in group in routes.go; a namespace decides that group in its own routes.go, so generate %s at the root", name)
+		}
+		var err error
+		attrs, err = EnsureOwner(attrs)
+		if err != nil {
+			return nil, nil, err
 		}
 	}
 	files, err := Model(module, name, attrs, scheme, now)
 	if err != nil {
 		return nil, nil, err
 	}
-	httpFiles, wires, err := ScaffoldController(module, ns, res, name, attrs, scheme, only)
+	httpFiles, wires, err := ScaffoldController(module, ns, res, name, attrs, scheme, only, policy)
 	if err != nil {
 		return nil, nil, err
 	}
-	return append(files, httpFiles...), wires, nil
+	files = append(files, httpFiles...)
+	if policy {
+		pol, err := Policy(module, name, scheme)
+		if err != nil {
+			return nil, nil, err
+		}
+		files = append(files, pol...)
+	}
+	return files, wires, nil
 }
 
 // ParseScaffoldName splits what `g scaffold` accepts, post or admin/posts, into
@@ -98,8 +123,8 @@ func ParseScaffoldName(spec string) (ns, res, model string, err error) {
 // (admin) to mount it under, or "" for the root. The model is never
 // namespaced, only its controller is, so the model and its table are named by
 // name alone.
-func ScaffoldController(module, ns, res, name string, attrs []Attr, scheme IDScheme, only []string) ([]File, []Wire, error) {
-	s, err := newScaffold(module, ns, res, name, attrs, scheme, only)
+func ScaffoldController(module, ns, res, name string, attrs []Attr, scheme IDScheme, only []string, policy bool) ([]File, []Wire, error) {
+	s, err := newScaffold(module, ns, res, name, attrs, scheme, only, policy)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -128,12 +153,22 @@ func ScaffoldController(module, ns, res, name string, attrs []Attr, scheme IDSch
 	} else {
 		wires[1].Line = fmt.Sprintf("server.%s.%s = %s.New%s(store, log)", Camel(ns), Camel(s.res), c.pkg(), c.typeName())
 	}
+	if s.policy {
+		// The service checks the policy; the route group is the one token
+		// authentication already provides, so the actor is on the request.
+		wires[1].Line = fmt.Sprintf("server.%s = controllers.New%s(%s.New(store, log), log)", Camel(s.res), c.typeName(), s.table)
+		wires[1].Import = module + "/app/services/" + s.table
+		wires[2].Line = fmt.Sprintf("s.%s.SetupRoutes(s.WithUser(&r.RouterGroup))", Camel(s.res))
+	}
 	return files, wires, nil
 }
 
 // newScaffold names what a scaffold of name writes: the actions among only
 // (nil is all five), in the namespace ns ("" for the root).
-func newScaffold(module, ns, res, name string, attrs []Attr, scheme IDScheme, only []string) (scaffold, error) {
+func newScaffold(module, ns, res, name string, attrs []Attr, scheme IDScheme, only []string, policy bool) (scaffold, error) {
+	if policy && ns != "" {
+		return scaffold{}, fmt.Errorf("--policy mounts the resource on the signed-in group in routes.go; a namespace decides that group in its own routes.go, so generate %s at the root", name)
+	}
 	if ns != "" {
 		if err := checkNamespace(ns); err != nil {
 			return scaffold{}, err
@@ -154,7 +189,7 @@ func newScaffold(module, ns, res, name string, attrs []Attr, scheme IDScheme, on
 	if res == "" {
 		res = Plural(name)
 	}
-	return scaffold{module: module, ns: ns, res: res, name: name, table: Plural(name), view: viewName(ns, name), attrs: attrs, scheme: scheme, actions: actions}, nil
+	return scaffold{module: module, ns: ns, res: res, name: name, table: Plural(name), view: viewName(ns, name), attrs: attrs, scheme: scheme, actions: actions, policy: policy}, nil
 }
 
 // viewName is the name a controller's wire types are named for: the model's
@@ -177,7 +212,7 @@ func ViewsPath(ns, name string) string { return "app/views/" + Plural(viewName(n
 // ScaffoldFiles are the paths Scaffold writes for name, for destroy, which
 // cannot know the attributes it was given. Model's files are included.
 func ScaffoldFiles(module, ns, res, name string, scheme IDScheme) ([]File, error) {
-	files, _, err := Scaffold(module, ns, res, name, nil, scheme, time.Time{}, nil)
+	files, _, err := Scaffold(module, ns, res, name, nil, scheme, time.Time{}, nil, false)
 	return files, err
 }
 
@@ -220,6 +255,7 @@ type scaffold struct {
 	attrs                        []Attr
 	scheme                       IDScheme
 	actions                      map[string]bool // the actions written; never empty
+	policy                       bool            // a service checks the policy; a denial is 403
 }
 
 // has reports whether the action is among those written.
@@ -252,7 +288,35 @@ func (s scaffold) vtyp() string  { return Camel(s.view) }
 func (s scaffold) vmany() string { return Camel(Plural(s.view)) }
 func (s scaffold) ctl() string   { return Camel(s.res) + "Controller" }
 func (s scaffold) storeIface() string {
+	if s.policy {
+		return lowerCamel(s.table) + "Service"
+	}
 	return lowerCamel(s.table) + "Store"
+}
+
+// inputs are the attributes a request body may set. The owner column is not
+// one of them: the service stamps it.
+func (s scaffold) inputs() []Attr {
+	var out []Attr
+	for _, a := range s.attrs {
+		if !a.Owner {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// signed is the chain that attaches the actor when this scaffold checks a
+// policy, and empty otherwise. as is the Go expression for the subject
+// ("owner", "record.UserID"); empty means the owner constant.
+func (s scaffold) signed(as string) string {
+	if !s.policy {
+		return ""
+	}
+	if as == "" {
+		as = "owner"
+	}
+	return ".As(" + as + ")"
 }
 
 // viewType is one type of the views file, with the imports it needs.
@@ -307,7 +371,7 @@ func (s scaffold) viewTypes() []viewType {
 		var b strings.Builder
 		fmt.Fprintf(&b, "// %sRequest is the body of %s.\n", s.vtyp(), of)
 		fmt.Fprintf(&b, "type %sRequest struct {\n", s.vtyp())
-		for _, a := range s.attrs {
+		for _, a := range s.inputs() {
 			b.WriteString(field(a))
 		}
 		b.WriteString("}\n")
@@ -380,7 +444,7 @@ func MergeViews(existing []byte, module, ns, name string, attrs []Attr, scheme I
 			}
 		}
 	}
-	s, err := newScaffold(module, ns, "", name, attrs, scheme, only)
+	s, err := newScaffold(module, ns, "", name, attrs, scheme, only, false)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -437,7 +501,45 @@ func (s scaffold) controller() string {
 	var b strings.Builder
 	w := func(format string, args ...any) { fmt.Fprintf(&b, format, args...) }
 
-	w(`package %[3]s
+	if s.policy {
+		w(`package %[3]s
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+
+	%[4]q
+	%[1]q
+	%[5]q
+	%[2]q
+)
+
+// %[6]s is the slice of the service this controller uses, declared next to
+// its caller and holding only the methods the actions call. The service
+// checks the policy and then the store; app/application.go passes it in.
+type %[6]s interface {
+`, s.module+"/app/models", s.module+"/app/views", s.pkg(), s.module+"/app/middlewares", s.module+"/app/policies", iface)
+		if s.has("create") {
+			w("\tCreate(ctx context.Context, actor policies.Actor, %s models.%s) (models.%s, error)\n", recv, typ, typ)
+		}
+		if s.has("show", "update") {
+			w("\tShow(ctx context.Context, actor policies.Actor, id string) (models.%s, error)\n", typ)
+		}
+		if s.has("index") {
+			w("\tIndex(ctx context.Context, actor policies.Actor, limit int32) ([]models.%s, error)\n", typ)
+		}
+		if s.has("update") {
+			w("\tUpdate(ctx context.Context, actor policies.Actor, %s models.%s) (models.%s, error)\n", recv, typ, typ)
+		}
+		if s.has("destroy") {
+			w("\tDestroy(ctx context.Context, actor policies.Actor, id string) error\n")
+		}
+	} else {
+		w(`package %[3]s
 
 import (
 	"context"
@@ -456,20 +558,21 @@ import (
 // *adapter.Store satisfies it, and app/application.go passes it in.
 type %[4]s interface {
 `, s.module+"/app/models", s.module+"/app/views", s.pkg(), iface)
-	if s.has("create") {
-		w("\tCreate%[1]s(ctx context.Context, %[2]s models.%[1]s) (models.%[1]s, error)\n", typ, recv)
-	}
-	if s.has("show", "update") {
-		w("\tGet%s(ctx context.Context, id string) (models.%s, error)\n", typ, typ)
-	}
-	if s.has("index") {
-		w("\tList%s(ctx context.Context, limit int32) ([]models.%s, error)\n", many, typ)
-	}
-	if s.has("update") {
-		w("\tUpdate%[1]s(ctx context.Context, %[2]s models.%[1]s) (models.%[1]s, error)\n", typ, recv)
-	}
-	if s.has("destroy") {
-		w("\tDelete%s(ctx context.Context, id string) error\n", typ)
+		if s.has("create") {
+			w("\tCreate%[1]s(ctx context.Context, %[2]s models.%[1]s) (models.%[1]s, error)\n", typ, recv)
+		}
+		if s.has("show", "update") {
+			w("\tGet%s(ctx context.Context, id string) (models.%s, error)\n", typ, typ)
+		}
+		if s.has("index") {
+			w("\tList%s(ctx context.Context, limit int32) ([]models.%s, error)\n", many, typ)
+		}
+		if s.has("update") {
+			w("\tUpdate%[1]s(ctx context.Context, %[2]s models.%[1]s) (models.%[1]s, error)\n", typ, recv)
+		}
+		if s.has("destroy") {
+			w("\tDelete%s(ctx context.Context, id string) error\n", typ)
+		}
 	}
 	w("}\n\n")
 	if s.has("index") {
@@ -479,19 +582,23 @@ const %[1]sListLimit = 100
 
 `, lowerCamel(s.table))
 	}
-	w(`// %[1]s is the HTTP surface of %[2]s: a JSON resource over the store. A
-// handler converts HTTP into models, calls one store method, and
-// converts the result back. Validation is the model's and runs on save,
-// which is why a bad value is a 422 from the store and not a binding rule
-// here. Nothing below app/controllers sees *gin.Context.
+	field, param := "Store", "store"
+	over := "store. A\n// handler converts HTTP into models, calls one store method, and\n// converts the result back. Validation is the model's and runs on save,\n// which is why a bad value is a 422 from the store and not a binding rule\n// here."
+	if s.policy {
+		// The field is the resource (Posts) and the parameter is the service
+		// package (posts), which is what application.go passes in.
+		field, param = s.many(), s.table
+		over = "service. A\n// handler reads the actor off the request, converts HTTP into models,\n// calls one service method, and converts the result back. The service\n// checks the policy, so a denial is a 403 from fail, and validation still\n// runs on save, which is why a bad value is a 422 and not a binding rule\n// here."
+	}
+	w(`// %[1]s is the HTTP surface of %[2]s: a JSON resource over the %[5]s Nothing below app/controllers sees *gin.Context.
 type %[1]s struct {
-	Store %[3]s
+	%[6]s %[3]s
 	Log   *slog.Logger
 }
 
 // New%[1]s builds the controller.
-func New%[1]s(store %[3]s, log *slog.Logger) *%[1]s {
-	return &%[1]s{Store: store, Log: log}
+func New%[1]s(%[7]s %[3]s, log *slog.Logger) *%[1]s {
+	return &%[1]s{%[6]s: %[7]s, Log: log}
 }
 
 // SetupRoutes mounts the resource under its own prefix. Middleware the whole
@@ -499,7 +606,7 @@ func New%[1]s(store %[3]s, log *slog.Logger) *%[1]s {
 // exposed, is decided by routes.go, which calls this.
 func (ctl *%[1]s) SetupRoutes(router *gin.RouterGroup) {
 	%[4]s := router.Group("/%[2]s")
-`, ctl, s.res, iface, lowerCamel(s.res))
+`, ctl, s.res, iface, lowerCamel(s.res), over, field, param)
 	for _, a := range []string{"index", "create", "show", "update", "destroy"} {
 		if !s.has(a) {
 			continue
@@ -509,11 +616,19 @@ func (ctl *%[1]s) SetupRoutes(router *gin.RouterGroup) {
 	}
 	w("}\n\n")
 
-	// Handlers, in the order the actions are listed.
+	// Handlers, in the order the actions are listed. A policied controller
+	// calls the service, which checks the policy; the store names stay for
+	// a controller with no policy, so those files do not change.
+	list, get, create, update, del := "List"+many, "Get"+typ, "Create"+typ, "Update"+typ, "Delete"+typ
+	actor := ""
+	if s.policy {
+		list, get, create, update, del = "Index", "Show", "Create", "Update", "Destroy"
+		actor = "actorFrom(c), "
+	}
 	if s.has("index") {
 		w(`// Index handles GET %[3]s.
 func (ctl *%[4]s) Index(c *gin.Context) {
-	%[1]s, err := ctl.Store.List%[2]s(c.Request.Context(), %[5]sListLimit)
+	%[1]s, err := ctl.%[6]s.%[7]s(c.Request.Context(), %[8]s%[5]sListLimit)
 	if err != nil {
 		ctl.fail(c, err)
 		return
@@ -521,12 +636,12 @@ func (ctl *%[4]s) Index(c *gin.Context) {
 	c.JSON(http.StatusOK, %[5]sView(%[1]s))
 }
 
-`, lowerCamel(s.table), many, s.url(), ctl, lowerCamel(s.table))
+`, lowerCamel(s.table), many, s.url(), ctl, lowerCamel(s.table), field, list, actor)
 	}
 	if s.has("show") {
 		w(`// Show handles GET %[1]s/:id.
 func (ctl *%[2]s) Show(c *gin.Context) {
-	%[3]s, err := ctl.Store.Get%[4]s(c.Request.Context(), c.Param("id"))
+	%[3]s, err := ctl.%[6]s.%[7]s(c.Request.Context(), %[8]sc.Param("id"))
 	if err != nil {
 		ctl.fail(c, err)
 		return
@@ -534,7 +649,7 @@ func (ctl *%[2]s) Show(c *gin.Context) {
 	c.JSON(http.StatusOK, %[5]sView(%[3]s))
 }
 
-`, s.url(), ctl, recv, typ, lowerCamel(s.name))
+`, s.url(), ctl, recv, typ, lowerCamel(s.name), field, get, actor)
 	}
 
 	// Create and Update bind the request body, when there is one to bind.
@@ -542,21 +657,22 @@ func (ctl *%[2]s) Show(c *gin.Context) {
 		w("// Create handles POST %s.\n", s.url())
 		w("func (ctl *%s) Create(c *gin.Context) {\n", ctl)
 		b.WriteString(s.bind())
-		w("\t%s, err := ctl.Store.Create%s(c.Request.Context(), %s)\n", recv, typ, s.fromRequest(""))
+		w("\t%s, err := ctl.%s.%s(c.Request.Context(), %s%s)\n", recv, field, create, actor, s.fromRequest("", ""))
 		w("\tif err != nil {\n\t\tctl.fail(c, err)\n\t\treturn\n\t}\n\tc.JSON(http.StatusCreated, %sView(%s))\n}\n\n", lowerCamel(s.name), recv)
 	}
 
 	if s.has("update") {
 		w("// Update handles PATCH %s/:id.", s.url())
-		if len(s.attrs) == 0 {
+		if len(s.inputs()) == 0 {
 			// Nothing to bind, but the id still has to be resolved to the
 			// model's id type (not every scheme's id is a string), so this
 			// loads the record the same way the attributed case does and saves
-			// it back unchanged but for updated_at.
+			// it back unchanged but for updated_at. An owner column, which
+			// the body cannot set, counts as nothing to bind.
 			w("\nfunc (ctl *%s) Update(c *gin.Context) {\n", ctl)
-			w("\t%s, err := ctl.Store.Get%s(c.Request.Context(), c.Param(\"id\"))\n", recv, typ)
+			w("\t%s, err := ctl.%s.%s(c.Request.Context(), %sc.Param(\"id\"))\n", recv, field, get, actor)
 			b.WriteString("\tif err != nil {\n\t\tctl.fail(c, err)\n\t\treturn\n\t}\n")
-			w("\t%s, err = ctl.Store.Update%s(c.Request.Context(), %s)\n", recv, typ, recv)
+			w("\t%s, err = ctl.%s.%s(c.Request.Context(), %s%s)\n", recv, field, update, actor, recv)
 		} else {
 			// Find, then update: load the record, decode the body
 			// over its current values so a key left out keeps its value, then
@@ -566,11 +682,11 @@ func (ctl *%[2]s) Show(c *gin.Context) {
 			b.WriteString("// the body is decoded over its current values,\n")
 			b.WriteString("// so a key left out keeps its value, and the result is saved and validated\n// whole.\n")
 			w("func (ctl *%s) Update(c *gin.Context) {\n", ctl)
-			w("\t%s, err := ctl.Store.Get%s(c.Request.Context(), c.Param(\"id\"))\n", recv, typ)
+			w("\t%s, err := ctl.%s.%s(c.Request.Context(), %sc.Param(\"id\"))\n", recv, field, get, actor)
 			b.WriteString("\tif err != nil {\n\t\tctl.fail(c, err)\n\t\treturn\n\t}\n")
 			w("\treq := %s\n", s.toRequest(recv))
 			b.WriteString("\tif err := c.ShouldBindJSON(&req); err != nil {\n\t\tc.JSON(http.StatusBadRequest, views.Error(err))\n\t\treturn\n\t}\n")
-			w("\t%s, err = ctl.Store.Update%s(c.Request.Context(), %s)\n", recv, typ, s.fromRequest(recv+".ID"))
+			w("\t%s, err = ctl.%s.%s(c.Request.Context(), %s%s)\n", recv, field, update, actor, s.fromRequest(recv+".ID", recv))
 		}
 		w("\tif err != nil {\n\t\tctl.fail(c, err)\n\t\treturn\n\t}\n\tc.JSON(http.StatusOK, %sView(%s))\n}\n\n", lowerCamel(s.name), recv)
 	}
@@ -578,18 +694,40 @@ func (ctl *%[2]s) Show(c *gin.Context) {
 	if s.has("destroy") {
 		w(`// Destroy handles DELETE %[1]s/:id.
 func (ctl *%[2]s) Destroy(c *gin.Context) {
-	if err := ctl.Store.Delete%[3]s(c.Request.Context(), c.Param("id")); err != nil {
+	if err := ctl.%[4]s.%[5]s(c.Request.Context(), %[6]sc.Param("id")); err != nil {
 		ctl.fail(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
 }
 
-`, s.url(), ctl, typ)
+`, s.url(), ctl, typ, field, del, actor)
 	}
 
+	if s.policy {
+		w(`// actor is who is asking, from what token authentication put on the
+// request. The policy package never sees *gin.Context.
+func (ctl *%s) actor(c *gin.Context) policies.Actor {
+	return policies.Actor{ID: middlewares.Subject(c), Role: middlewares.Role(c)}
+}
+
+`, ctl)
+		// The handlers above were written with actorFrom. Rewrite that one
+		// call to the method, so two policied controllers in one package
+		// do not each declare the same function.
+		fixed := strings.ReplaceAll(b.String(), "actorFrom(c)", "ctl.actor(c)")
+		b.Reset()
+		b.WriteString(fixed)
+	}
+
+	mapping := "not found is 404, a validation failure is 422, and anything"
+	denied := ""
+	if s.policy {
+		mapping = "not found is 404, a denial is 403, a validation failure is 422, and anything"
+		denied = "\tcase errors.Is(err, policies.ErrDenied):\n\t\tc.JSON(http.StatusForbidden, views.ErrorMessage(\"forbidden\"))\n"
+	}
 	w(`// fail maps a model error to a status, the one place that mapping lives:
-// not found is 404, a validation failure is 422, and anything
+// %[5]s
 // else is logged and answered 500 without leaking its text.
 func (ctl *%[2]s) fail(c *gin.Context, err error) {
 	switch {
@@ -597,13 +735,13 @@ func (ctl *%[2]s) fail(c *gin.Context, err error) {
 		c.JSON(http.StatusNotFound, views.ErrorMessage("no such %[4]s"))
 	case errors.Is(err, models.ErrInvalid):
 		c.JSON(http.StatusUnprocessableEntity, views.Error(err))
-	default:
+%[6]s	default:
 		ctl.Log.ErrorContext(c.Request.Context(), "%[1]s: request failed",
 			"path", c.FullPath(), "err", err, "request_id", c.GetString("request_id"))
 		c.JSON(http.StatusInternalServerError, views.ErrorMessage("internal error"))
 	}
 }
-`, s.table, ctl, typ, s.name)
+`, s.table, ctl, typ, s.name, mapping, denied)
 
 	if !one && !s.has("index") {
 		return b.String()
@@ -635,33 +773,59 @@ func (ctl *%[2]s) fail(c *gin.Context, err error) {
 	return b.String()
 }
 
+// createAssign is the left side of the Get that checks a create stuck.
+// A policied spec keeps the record so it can assert the owner.
+func createAssign(policy bool) string {
+	if policy {
+		return "saved, err :="
+	}
+	return "_, err :="
+}
+
+// createOwnerCheck is the assertion that create stamped the signed-in actor.
+func createOwnerCheck(policy bool) string {
+	if !policy {
+		return ""
+	}
+	return "\n\t\t\tExpect(saved.UserID).To(Equal(owner))"
+}
+
 // bind reads the request body into views.<Type>Request, or nothing when
 // the model has no attributes to bind.
 func (s scaffold) bind() string {
-	if len(s.attrs) == 0 {
+	if len(s.inputs()) == 0 {
 		return ""
 	}
 	return fmt.Sprintf("\tvar req views.%sRequest\n\tif err := c.ShouldBindJSON(&req); err != nil {\n\t\tc.JSON(http.StatusBadRequest, views.Error(err))\n\t\treturn\n\t}\n", s.vtyp())
 }
 
 // fromRequest is the model built from the bound request, with the
-// id when there is one.
-func (s scaffold) fromRequest(id string) string {
+// id when there is one. loaded is the variable holding the stored record
+// on update, so the owner column keeps its stored value; empty on create,
+// where the service stamps it.
+func (s scaffold) fromRequest(id, loaded string) string {
 	var parts []string
 	if id != "" {
 		parts = append(parts, "ID: "+id)
 	}
 	for _, a := range s.attrs {
+		if a.Owner {
+			if loaded != "" {
+				parts = append(parts, fmt.Sprintf("%s: %s.%s", a.goName(), loaded, a.goName()))
+			}
+			continue
+		}
 		parts = append(parts, fmt.Sprintf("%s: req.%s", a.goName(), a.goName()))
 	}
 	return fmt.Sprintf("models.%s{%s}", s.typ(), strings.Join(parts, ", "))
 }
 
 // toRequest is the request body prefilled with a stored value's fields, for
-// PATCH to decode over.
+// PATCH to decode over. The owner column is not in the body.
 func (s scaffold) toRequest(recv string) string {
-	parts := make([]string, len(s.attrs))
-	for i, a := range s.attrs {
+	inputs := s.inputs()
+	parts := make([]string, len(inputs))
+	for i, a := range inputs {
 		parts[i] = fmt.Sprintf("%s: %s.%s", a.goName(), recv, a.goName())
 	}
 	return fmt.Sprintf("views.%sRequest{%s}", s.vtyp(), strings.Join(parts, ", "))
@@ -705,6 +869,11 @@ func (s scaffold) controllerTest() string {
 	pathOf := fmt.Sprintf(`"%s/" + fmt.Sprint(record.ID)`, url)
 	var b strings.Builder
 	w := func(format string, args ...any) { fmt.Fprintf(&b, format, args...) }
+	if s.policy {
+		// owner is who the factory's user_id defaults to. other owns nothing
+		// the factory made, which is the 403 these specs are here to pin.
+		w("// owner is the subject the factory stamps on user_id. other owns none of them.\nconst (\n\towner = %q\n\tother = %q\n)\n", ownerID, otherID)
+	}
 	// section starts the Describe of one action, a blank line after the last.
 	section := func(action string) bool {
 		if !s.has(action) {
@@ -719,7 +888,7 @@ func (s scaffold) controllerTest() string {
 	// GET /things
 	if section("index") {
 		w("var _ = Describe(\"GET %s\", func() {\n", url)
-		w("\tContext(\"with no %s\", func() {\n\t\tIt(\"is an empty list\", func() {\n\t\t\tapp.Get(\"%s\").Do().Status(http.StatusOK).Contains(\"\\\"%s\\\":[]\")\n\t\t})\n\t})\n", table, url, table)
+		w("\tContext(\"with no %s\", func() {\n\t\tIt(\"is an empty list\", func() {\n\t\t\tapp.Get(\"%s\")%s.Do().Status(http.StatusOK).Contains(\"\\\"%s\\\":[]\")\n\t\t})\n\t})\n", table, url, s.signed(""), table)
 		if !hasRefs {
 			w(`
 	Context("with %[1]s", func() {
@@ -732,14 +901,27 @@ func (s scaffold) controllerTest() string {
 
 		It("lists them, newest first", func() {
 			var list views.%[6]sResponse
-			app.Get("%[5]s").Do().Status(http.StatusOK).JSON(&list)
+			app.Get("%[5]s")%[7]s.Do().Status(http.StatusOK).JSON(&list)
 
 			Expect(list.%[3]s).To(HaveLen(2))
 			Expect(list.%[3]s[0].ID).To(Equal(second.ID))
 			Expect(list.%[3]s[1].ID).To(Equal(first.ID))
 		})
 	})
-`, table, typ, many, factory, url, s.vmany())
+`, table, typ, many, factory, url, s.vmany(), s.signed(""))
+		}
+		if s.policy && !hasRefs {
+			w(`	Context("when the actor owns none of them", func() {
+		BeforeEach(func() {
+			%[2]s
+		})
+
+		It("lists nothing", func() {
+			app.Get("%[3]s").As(other).Do().Status(http.StatusOK).Contains("\"%[1]s\":[]")
+		})
+	})
+
+`, table, factory, url)
 		}
 		w("})\n")
 	}
@@ -757,33 +939,54 @@ func (s scaffold) controllerTest() string {
 
 		It("shows it", func() {
 			var shown views.%[5]sResponse
-			app.Get(%[4]s).Do().Status(http.StatusOK).JSON(&shown)
+			app.Get(%[4]s)%[6]s.Do().Status(http.StatusOK).JSON(&shown)
 
 			Expect(shown.ID).To(Equal(record.ID))
 		})
 	})
 
-`, s.name, typ, factory, pathOf, s.vtyp())
+`, s.name, typ, factory, pathOf, s.vtyp(), s.signed("record.UserID"))
+		}
+		if s.policy && !hasRefs {
+			w(`	Context("when the %[1]s exists and the actor is someone else", func() {
+		var record models.%[2]s
+
+		BeforeEach(func() {
+			record = %[3]s
+		})
+
+		It("is forbidden", func() {
+			app.Get("%[4]s/" + fmt.Sprint(record.ID)).As(other).Do().Status(http.StatusForbidden)
+		})
+	})
+
+	Context("with no actor", func() {
+		It("is unauthorized", func() {
+			app.Get("%[4]s/%[5]s").Do().Status(http.StatusUnauthorized)
+		})
+	})
+
+`, s.name, typ, factory, url, missing)
 		}
 		w(`	Context("when the %[1]s does not exist", func() {
 		It("is not found", func() {
-			app.Get("%[2]s/%[3]s").Do().Status(http.StatusNotFound)
+			app.Get("%[2]s/%[3]s")%[4]s.Do().Status(http.StatusNotFound)
 		})
 	})
 })
-`, s.name, url, missing)
+`, s.name, url, missing, s.signed(""))
 	}
 
 	// POST /things
 	if section("create") {
 		w("var _ = Describe(\"POST %s\", func() {\n", url)
-		if len(s.attrs) == 0 {
+		if len(s.inputs()) == 0 {
 			w(`	Context("with no attributes to send", func() {
 		It("creates one", func() {
-			app.Post("%s", nil).Do().Status(http.StatusCreated)
+			app.Post("%s", nil)%s.Do().Status(http.StatusCreated)
 		})
 	})
-`, url)
+`, url, s.signed(""))
 		} else {
 			if !hasRefs {
 				w("\tvar body views.%sRequest\n\n", s.vtyp())
@@ -794,14 +997,14 @@ func (s scaffold) controllerTest() string {
 
 		It("creates it", func() {
 			var created views.%[4]sResponse
-			app.Post("%[3]s", body).Do().Status(http.StatusCreated).JSON(&created)
+			app.Post("%[3]s", body)%[5]s.Do().Status(http.StatusCreated).JSON(&created)
 
 			Expect(created.ID).NotTo(BeZero())
-			_, err := app.Store.Get%[2]s(GinkgoT().Context(), fmt.Sprint(created.ID))
-			Expect(err).NotTo(HaveOccurred())
+			%[6]s app.Store.Get%[2]s(GinkgoT().Context(), fmt.Sprint(created.ID))
+			Expect(err).NotTo(HaveOccurred())%[7]s
 		})
 	})
-`, lowerCamel(s.name), typ, url, s.vtyp())
+`, lowerCamel(s.name), typ, url, s.vtyp(), s.signed(""), createAssign(s.policy), createOwnerCheck(s.policy))
 				if uniq := uniqueAttrs(s.attrs); len(uniq) > 0 {
 					names := make([]string, len(uniq))
 					for i, a := range uniq {
@@ -814,19 +1017,19 @@ func (s scaffold) controllerTest() string {
 		})
 
 		It("is unprocessable", func() {
-			app.Post("%[5]s", body).Do().Status(http.StatusUnprocessableEntity)
+			app.Post("%[5]s", body)%[6]s.Do().Status(http.StatusUnprocessableEntity)
 		})
 	})
-`, withArticle(s.name), strings.Join(names, " and "), lowerCamel(s.name), factory, url)
+`, withArticle(s.name), strings.Join(names, " and "), lowerCamel(s.name), factory, url, s.signed(""))
 				}
 				w("\n")
 			}
 			w(`	Context("with a malformed body", func() {
 		It("is a bad request", func() {
-			app.Post("%s", "{\"nope\":").Do().Status(http.StatusBadRequest)
+			app.Post("%s", "{\"nope\":")%s.Do().Status(http.StatusBadRequest)
 		})
 	})
-`, url)
+`, url, s.signed(""))
 		}
 		w("})\n")
 	}
@@ -835,6 +1038,9 @@ func (s scaffold) controllerTest() string {
 	var sent *Attr
 	var sentLit string
 	for i, a := range s.attrs {
+		if a.Owner {
+			continue
+		}
 		if _, lit := edited(a, s.scheme); lit != "" && a.Type != "references" && a.Type != "uuid" {
 			sent, sentLit = &s.attrs[i], lit
 			break
@@ -855,7 +1061,7 @@ func (s scaffold) controllerTest() string {
 				// PATCH is partial: a field the body leaves out keeps
 				// its stored value rather than being blanked.
 				w("\t\tIt(\"changes only the fields sent\", func() {\n\t\t\tvar updated views.%sResponse\n", s.vtyp())
-				w("\t\t\tapp.Patch(%s, map[string]any{%q: %s}).Do().Status(http.StatusOK).JSON(&updated)\n\n", pathOf, sent.Name, sentLit)
+				w("\t\t\tapp.Patch(%s, map[string]any{%q: %s})%s.Do().Status(http.StatusOK).JSON(&updated)\n\n", pathOf, sent.Name, sentLit, s.signed("record.UserID"))
 				w("\t\t\tExpect(updated.%s).To(BeEquivalentTo(%s))\n", sent.goName(), sentLit)
 				for _, a := range s.attrs {
 					if a.Name == sent.Name {
@@ -871,30 +1077,45 @@ func (s scaffold) controllerTest() string {
 			} else {
 				w(`		It("keeps it as it is when nothing is sent", func() {
 			var updated views.%[3]sResponse
-			app.Patch(%[2]s, map[string]any{}).Do().Status(http.StatusOK).JSON(&updated)
+			app.Patch(%[2]s, map[string]any{})%[4]s.Do().Status(http.StatusOK).JSON(&updated)
 
 			Expect(updated.ID).To(Equal(record.ID))
 		})
-`, typ, pathOf, s.vtyp())
+`, typ, pathOf, s.vtyp(), s.signed("record.UserID"))
 			}
-			if len(s.attrs) > 0 {
+			if len(s.inputs()) > 0 {
 				w(`
 		Context("with a malformed body", func() {
 			It("is a bad request", func() {
-				app.Patch(%s, "{\"nope\":").Do().Status(http.StatusBadRequest)
+				app.Patch(%s, "{\"nope\":")%s.Do().Status(http.StatusBadRequest)
 			})
 		})
-`, pathOf)
+`, pathOf, s.signed("record.UserID"))
 			}
 			w("\t})\n\n")
 		}
+		if s.policy && !hasRefs {
+			w(`	Context("when the %[1]s exists and the actor is someone else", func() {
+		var record models.%[2]s
+
+		BeforeEach(func() {
+			record = %[3]s
+		})
+
+		It("is forbidden", func() {
+			app.Patch("%[4]s/"+fmt.Sprint(record.ID), map[string]any{}).As(other).Do().Status(http.StatusForbidden)
+		})
+	})
+
+`, s.name, typ, factory, url)
+		}
 		w(`	Context("when the %[1]s does not exist", func() {
 		It("is not found", func() {
-			app.Patch("%[2]s/%[3]s", map[string]any{}).Do().Status(http.StatusNotFound)
+			app.Patch("%[2]s/%[3]s", map[string]any{})%[4]s.Do().Status(http.StatusNotFound)
 		})
 	})
 })
-`, s.name, url, missing)
+`, s.name, url, missing, s.signed(""))
 	}
 
 	// DELETE /things/:id
@@ -909,21 +1130,36 @@ func (s scaffold) controllerTest() string {
 		})
 
 		It("deletes it", func() {
-			app.Delete(%[4]s).Do().Status(http.StatusNoContent)
+			app.Delete(%[4]s)%[5]s.Do().Status(http.StatusNoContent)
 
-			app.Get(%[4]s).Do().Status(http.StatusNotFound)
+			app.Get(%[4]s)%[5]s.Do().Status(http.StatusNotFound)
 		})
 	})
 
-`, s.name, typ, factory, pathOf)
+`, s.name, typ, factory, pathOf, s.signed("record.UserID"))
+		}
+		if s.policy && !hasRefs {
+			w(`	Context("when the %[1]s exists and the actor is someone else", func() {
+		var record models.%[2]s
+
+		BeforeEach(func() {
+			record = %[3]s
+		})
+
+		It("is forbidden", func() {
+			app.Delete("%[4]s/" + fmt.Sprint(record.ID)).As(other).Do().Status(http.StatusForbidden)
+		})
+	})
+
+`, s.name, typ, factory, url)
 		}
 		w(`	Context("when the %[1]s does not exist", func() {
 		It("is not found", func() {
-			app.Delete("%[2]s/%[3]s").Do().Status(http.StatusNotFound)
+			app.Delete("%[2]s/%[3]s")%[4]s.Do().Status(http.StatusNotFound)
 		})
 	})
 })
-`, s.name, url, missing)
+`, s.name, url, missing, s.signed(""))
 	}
 
 	if hasRefs {
@@ -934,10 +1170,12 @@ func (s scaffold) controllerTest() string {
 `, withArticle(s.name), typ)
 	} else if len(s.attrs) > 0 && s.has("create") {
 		w("\n// %[1]sRequest is the body that creates a record like this one.\nfunc %[1]sRequest(record models.%[2]s) views.%[3]sRequest {\n\treturn views.%[3]sRequest{", lowerCamel(s.name), typ, s.vtyp())
-		for i, a := range s.attrs {
-			if i > 0 {
+		first := true
+		for _, a := range s.inputs() {
+			if !first {
 				w(", ")
 			}
+			first = false
 			w("%[1]s: record.%[1]s", a.goName())
 		}
 		w("}\n}\n")

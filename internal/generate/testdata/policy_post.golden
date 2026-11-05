@@ -1,0 +1,360 @@
+==> app/policies/actor.go
+// Package policies decides who may do what. It is plain Go: an actor and a
+// method per action, returning bool. There is no framework, no role table
+// and nothing imported from Bogie. The actor is whoever authentication
+// already put on the request — an id and a role string — and a policy reads
+// those two fields and decides.
+package policies
+
+import "errors"
+
+// ErrDenied is a policy that refused. A controller maps it to 403 the same
+// way it maps models.ErrNotFound to 404, with errors.Is, in the one place
+// that mapping lives.
+var ErrDenied = errors.New("denied")
+
+// Actor is who is asking. ID is the subject authentication put on the
+// request (a user id, usually) and Role is the role string it put beside
+// the subject. Both are already on the request context; nothing here loads
+// a user or a role.
+type Actor struct {
+	ID   string
+	Role string
+}
+==> app/policies/policies_suite_test.go
+package policies_test
+
+import (
+	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+)
+
+func TestPolicies(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Policies")
+}
+==> app/policies/post_policy.go
+package policies
+
+import "example.com/blog/app/models"
+
+// Post is the authorization for a post. Call it as policies.Post.CanShow(actor, post).
+var Post PostPolicy
+
+// PostPolicy is one function per action. Each takes the actor and the post
+// and returns whether the actor may do it. The default allows only what the
+// actor owns.
+type PostPolicy struct{}
+
+// CanIndex reports whether actor may list a post. Allowed only when the actor owns it.
+func (PostPolicy) CanIndex(actor Actor, post *models.Post) bool {
+	return PostPolicy{}.owns(actor, post)
+}
+
+// CanShow reports whether actor may read a post. Allowed only when the actor owns it.
+func (PostPolicy) CanShow(actor Actor, post *models.Post) bool {
+	return PostPolicy{}.owns(actor, post)
+}
+
+// CanCreate reports whether actor may save a post. The service sets UserID from the actor before it asks, so this allows a post the actor will own and refuses every other.
+func (PostPolicy) CanCreate(actor Actor, post *models.Post) bool {
+	return PostPolicy{}.owns(actor, post)
+}
+
+// CanUpdate reports whether actor may change a post. Allowed only when the actor owns it.
+func (PostPolicy) CanUpdate(actor Actor, post *models.Post) bool {
+	return PostPolicy{}.owns(actor, post)
+}
+
+// CanDestroy reports whether actor may delete a post. Allowed only when the actor owns it.
+func (PostPolicy) CanDestroy(actor Actor, post *models.Post) bool {
+	return PostPolicy{}.owns(actor, post)
+}
+
+// owns reports whether actor owns post. The owner is post.UserID, the same
+// string authentication records as the subject. An actor with no id owns
+// nothing, and a nil post is not owned by anyone. A role does not widen
+// this: an admin owns only their own post until a method above says so.
+func (PostPolicy) owns(actor Actor, post *models.Post) bool {
+	return actor.ID != "" && post != nil && post.UserID == actor.ID
+}
+==> app/policies/post_policy_test.go
+package policies_test
+
+import (
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"example.com/blog/app/models"
+	"example.com/blog/app/policies"
+)
+
+// One row per role and action, for the actor who owns the post and for one
+// who does not. The default allows only the owner; a role is not a grant.
+var _ = DescribeTable("post policy",
+	func(role, action, id string, allow bool) {
+		actor := policies.Actor{ID: id, Role: role}
+		post := &models.Post{UserID: "user-1"}
+		var got bool
+		switch action {
+		case "index":
+			got = policies.Post.CanIndex(actor, post)
+		case "show":
+			got = policies.Post.CanShow(actor, post)
+		case "create":
+			got = policies.Post.CanCreate(actor, post)
+		case "update":
+			got = policies.Post.CanUpdate(actor, post)
+		case "destroy":
+			got = policies.Post.CanDestroy(actor, post)
+		default:
+			Fail("unknown action " + action)
+		}
+		Expect(got).To(Equal(allow))
+	},
+	Entry("member may index their own", "member", "index", "user-1", true),
+	Entry("member may not index another's", "member", "index", "user-2", false),
+	Entry("member may show their own", "member", "show", "user-1", true),
+	Entry("member may not show another's", "member", "show", "user-2", false),
+	Entry("member may create their own", "member", "create", "user-1", true),
+	Entry("member may not create another's", "member", "create", "user-2", false),
+	Entry("member may update their own", "member", "update", "user-1", true),
+	Entry("member may not update another's", "member", "update", "user-2", false),
+	Entry("member may destroy their own", "member", "destroy", "user-1", true),
+	Entry("member may not destroy another's", "member", "destroy", "user-2", false),
+	Entry("admin may index their own", "admin", "index", "user-1", true),
+	Entry("admin may not index another's", "admin", "index", "user-2", false),
+	Entry("admin may show their own", "admin", "show", "user-1", true),
+	Entry("admin may not show another's", "admin", "show", "user-2", false),
+	Entry("admin may create their own", "admin", "create", "user-1", true),
+	Entry("admin may not create another's", "admin", "create", "user-2", false),
+	Entry("admin may update their own", "admin", "update", "user-1", true),
+	Entry("admin may not update another's", "admin", "update", "user-2", false),
+	Entry("admin may destroy their own", "admin", "destroy", "user-1", true),
+	Entry("admin may not destroy another's", "admin", "destroy", "user-2", false),
+)
+
+var _ = Describe("post policy, at the edges", func() {
+	It("denies an actor with no id", func() {
+		Expect(policies.Post.CanShow(policies.Actor{ID: "", Role: "member"}, &models.Post{UserID: "user-1"})).To(BeFalse())
+	})
+
+	It("denies a nil post", func() {
+		Expect(policies.Post.CanShow(policies.Actor{ID: "user-1", Role: "member"}, nil)).To(BeFalse())
+	})
+})
+==> app/services/posts/posts.go
+// Package posts is the post resource's service: it checks the policy, then
+// calls the store. It knows nothing about HTTP. A denial is policies.ErrDenied,
+// which the controller maps to 403.
+package posts
+
+import (
+	"context"
+	"log/slog"
+
+	"example.com/blog/app/models"
+	"example.com/blog/app/policies"
+)
+
+// store is the slice of persistence this service uses, declared here, next
+// to its caller. *adapter.Store satisfies it.
+type store interface {
+	CreatePost(ctx context.Context, p models.Post) (models.Post, error)
+	GetPost(ctx context.Context, id string) (models.Post, error)
+	ListPosts(ctx context.Context, limit int32) ([]models.Post, error)
+	UpdatePost(ctx context.Context, p models.Post) (models.Post, error)
+	DeletePost(ctx context.Context, id string) error
+}
+
+// Service checks the post policy and then saves or loads.
+type Service struct {
+	store store
+	log   *slog.Logger
+}
+
+// New builds the service.
+func New(store store, log *slog.Logger) *Service {
+	return &Service{store: store, log: log}
+}
+
+func (s *Service) deny(ctx context.Context, action string, actor policies.Actor) {
+	s.log.InfoContext(ctx, "post: denied", "action", action, "actor", actor.ID, "role", actor.Role)
+}
+
+// Index returns the posts the actor may list: the ones they own.
+func (s *Service) Index(ctx context.Context, actor policies.Actor, limit int32) ([]models.Post, error) {
+	posts, err := s.store.ListPosts(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	owned := make([]models.Post, 0, len(posts))
+	for i := range posts {
+		if policies.Post.CanIndex(actor, &posts[i]) {
+			owned = append(owned, posts[i])
+		}
+	}
+	return owned, nil
+}
+
+// Show returns the post, or policies.ErrDenied when the actor may not read it.
+// A missing post is models.ErrNotFound, so a caller can tell the two apart.
+func (s *Service) Show(ctx context.Context, actor policies.Actor, id string) (models.Post, error) {
+	p, err := s.store.GetPost(ctx, id)
+	if err != nil {
+		return models.Post{}, err
+	}
+	if !policies.Post.CanShow(actor, &p) {
+		s.deny(ctx, "show", actor)
+		return models.Post{}, policies.ErrDenied
+	}
+	return p, nil
+}
+
+// Create saves p with the actor as its owner. The body cannot choose a
+// different owner: UserID is set from the actor before the policy is asked.
+func (s *Service) Create(ctx context.Context, actor policies.Actor, p models.Post) (models.Post, error) {
+	p.UserID = actor.ID
+	if !policies.Post.CanCreate(actor, &p) {
+		s.deny(ctx, "create", actor)
+		return models.Post{}, policies.ErrDenied
+	}
+	return s.store.CreatePost(ctx, p)
+}
+
+// Update saves p when the actor may change it. UserID is the one the
+// record already had; the caller keeps it.
+func (s *Service) Update(ctx context.Context, actor policies.Actor, p models.Post) (models.Post, error) {
+	if !policies.Post.CanUpdate(actor, &p) {
+		s.deny(ctx, "update", actor)
+		return models.Post{}, policies.ErrDenied
+	}
+	return s.store.UpdatePost(ctx, p)
+}
+
+// Destroy deletes the post when the actor owns it.
+func (s *Service) Destroy(ctx context.Context, actor policies.Actor, id string) error {
+	p, err := s.store.GetPost(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !policies.Post.CanDestroy(actor, &p) {
+		s.deny(ctx, "destroy", actor)
+		return policies.ErrDenied
+	}
+	return s.store.DeletePost(ctx, id)
+}
+==> app/services/posts/posts_suite_test.go
+package posts_test
+
+import (
+	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+)
+
+func TestPosts(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Posts")
+}
+==> app/services/posts/posts_test.go
+package posts_test
+
+import (
+	"context"
+	"io"
+	"log/slog"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"example.com/blog/app/models"
+	"example.com/blog/app/policies"
+	"example.com/blog/app/services/posts"
+)
+
+// fakeStore is the store interface the service declares, in memory.
+type fakeStore struct {
+	p     models.Post
+	saved bool
+}
+
+func (f *fakeStore) CreatePost(_ context.Context, p models.Post) (models.Post, error) {
+	p.ID = int64(1)
+	f.p = p
+	f.saved = true
+	return p, nil
+}
+
+func (f *fakeStore) GetPost(_ context.Context, id string) (models.Post, error) {
+	if !f.saved || id != "1" {
+		return models.Post{}, models.ErrNotFound
+	}
+	return f.p, nil
+}
+
+func (f *fakeStore) ListPosts(_ context.Context, _ int32) ([]models.Post, error) {
+	if !f.saved {
+		return nil, nil
+	}
+	return []models.Post{f.p}, nil
+}
+
+func (f *fakeStore) UpdatePost(_ context.Context, p models.Post) (models.Post, error) {
+	f.p = p
+	return p, nil
+}
+
+func (f *fakeStore) DeletePost(_ context.Context, id string) error {
+	if !f.saved || id != "1" {
+		return models.ErrNotFound
+	}
+	f.saved = false
+	return nil
+}
+
+var _ = Describe("Service", func() {
+	var (
+		fake *fakeStore
+		svc  *posts.Service
+	)
+
+	BeforeEach(func() {
+		fake = &fakeStore{saved: true, p: models.Post{ID: int64(1), UserID: "user-1"}}
+		svc = posts.New(fake, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	})
+
+	Describe("Show", func() {
+		It("returns the post to its owner", func() {
+			got, err := svc.Show(context.Background(), policies.Actor{ID: "user-1", Role: "member"}, "1")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got.UserID).To(Equal("user-1"))
+		})
+
+		It("denies someone else", func() {
+			_, err := svc.Show(context.Background(), policies.Actor{ID: "user-2", Role: "member"}, "1")
+			Expect(err).To(MatchError(policies.ErrDenied))
+		})
+
+		It("is not found when nothing has that id", func() {
+			_, err := svc.Show(context.Background(), policies.Actor{ID: "user-1", Role: "member"}, "missing")
+			Expect(err).To(MatchError(models.ErrNotFound))
+		})
+	})
+
+	Describe("Create", func() {
+		It("stamps the actor as the owner", func() {
+			got, err := svc.Create(context.Background(), policies.Actor{ID: "user-1", Role: "member"}, models.Post{})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got.UserID).To(Equal("user-1"))
+		})
+
+		It("denies an actor with no id", func() {
+			_, err := svc.Create(context.Background(), policies.Actor{Role: "member"}, models.Post{})
+			Expect(err).To(MatchError(policies.ErrDenied))
+		})
+	})
+})
