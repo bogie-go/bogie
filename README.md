@@ -170,6 +170,8 @@ One command surface, spelled the same everywhere:
 | `bogie g controller admin/reports` | a namespace is a package |
 | `bogie g job send_welcome` | a River worker on the same Postgres. `--every "0 9 * * *"` also registers it as a periodic job (RunOnStart off) |
 | `bogie g config smtp address:req port:int=1025 password:secret` | a typed group of the credentials file, registered, with development values; `smtp.address` is `SMTP_ADDRESS` |
+| `bogie g policy post` | `app/policies/post_policy.go`: one function per action over an actor and the model, a table spec, and a service that checks it. Allows only what the actor owns |
+| `bogie g scaffold post … --policy` | the same, wired through the controller, which answers 403 on a denial. Needs `bogie g authentication token` first |
 | `bogie g authentication secret\|token\|api_key` | a middleware for a route group (shared secret, JWT bearer token, or hashed API key), its config and credentials entry, and a `WithSecret` / `WithUser` / `WithAPIKey` helper; you mount the routes it guards |
 | `bogie db:migrate`, `db:rollback`, `db:seed` | run by the app's own binary |
 | `bogie db:status` | host, port, database, Postgres version, latest goose migration and how many are pending, and how many tables; read-only, same settings as `bogie server` |

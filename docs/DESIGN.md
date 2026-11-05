@@ -249,6 +249,8 @@ Commands, v1:
     bogie g controller posts index show create
     bogie g service publish_post
     bogie g authentication secret|token|api_key   # a middleware on a route group, with its config
+    bogie g policy post                           # authorization: one function per action, deny except the owner
+    bogie g scaffold post title:string --policy   # the same, called from the service, 403 on a denial
     bogie d controller posts            # destroy what g created
     bogie server | worker | test | lint
     bogie db:create | db:drop | db:prepare | db:reset | db:seed | db:status
@@ -452,6 +454,27 @@ reaches through the proxy's rule that any other colon task is one of the
 binary's own. Applying the guard is one edit by hand, mounting a controller
 on the group instead of the router, because that line is the exposure
 boundary and belongs in `routes.go` where it can be read.
+
+**`g policy`, built 2026-11-05.** Authorization is a plain Go file, not a
+framework and not a role table. `bogie g policy post` writes
+`app/policies/post_policy.go`: `Post.CanIndex`, `Post.CanShow`,
+`Post.CanCreate`, `Post.CanUpdate` and `Post.CanDestroy`, each
+`(actor Actor, post *models.Post) bool`, and a table spec with one row per
+role and action. The actions are methods on `policies.Post` so a second
+model (`policies.Note.CanShow`) can share the package. `Actor` is an id and a
+role string read from the request context token authentication already
+fills (`middlewares.Subject`, `middlewares.Role`). The default allows only
+what the actor owns (`post.UserID == actor.ID`); a role does not widen
+that until a function says so. The same command writes
+`app/services/posts`, which checks the policy and then the store, and
+returns `policies.ErrDenied` on a refusal. `bogie g scaffold post
+title:string --policy`, after `g authentication token`, writes that policy
+and a controller that calls the service. `fail` maps the denial to 403 in
+the same switch as 404 and 422, the route is mounted on `s.WithUser`, and
+the model gains a `user_id` string when it does not have one. The body
+cannot set the owner; the service stamps the actor on create. `bogie d
+policy post` removes the policy, its spec and its service. A policied
+scaffold's policy goes with `d scaffold`.
 
 The file rule is one sentence: one file per controller, one package per
 namespace. kchat's `conversations.go` already obeys it; "one file per

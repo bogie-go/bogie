@@ -100,6 +100,11 @@ generators() {
   "$b" g authentication secret || return 1
   "$b" g authentication token || return 1
   "$b" g authentication api_key || return 1
+  # A policy over a model that already has an owner, and a scaffold that
+  # grows one: the controller calls the service, a non-owner is 403.
+  "$b" g model note body:text user_id:string || return 1
+  "$b" g policy note || return 1
+  "$b" g scaffold article title:string --policy || return 1
   # A config group: a typed struct, registered, with development credentials,
   # then a second run that adds a key (including one that needs the time
   # import) and changes nothing it already had.
@@ -184,6 +189,14 @@ SQL
   "$b" d scaffold tag || return 1
   "$b" d scaffold category || return 1
   "$b" d model session || return 1
+  "$b" d scaffold article || return 1
+  test ! -f app/policies/article_policy.go || return 1
+  test ! -d app/services/articles || return 1
+  # note's policy is the last one, so the shared actor goes with it.
+  "$b" d policy note || return 1
+  test ! -f app/policies/actor.go || return 1
+  test ! -d app/services/notes || return 1
+  "$b" d model note || return 1
   "$b" d scaffold post || return 1
   "$b" doctor || return 1
   cd "$OLDPWD" || return 1

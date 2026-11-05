@@ -16,6 +16,11 @@ type Attr struct {
 	// unless it says :null; `bogie model:sync` also sets it for a nullable
 	// column it finds in the schema.
 	Null bool
+	// Owner is the column a policy compares to the actor id. It is a real
+	// column and it goes out on the wire, but a request body cannot set it:
+	// the service stamps the actor's id on create and keeps the stored one
+	// on update. Not a command-line flag; EnsureOwner and MarkOwner set it.
+	Owner bool
 }
 
 // kind is what one attribute type becomes at each layer.

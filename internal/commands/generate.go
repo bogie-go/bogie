@@ -15,7 +15,7 @@ import (
 	"github.com/bogie-go/bogie/internal/scaffold"
 )
 
-const generateUsage = `Usage: bogie generate GENERATOR NAME [attributes] [--only ACTIONS] [--pretend] [--force] [--skip-sqlc]
+const generateUsage = `Usage: bogie generate GENERATOR NAME [attributes] [--only ACTIONS] [--policy] [--pretend] [--force] [--skip-sqlc]
        bogie g ...
 
 Generators:
@@ -32,6 +32,11 @@ Generators:
                                     index,show writes just those actions,
                                     with their routes, views and specs
                                     (the model half is written in full).
+                                    --policy checks an authorization policy
+                                    in a service and answers 403 on a
+                                    denial; it needs bogie g authentication
+                                    token first, and adds user_id when the
+                                    model does not have one
                                     admin/NAME is a model of its own, the
                                     namespace in its name: admin_page,
                                     table admin_pages, its controller
@@ -43,7 +48,8 @@ Generators:
                                     five actions over the category store
                                     under /admin/categories. The model is
                                     the last segment, not namespaced;
-                                    --only works here too
+                                    --only works here too. --policy too,
+                                    when the model already has user_id
   controller NAME [action ...]      app/controllers/<name>_controller.go, one
                                     controller in one file, REGISTERED:
                                     a field, a wire line and a mount above
@@ -75,6 +81,14 @@ Generators:
                                     secret (the same, never given a made-up
                                     value). smtp.address is SMTP_ADDRESS;
                                     run again to add keys
+  policy NAME                       app/policies/<name>_policy.go, one
+                                    function per action (CanIndex, CanShow,
+                                    CanCreate, CanUpdate, CanDestroy) over
+                                    an actor and *models.<Name>, plus a
+                                    table spec and the service that calls
+                                    it. The model already exists and has
+                                    user_id. Defaults deny except what the
+                                    actor owns
   authentication SHAPE              a middleware on a route group, its config
                                     key with a development value written to
                                     the credentials, and a WithX group helper
@@ -105,6 +119,8 @@ names the other model: post:references is post_id.
   bogie g config smtp address:req port:int=1025 username password:secret
   bogie g config support_email=help@example.com
   bogie g authentication secret
+  bogie g policy post
+  bogie g scaffold post title:string --policy
 `
 
 // Generate handles `bogie generate` and `bogie g`, in the app around the
@@ -137,6 +153,7 @@ func generateIn(root string, args []string, out io.Writer) error {
 	skipSqlc := fs.Bool("skip-sqlc", false, "do not run sqlc afterwards")
 	onlySpec := fs.String("only", "", "write only these actions (index,show,create,update,destroy)")
 	every := fs.String("every", "", "cron schedule that also registers a job as a River periodic job")
+	policy := fs.Bool("policy", false, "check a policy in the service and answer 403 when it denies")
 	fs.Usage = func() { say(generateUsage) }
 
 	// Flags anywhere, positionals in order, as for `new`.
@@ -170,7 +187,7 @@ func generateIn(root string, args []string, out io.Writer) error {
 	// beyond the module, as before this setting existed.
 	var settings Settings
 	var scheme generate.IDScheme
-	if generator == "migration" || generator == "model" || generator == "scaffold" || generator == "scaffold_controller" || generator == "authentication" {
+	if generator == "migration" || generator == "model" || generator == "scaffold" || generator == "scaffold_controller" || generator == "authentication" || generator == "policy" {
 		settings, err = readSettings(root)
 		if err != nil {
 			return fmt.Errorf("generate %s: %w", generator, err)
@@ -192,6 +209,14 @@ func generateIn(root string, args []string, out io.Writer) error {
 		only, err = generate.ParseOnly(*onlySpec)
 		if err != nil {
 			return fmt.Errorf("generate %s: %w", generator, err)
+		}
+	}
+	if *policy && generator != "scaffold" && generator != "scaffold_controller" {
+		return fmt.Errorf("generate %s: --policy is for scaffold and scaffold_controller", generator)
+	}
+	if *policy {
+		if _, err := os.Stat(filepath.Join(root, "app", "middlewares", "require_user.go")); err != nil {
+			return fmt.Errorf("generate %s: --policy reads the actor from token authentication (middlewares.Subject and middlewares.Role); run bogie g authentication token first", generator)
 		}
 	}
 	var files []generate.File
@@ -253,6 +278,12 @@ func generateIn(root string, args []string, out io.Writer) error {
 		if err != nil {
 			return fmt.Errorf("generate scaffold_controller: app/models/%s.go: %w", model, err)
 		}
+		if *policy {
+			modelAttrs, err = generate.MarkOwner(modelAttrs)
+			if err != nil {
+				return fmt.Errorf("generate scaffold_controller: %w; add user_id:string to the model, or use bogie g scaffold %s --policy", err, model)
+			}
+		}
 		if ns != "" {
 			if _, err := os.Stat(filepath.Join(root, "app", "controllers", ns+"_controllers", "server.go")); err != nil {
 				files, wires, err = generate.Namespace(module, ns)
@@ -261,7 +292,7 @@ func generateIn(root string, args []string, out io.Writer) error {
 				}
 			}
 		}
-		ctlFiles, ctlWires, err := generate.ScaffoldController(module, ns, generate.Plural(model), model, modelAttrs, scheme, only)
+		ctlFiles, ctlWires, err := generate.ScaffoldController(module, ns, generate.Plural(model), model, modelAttrs, scheme, only, *policy)
 		if err != nil {
 			return fmt.Errorf("generate scaffold_controller: %w", err)
 		}
@@ -291,6 +322,13 @@ func generateIn(root string, args []string, out io.Writer) error {
 			viewsPath, viewsMerged, viewsAdded = f.Path, merged, added
 		}
 		wires = append(wires, ctlWires...)
+		if *policy {
+			pol, err := generate.Policy(module, model, scheme)
+			if err != nil {
+				return fmt.Errorf("generate scaffold_controller: %w", err)
+			}
+			files = append(files, pol...)
+		}
 	case "service":
 		files, err = generate.Service(module, name)
 		if err != nil {
@@ -373,6 +411,18 @@ func generateIn(root string, args []string, out io.Writer) error {
 			return fmt.Errorf("generate config: %w", err)
 		}
 		configGroup = name
+	case "policy":
+		src, err := os.ReadFile(filepath.Join(root, "app", "models", name+".go"))
+		if err != nil {
+			return fmt.Errorf("generate policy: no model %s (app/models/%s.go); bogie g model %s user_id:string first, or bogie g scaffold %s --policy", name, name, name, name)
+		}
+		if err := generate.HasOwnerField(src, name); err != nil {
+			return fmt.Errorf("generate policy: app/models/%s.go: %w; add user_id:string", name, err)
+		}
+		files, err = generate.Policy(module, name, scheme)
+		if err != nil {
+			return fmt.Errorf("generate policy: %w", err)
+		}
 	case "authentication":
 		files, wires, err = generate.Authentication(module, settings.Name, name, scheme, nextStamp(root, time.Now()))
 		if err != nil {
@@ -434,7 +484,7 @@ func generateIn(root string, args []string, out io.Writer) error {
 			}
 			defer say("%12s  model %s is %s.go, table %s; its controller is %s/%s, at /%s/%s\n", "note", model, model, generate.Plural(model), ns+"_controllers", res, ns, res)
 		}
-		scaffoldFiles, scaffoldWires, err := generate.Scaffold(module, ns, res, name, attrs, scheme, now, only)
+		scaffoldFiles, scaffoldWires, err := generate.Scaffold(module, ns, res, name, attrs, scheme, now, only, *policy)
 		if err != nil {
 			return fmt.Errorf("generate scaffold: %w", err)
 		}

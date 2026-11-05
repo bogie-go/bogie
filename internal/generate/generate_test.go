@@ -326,7 +326,7 @@ func TestControllerWithNoActions(t *testing.T) {
 }
 
 func TestScaffold(t *testing.T) {
-	files, wires, err := Scaffold("example.com/blog", "", "", "post", attrs(t, "title:string", "body:text", "score:integer", "published_at:datetime", "author:references"), IDBigint, at, nil)
+	files, wires, err := Scaffold("example.com/blog", "", "", "post", attrs(t, "title:string", "body:text", "score:integer", "published_at:datetime", "author:references"), IDBigint, at, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,13 +344,77 @@ func TestScaffold(t *testing.T) {
 			t.Errorf("file %d: %s vs %s", i, files[i].Path, paths[i].Path)
 		}
 	}
-	if _, _, err := Scaffold("m", "", "", "posts", nil, IDBigint, at, nil); err == nil {
+	if _, _, err := Scaffold("m", "", "", "posts", nil, IDBigint, at, nil, false); err == nil {
 		t.Error("plural model name accepted")
 	}
 }
 
+func TestPolicy(t *testing.T) {
+	files, err := Policy("example.com/blog", "post", IDBigint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden(t, "policy_post", files)
+	var spec string
+	for _, f := range files {
+		if strings.HasSuffix(f.Path, "post_policy_test.go") {
+			spec = f.Content
+		}
+	}
+	// One row per role and action, for the owner and for someone else.
+	if got, want := strings.Count(spec, "Entry("), len(PolicyRoles)*len(ResourceActions)*2; got != want {
+		t.Errorf("policy spec has %d rows, want %d (one per role and action, owned and not)", got, want)
+	}
+	if _, err := Policy("example.com/blog", "posts", IDBigint); err == nil {
+		t.Error("plural model name accepted")
+	}
+}
+
+func TestScaffoldWithPolicy(t *testing.T) {
+	files, wires, err := Scaffold("example.com/blog", "", "", "post", attrs(t, "title:string"), IDBigint, at, nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ctl, model string
+	for _, f := range files {
+		switch f.Path {
+		case "app/controllers/posts_controller.go":
+			ctl = f.Content
+		case "app/models/post.go":
+			model = f.Content
+		case "app/policies/post_policy.go":
+		case "app/services/posts/posts.go":
+		default:
+		}
+		if f.Path == "app/views/posts.go" && strings.Contains(f.Content, "UserID") && strings.Contains(f.Content, "type PostRequest") {
+			// The request must not carry the owner; the response may.
+			req := f.Content[strings.Index(f.Content, "type PostRequest"):strings.Index(f.Content, "type PostResponse")]
+			if strings.Contains(req, "UserID") {
+				t.Error("the request body can set UserID")
+			}
+		}
+	}
+	if !strings.Contains(model, "UserID") {
+		t.Error("policied model has no UserID")
+	}
+	for _, want := range []string{"ctl.Posts.Show(c.Request.Context(), ctl.actor(c), c.Param(\"id\"))", "policies.ErrDenied", "http.StatusForbidden", "middlewares.Subject", "middlewares.Role"} {
+		if !strings.Contains(ctl, want) {
+			t.Errorf("controller lacks %s", want)
+		}
+	}
+	if strings.Contains(ctl, "ctl.Store.") {
+		t.Error("policied controller still calls the store")
+	}
+	if len(wires) != 3 || wires[1].Line != "server.Posts = controllers.NewPostsController(posts.New(store, log), log)" || wires[2].Line != "s.Posts.SetupRoutes(s.WithUser(&r.RouterGroup))" {
+		t.Errorf("wires = %+v", wires)
+	}
+	if _, _, err := Scaffold("example.com/blog", "admin", "products", "admin_product", attrs(t, "title:string"), IDBigint, at, nil, true); err == nil {
+		t.Error("a namespaced policied scaffold was accepted")
+	}
+}
+
 func TestScaffoldWithNoAttributes(t *testing.T) {
-	files, _, err := Scaffold("example.com/blog", "", "", "ping", nil, IDBigint, at, nil)
+	files, _, err := Scaffold("example.com/blog", "", "", "ping", nil, IDBigint, at, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -686,7 +750,7 @@ func TestGeneratedParamDoesNotShadow(t *testing.T) {
 			if c.generator == "model" {
 				files, err = Model("example.com/blog", c.name, nil, IDBigint, at)
 			} else {
-				files, _, err = Scaffold("example.com/blog", "", "", c.name, nil, IDBigint, at, nil)
+				files, _, err = Scaffold("example.com/blog", "", "", c.name, nil, IDBigint, at, nil, false)
 			}
 			if err != nil {
 				t.Fatal(err)
@@ -751,7 +815,7 @@ func TestScaffoldOnly(t *testing.T) {
 		{[]string{"destroy"}, []string{"DeleteCategory", "func (ctl *CategoriesController) Destroy"}, []string{"GetCategory", "CreateCategory", "views.CategoryResponse", "categoryView", "categoriesView"}},
 	}
 	for _, c := range cases {
-		files, _, err := ScaffoldController("example.com/blog", "", "", "category", attrs(t, "name:string"), IDBigint, c.only)
+		files, _, err := ScaffoldController("example.com/blog", "", "", "category", attrs(t, "name:string"), IDBigint, c.only, false)
 		if err != nil {
 			t.Fatalf("only %v: %v", c.only, err)
 		}
@@ -771,7 +835,7 @@ func TestScaffoldOnly(t *testing.T) {
 		}
 	}
 	// Destroy answers with no body, so there is no views file for it.
-	files, _, _ := ScaffoldController("example.com/blog", "", "", "category", nil, IDBigint, []string{"destroy"})
+	files, _, _ := ScaffoldController("example.com/blog", "", "", "category", nil, IDBigint, []string{"destroy"}, false)
 	for _, f := range files {
 		if strings.HasPrefix(f.Path, "app/views/") {
 			t.Errorf("destroy alone wrote %s", f.Path)
@@ -780,11 +844,11 @@ func TestScaffoldOnly(t *testing.T) {
 }
 
 func TestScaffoldWithOnlyKeepsTheModelWhole(t *testing.T) {
-	all, _, err := Scaffold("example.com/blog", "", "", "tag", attrs(t, "name:string"), IDBigint, at, nil)
+	all, _, err := Scaffold("example.com/blog", "", "", "tag", attrs(t, "name:string"), IDBigint, at, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	some, _, err := Scaffold("example.com/blog", "", "", "tag", attrs(t, "name:string"), IDBigint, at, []string{"index"})
+	some, _, err := Scaffold("example.com/blog", "", "", "tag", attrs(t, "name:string"), IDBigint, at, []string{"index"}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -799,7 +863,7 @@ func TestScaffoldWithOnlyKeepsTheModelWhole(t *testing.T) {
 }
 
 func TestScaffoldControllerInANamespace(t *testing.T) {
-	files, wires, err := ScaffoldController("example.com/blog", "admin", "categories", "category", attrs(t, "name:string"), IDBigint, nil)
+	files, wires, err := ScaffoldController("example.com/blog", "admin", "categories", "category", attrs(t, "name:string"), IDBigint, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -826,7 +890,7 @@ func TestScaffoldInANamespace(t *testing.T) {
 	if ns != "admin" || res != "products" || model != "admin_product" {
 		t.Fatalf("ParseScaffoldName = %q %q %q", ns, res, model)
 	}
-	files, wires, err := Scaffold("example.com/blog", ns, res, model, attrs(t, "name:string"), IDBigint, at, nil)
+	files, wires, err := Scaffold("example.com/blog", ns, res, model, attrs(t, "name:string"), IDBigint, at, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -858,7 +922,7 @@ func TestScaffoldInANamespace(t *testing.T) {
 func TestScaffoldNamesAreCamelCase(t *testing.T) {
 	snake := regexp.MustCompile(`\b[a-z]+_[a-z]+(FromRow|View)?\b`)
 	for _, c := range []struct{ ns, res, model string }{{"", "", "cart_item"}, {"admin", "cart_items", "admin_cart_item"}} {
-		files, _, err := Scaffold("example.com/blog", c.ns, c.res, c.model, attrs(t, "name:string"), IDBigint, at, nil)
+		files, _, err := Scaffold("example.com/blog", c.ns, c.res, c.model, attrs(t, "name:string"), IDBigint, at, nil, false)
 		if err != nil {
 			t.Fatal(err)
 		}
