@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/bogie-go/bogie/internal/generate"
@@ -129,8 +130,17 @@ func destroyIn(root string, args []string, out io.Writer) error {
 	case "service":
 		files, err = generate.Service(module, name)
 	case "job":
-		files, _, err = generate.Job(module, name)
+		files, _, err = generate.Job(module, name, "")
 		wires = generate.JobWirePrefix(name)
+		// The schedule line exists only for a job generated with --every.
+		// Leaving it out otherwise keeps destroy's report for an ordinary job
+		// the same: no "absent" line for a registration that was never there.
+		if src, readErr := os.ReadFile(filepath.Join(root, "app", "jobs", "jobs.go")); readErr == nil {
+			periodic := generate.JobPeriodicWirePrefix(name)
+			if strings.Contains(string(src), periodic.Line) {
+				wires = append(wires, periodic)
+			}
+		}
 	case "seed":
 		files, _, err = generate.Seed(module, name)
 		wires = generate.SeedWirePrefix(name)

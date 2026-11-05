@@ -113,9 +113,12 @@ generators() {
   # This app has no jobs; the first `g job` adds River itself, the same way
   # `app:update` merges a layout change, before writing the job as usual. The
   # app's own bin/ci below then also covers the worker role it just gained.
-  # --pretend first: it must not add River, or anything else.
+  # --pretend first: it must not add River, or anything else, with or
+  # without a periodic schedule.
   "$b" g job send_welcome --pretend || return 1
   test ! -d app/jobs || { echo "g job --pretend wrote files"; return 1; }
+  "$b" g job daily_digest --every "0 9 * * *" --pretend || return 1
+  test ! -d app/jobs || { echo "g job --every --pretend wrote files"; return 1; }
   "$b" g job send_welcome || return 1
   # model:sync follows a migration written by hand: one column added (a
   # nullable datetime among them), one dropped, the Validate we edited kept.
@@ -292,6 +295,13 @@ jobs() {
   cd "$CI_JOBS_DIR/blog" || return 1
   b="$CI_APP_DIR/bogie"
   "$b" g job send_welcome || return 1
+  # --pretend with --every writes nothing when jobs already exist, either.
+  "$b" g job weekly_digest --every "0 8 * * 1" --pretend || return 1
+  test ! -f app/jobs/weekly_digest.go || { echo "g job --every --pretend wrote files"; return 1; }
+  "$b" g job daily_digest --every "0 9 * * *" || return 1
+  grep -q 'periodic = append(periodic, DailyDigestPeriodic())' app/jobs/jobs.go || { echo "periodic job was not registered"; return 1; }
+  grep -q 'RunOnStart: false' app/jobs/daily_digest.go || { echo "RunOnStart was not left off"; return 1; }
+  grep -q 'PeriodicJobs: periodic' app/application.go || { echo "periodic jobs are not passed to River"; return 1; }
   "$b" doctor || return 1
   # The image's ENTRYPOINT is the binary, so the job role's cmd is only the
   # argument: "blog worker" would run "blog blog worker" and serve again.
@@ -301,7 +311,10 @@ jobs() {
   grep -q 'status: app exec --reuse -r web ' config/deploy.yml || { echo "config/deploy.yml: the status alias should ask the web role only"; return 1; }
   cd "$OLDPWD" || return 1
   "$CI_JOBS_DIR/blog/bin/ci" || return 1
-  cd "$CI_JOBS_DIR/blog" && "$b" d job send_welcome && "$b" doctor && cd "$OLDPWD" || return 1
+  cd "$CI_JOBS_DIR/blog" && "$b" d job daily_digest || return 1
+  test ! -f app/jobs/daily_digest.go || { echo "daily_digest.go survived destroy"; return 1; }
+  if grep -q DailyDigest app/jobs/jobs.go; then echo "periodic registration survived destroy"; return 1; fi
+  "$b" d job send_welcome && "$b" doctor && cd "$OLDPWD" || return 1
   "$CI_JOBS_DIR/blog/bin/ci"
 }
 

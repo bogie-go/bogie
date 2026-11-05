@@ -1,7 +1,7 @@
 # Status
 
 Where Bogie stands, for whoever picks it up next, on whatever machine. Updated
-2026-10-30, at v0.6.8. `docs/DESIGN.md` is the design and the
+2026-11-05, at v0.6.8. `docs/DESIGN.md` is the design and the
 reasoning; this file is the state.
 
 ## Milestones
@@ -57,6 +57,10 @@ Install: `go install github.com/bogie-go/bogie@latest` for the newest tag,
                                                       --jobs had been passed
                                                       to new), merged in the
                                                       same way as app:update
+    bogie g job daily_digest --every "0 9 * * *"      the same, and a River
+                                                      periodic job on that cron
+                                                      schedule (RunOnStart off);
+                                                      bogie d job removes it
     bogie g authentication secret|token|api_key       a middleware on a route group, its config
                                                       keys wired and a development secret written
                                                       to the credentials; api_key adds a table

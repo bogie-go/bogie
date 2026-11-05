@@ -2,6 +2,8 @@ package generate
 
 import (
 	"flag"
+	"fmt"
+	"go/format"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -566,13 +568,81 @@ func TestModelWithUniqueAttribute(t *testing.T) {
 }
 
 func TestJob(t *testing.T) {
-	files, wires, err := Job("example.com/blog", "send_welcome")
+	files, wires, err := Job("example.com/blog", "send_welcome", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	golden(t, "job_send_welcome", files)
 	if len(wires) != 1 || wires[0].Marker != "jobs" || wires[0].Line != "registered += add(workers, &SendWelcomeWorker{Log: log})" {
 		t.Errorf("wires = %+v", wires)
+	}
+	for _, f := range files {
+		if strings.Contains(f.Content, "Periodic") || strings.Contains(f.Content, "robfig/cron") {
+			t.Errorf("%s gained a periodic job with no --every:\n%s", f.Path, f.Content)
+		}
+	}
+}
+
+func TestPeriodicJob(t *testing.T) {
+	files, wires, err := Job("example.com/blog", "daily_digest", "0 9 * * *")
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden(t, "job_daily_digest", files)
+	if len(wires) != 2 || wires[0].Line != "registered += add(workers, &DailyDigestWorker{Log: log})" ||
+		wires[1].Marker != "jobs" || wires[1].Line != "periodic = append(periodic, DailyDigestPeriodic())" {
+		t.Errorf("wires = %+v", wires)
+	}
+	var src string
+	for _, f := range files {
+		if f.Path == "app/jobs/daily_digest.go" {
+			src = f.Content
+		}
+		formatted, ferr := format.Source([]byte(f.Content))
+		if ferr != nil {
+			t.Fatalf("gofmt %s: %v", f.Path, ferr)
+		}
+		if string(formatted) != f.Content {
+			t.Errorf("%s is not gofmt-clean", f.Path)
+		}
+	}
+	for _, want := range []string{
+		`cron.ParseStandard("0 9 * * *")`,
+		"river.NewPeriodicJob(",
+		"RunOnStart: false",
+		"func DailyDigestPeriodic() *river.PeriodicJob",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("periodic job lacks %q", want)
+		}
+	}
+	if p := JobPeriodicWirePrefix("daily_digest"); p.Line != "periodic = append(periodic, DailyDigestPeriodic())" {
+		t.Errorf("destroy prefix = %q", p.Line)
+	}
+}
+
+func TestPeriodicJobAcceptsDescriptorsAndZones(t *testing.T) {
+	for _, spec := range []string{"@daily", "@every 1h", "CRON_TZ=UTC 0 9 * * *", "  0 9 * * *  "} {
+		files, wires, err := Job("example.com/blog", "daily_digest", spec)
+		if err != nil {
+			t.Errorf("%q: %v", spec, err)
+			continue
+		}
+		if len(wires) != 2 {
+			t.Errorf("%q: wires = %+v", spec, wires)
+		}
+		want := strings.TrimSpace(spec)
+		if !strings.Contains(files[0].Content, fmt.Sprintf("cron.ParseStandard(%q)", want)) {
+			t.Errorf("%q: schedule not in the file:\n%s", spec, files[0].Content)
+		}
+	}
+}
+
+func TestPeriodicJobRejectsABadSchedule(t *testing.T) {
+	for _, spec := range []string{"   ", "not a cron", "* * * * * *", "99 9 * * *", "CRON_TZ=Not/AZone 0 9 * * *"} {
+		if _, _, err := Job("example.com/blog", "daily_digest", spec); err == nil {
+			t.Errorf("%q accepted", spec)
+		}
 	}
 }
 

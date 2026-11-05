@@ -252,6 +252,30 @@ transaction with `InsertTx`, so the job commits with the row or not at all.
 backlog never slows a request. Args are stored as JSON: carry ids, not
 records. River's schema is applied by `migrate`, not by db/migrate.
 
+#### Periodic jobs
+
+    bogie g job daily_digest --every "0 9 * * *"
+
+registers that same job as a River periodic job. The worker line is unchanged,
+and a second line above `// bogie:jobs` appends a `river.PeriodicJob` whose
+schedule is the cron expression. `0 9 * * *` is 09:00 every day. The expression
+is robfig/cron's standard form: five fields (minute, hour, day of month, month,
+day of week), a descriptor such as `@daily` or `@every 1h`, and an optional
+`CRON_TZ=UTC` prefix. With no prefix the schedule uses the process's local
+time zone.
+
+`RunOnStart` is left off. A deploy, or a new leader taking over, does not
+enqueue one immediately; the schedule does. Enqueue one by hand the same way
+as any other job, with `Insert`.
+
+River elects one leader per database and schema, and only that client inserts
+periodic jobs, so several worker processes do not each enqueue a copy. The web
+process never starts its River client, so it does not lead and does not enqueue
+them; `bogie worker` does. The leader holds the schedule in memory, so after a
+restart the new leader starts from the current time and a run can be skipped.
+
+`bogie d job daily_digest` removes the schedule line with the worker line.
+
 {{end}}### Add a setting
 
     bogie g config smtp address:req port:int=1025 username password:secret
