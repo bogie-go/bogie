@@ -25,9 +25,14 @@ and nothing else.
     bin/ci              every check, run locally; green ends with gh signoff
 
 `bogie` runs the same commands from any subdirectory, spelled with a colon for
-tasks: `bogie db:prepare`, `db:migrate`, `db:rollback`, `db:seed`,
+tasks: `bogie db:prepare`, `db:migrate`, `db:rollback`, `db:seed`, `db:status`,
 `credentials:edit -e production`, `server` (`s`), `test` (`t`). The tool adds the colon
-spelling and nothing else; the app never imports it. In development
+spelling; the app never imports it. `bogie db:status` prints where the database
+is, the Postgres version, the latest goose migration and how many are still
+pending, and how many tables exist. It only reads, and it uses the same
+settings as `bogie server`.
+
+In development
 `bogie server` and `bogie worker` run under Air, so a saved file rebuilds
 and restarts the process; `.air.toml` holds the settings and deleting it
 turns reload off. `make server` never reloads, which is the thing to run

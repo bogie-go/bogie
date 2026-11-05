@@ -42,7 +42,9 @@ func TestMain(m *testing.M) {
 		_ = runStoppable(cmd)
 		os.Exit(0)
 	}
-	os.Exit(m.Run())
+	code := m.Run()
+	stopThrowawayPostgres() // the db:status tests' cluster, if one was started
+	os.Exit(code)
 }
 
 func TestStopSignalReachesTheApp(t *testing.T) {
