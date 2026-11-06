@@ -14,6 +14,12 @@ out of Gin, sqlc, goose, River and Kamal, with generators that also wire the cod
   <a href="https://github.com/bogie-go/bogie/releases/latest"><img src="https://img.shields.io/github/v/release/bogie-go/bogie?sort=semver" alt="Release"></a>
 </p>
 
+```sh
+go install github.com/bogie-go/bogie@latest
+bogie new blog && cd blog
+make up && bogie db:prepare && bogie s   # Postgres via Compose, then serve on :8080
+```
+
 <p align="center"><img src="docs/assets/bogie-demo.gif" width="720" alt="Terminal demo, about 38 seconds: bogie new demoapp, make up to start Postgres, bogie g controller and bogie g scaffold post printing their create and insert lines, bogie db:prepare, bogie s, then curl calls that return a 501 stub from the new controller, create a post with a 201, and list it back"></p>
 
 ---
@@ -59,6 +65,8 @@ the commit.
 clone, `go install .`.
 
 ## Quickstart
+
+<p align="center"><img src="docs/assets/bogie-new-controller.gif" width="640" alt="Terminal demo, about 15 seconds, on v0.6.8: bogie new blog, then bogie g controller pages home about printing its create and insert lines, then go build succeeding"></p>
 
 ```sh
 bogie new blog                                  # an empty API service
