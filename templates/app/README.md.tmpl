@@ -13,8 +13,11 @@ purpose and `AGENTS.md` says how to work in it.
     bin/ci                    # every check, locally; green signs off the commit
 
 `make help` lists the rest. `bogie` spells tasks with a colon,
-`db:migrate`, `db:rollback`, `credentials:edit`, and works from any
-subdirectory; every command runs the app's own code.
+`db:migrate`, `db:rollback`, `db:status`, `credentials:edit`, and works from any
+subdirectory. The commands that change the database run the app's own code.
+`bogie db:status` only reads: where the server would connect, the Postgres
+version, the latest goose migration and how many are pending, and how many
+tables exist.
 
 In development `bogie server` and `bogie worker` rebuild and restart when a
 watched file changes, which includes a new migration, since migrations are
