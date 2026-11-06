@@ -157,7 +157,7 @@ One command surface, spelled the same everywhere:
 | `bogie g scaffold_controller admin/categories` | the HTTP half over a model that already exists, mounted under a namespace; the attributes are read from the model |
 | `bogie g controller posts index show` | a controller, registered as it is written |
 | `bogie g controller admin/reports` | a namespace is a package |
-| `bogie g job send_welcome` | a River worker on the same Postgres |
+| `bogie g job send_welcome` | a River worker on the same Postgres. `--every "0 9 * * *"` also registers it as a periodic job (RunOnStart off) |
 | `bogie g config smtp address:req port:int=1025 password:secret` | a typed group of the credentials file, registered, with development values; `smtp.address` is `SMTP_ADDRESS` |
 | `bogie g authentication secret\|token\|api_key` | a middleware for a route group (shared secret, JWT bearer token, or hashed API key), its config and credentials entry, and a `WithSecret` / `WithUser` / `WithAPIKey` helper; you mount the routes it guards |
 | `bogie db:migrate`, `db:rollback`, `db:seed` | run by the app's own binary |

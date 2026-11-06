@@ -54,9 +54,11 @@ Generators:
                                     app/controllers/admin_controllers/, made
                                     on first use and registered the same way
   service NAME                      app/services/<name>/, ctx first, no HTTP
-  job NAME                          app/jobs/<name>.go, a River job, REGISTERED
-                                    above bogie:jobs; the first one on an app
-                                    made without --jobs adds it first
+  job NAME [--every CRON]          app/jobs/<name>.go, a River job, REGISTERED
+                                    above bogie:jobs. --every "0 9 * * *" also
+                                    registers a periodic job on that cron
+                                    schedule, RunOnStart off. The first one on
+                                    an app made without --jobs adds it first
   seed NAME                         db/seeds/<name>.go, REGISTERED above
                                     bogie:seeds in db/seeds/seeds.go. Unlike a
                                     migration, db seed runs every seed every
@@ -98,6 +100,7 @@ names the other model: post:references is post_id.
   bogie g controller admin/reports index show
   bogie g service publish_post
   bogie g job send_welcome
+  bogie g job daily_digest --every "0 9 * * *"
   bogie g seed demo_posts
   bogie g config smtp address:req port:int=1025 username password:secret
   bogie g config support_email=help@example.com
@@ -133,6 +136,7 @@ func generateIn(root string, args []string, out io.Writer) error {
 	pretend := fs.Bool("pretend", false, "report what would be written and write nothing")
 	skipSqlc := fs.Bool("skip-sqlc", false, "do not run sqlc afterwards")
 	onlySpec := fs.String("only", "", "write only these actions (index,show,create,update,destroy)")
+	every := fs.String("every", "", "cron schedule that also registers a job as a River periodic job")
 	fs.Usage = func() { say(generateUsage) }
 
 	// Flags anywhere, positionals in order, as for `new`.
@@ -178,6 +182,9 @@ func generateIn(root string, args []string, out io.Writer) error {
 	var viewsPath string
 	var viewsMerged []byte
 	var viewsAdded []string
+	if strings.TrimSpace(*every) != "" && generator != "job" {
+		return fmt.Errorf("generate %s: --every is for job", generator)
+	}
 	if *onlySpec != "" {
 		if generator != "scaffold" && generator != "scaffold_controller" {
 			return fmt.Errorf("generate %s: --only is for scaffold and scaffold_controller", generator)
@@ -290,11 +297,19 @@ func generateIn(root string, args []string, out io.Writer) error {
 			return fmt.Errorf("generate service: %w", err)
 		}
 	case "job":
+		// Validate before enableJobs, so a bad name or a bad --every writes
+		// nothing, including the River wiring a first job would add.
+		files, wires, err = generate.Job(module, name, *every)
+		if err != nil {
+			return fmt.Errorf("generate job: %w", err)
+		}
 		jobsMissing := false
-		if _, err := os.Stat(filepath.Join(root, "app", "jobs", "jobs.go")); err != nil {
+		jobsGo := filepath.Join(root, "app", "jobs", "jobs.go")
+		if _, statErr := os.Stat(jobsGo); statErr != nil {
 			if *pretend {
 				// Adding --jobs rewrites a dozen files and tidies the modules,
-				// so --pretend only says it would.
+				// so --pretend only says it would. The job files and the
+				// periodic line are reported below and written nowhere.
 				say("%12s  this app has no app/jobs yet; --jobs would be added first\n", "note")
 				jobsMissing = true
 			} else {
@@ -303,10 +318,16 @@ func generateIn(root string, args []string, out io.Writer) error {
 					return fmt.Errorf("generate job: %w", err)
 				}
 			}
-		}
-		files, wires, err = generate.Job(module, name)
-		if err != nil {
-			return fmt.Errorf("generate job: %w", err)
+		} else if strings.TrimSpace(*every) != "" {
+			src, readErr := os.ReadFile(jobsGo)
+			if readErr != nil {
+				return readErr
+			}
+			// An app generated before periodic jobs has nowhere to append the
+			// schedule. Say so before any file is written.
+			if !strings.Contains(string(src), "var periodic") {
+				return fmt.Errorf("generate job: app/jobs/jobs.go has no periodic slice for --every to register into; run bogie app:update, then try again")
+			}
 		}
 		if jobsMissing {
 			// app/jobs/jobs.go, with its markers, does not exist to be checked.
@@ -468,6 +489,13 @@ func generateIn(root string, args []string, out io.Writer) error {
 	if err := wire(root, wires, pending, *pretend, report); err != nil {
 		return fmt.Errorf("generate %s: %w", generator, err)
 	}
+	// A periodic job imports robfig/cron. --pretend stops above, so this never
+	// runs for a dry run, and a second job finds the requirement already there.
+	if generator == "job" && strings.TrimSpace(*every) != "" && !*pretend {
+		if err := ensureCron(root, out); err != nil {
+			return fmt.Errorf("generate job: %w", err)
+		}
+	}
 
 	// A config group's keys get lines in the development credentials file: a
 	// value if one was given, a commented placeholder otherwise, and for the
@@ -516,6 +544,31 @@ func generateIn(root string, args []string, out io.Writer) error {
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("generate %s: sqlc: %w", generator, err)
 		}
+	}
+	return nil
+}
+
+// cronModule is the release a periodic job imports. River's cron example uses
+// this module; ParseStandard is the schedule the generator accepts.
+const cronModule = "github.com/robfig/cron/v3@v3.0.1"
+
+// ensureCron adds robfig/cron to the app when a periodic job needs it, and
+// leaves go.mod alone when the requirement is already there.
+func ensureCron(root string, out io.Writer) error {
+	b, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		return err
+	}
+	if strings.Contains(string(b), "github.com/robfig/cron/v3") {
+		return nil
+	}
+	_, _ = fmt.Fprintf(out, "%12s  go get %s\n", "run", cronModule)
+	cmd := exec.Command("go", "get", cronModule)
+	cmd.Dir = root
+	cmd.Stdout = out
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("go get %s: %w", cronModule, err)
 	}
 	return nil
 }
