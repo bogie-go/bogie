@@ -144,7 +144,8 @@ from `.kamal/secrets`, which reads `config/credentials/staging.key`.
 is a scaffold: the model (everything `g model` writes, below), the
 wire shapes in `app/views/posts.go`, and `app/controllers/posts_controller.go`
 with the five resourceful actions over the store, registered with the store
-passed in. There is no service layer: the controller declares the slice of
+passed in. There is no service layer unless you pass `--policy` (see "Add a policy"):
+the controller declares the slice of
 the store it uses as an interface beside it (rule 2), and the store runs the
 model's `Validate` on create and update, so validation runs on save and a bad
 value is a 422 from the store. The model is named in the singular and the
@@ -325,6 +326,35 @@ router, in `routes.go`:
 
 `bogie d authentication <shape>` removes it; the development value stays in
 the credentials file, harmless.
+
+### Add a policy
+
+    bogie g authentication token
+    bogie g scaffold post title:string body:text --policy
+
+or, when the model already exists and has a `user_id` string:
+
+    bogie g policy post
+
+`app/policies/post_policy.go` is plain Go. One method per action on
+`policies.Post` — `CanIndex`, `CanShow`, `CanCreate`, `CanUpdate`,
+`CanDestroy` — each takes an `Actor` and a `*models.Post` and returns bool.
+They are methods, not package functions, so `policies.Note` can define the
+same actions beside them. `Actor` is an id and a
+role string, the same two values token authentication already put on the
+request (`middlewares.Subject`, `middlewares.Role`). There is no role table
+and no framework. The default allows only what the actor owns
+(`post.UserID == actor.ID`); change the one function when a role should
+widen that. The spec beside it is a table, one row per role and action,
+owned and not.
+
+`--policy` also writes `app/services/posts`, which checks the policy and
+then the store, and a controller that calls the service. A denial is
+`policies.ErrDenied`, mapped to 403 in the controller's `fail` next to 404
+and 422. The route is mounted on `s.WithUser`. The body cannot set the
+owner: create stamps the signed-in actor, and update keeps the stored one.
+`bogie d policy post` removes the policy, its spec and its service. A
+scaffold's policy goes with `bogie d scaffold post`.
 
 ### Add a service
 

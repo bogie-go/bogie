@@ -373,7 +373,7 @@ func TestModelSpecsSkipNullableColumns(t *testing.T) {
 }
 
 func TestScaffoldRefusesNullableColumns(t *testing.T) {
-	if _, _, err := Scaffold("example.com/blog", "", "", "article", attrs(t, "title:string", "subtitle:string:null"), IDBigint, at, nil); err == nil {
+	if _, _, err := Scaffold("example.com/blog", "", "", "article", attrs(t, "title:string", "subtitle:string:null"), IDBigint, at, nil, false); err == nil {
 		t.Error("a scaffold with a nullable column was written")
 	}
 }
