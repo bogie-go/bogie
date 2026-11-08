@@ -60,7 +60,7 @@ func main() {
 	case "destroy":
 		err = commands.Destroy(os.Args[2:], os.Stdout)
 	case "doctor":
-		err = commands.Doctor(os.Stdout)
+		err = commands.Doctor(os.Args[2:], os.Stdout)
 	case "model:sync":
 		err = commands.ModelSync(os.Args[2:], os.Stdout)
 	case "app:update":

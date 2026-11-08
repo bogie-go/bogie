@@ -11,11 +11,35 @@ import (
 	"github.com/bogie-go/bogie/internal/markers"
 )
 
+const doctorUsage = `Usage: bogie doctor
+
+Checks that the app still has what the generators rely on: every bogie:
+marker exactly once, the pinned tools in go.mod, the files the layout needs,
+and every controller and namespace registered. One line per check; exits 1
+if any failed. It does not check Docker or Postgres.
+
+Run it from anywhere inside the app (found by its bogie.toml).
+`
+
+// WantsHelp reports whether args ask for a command's help (-h, --help or
+// help as the first argument), so a command that needs an app can answer
+// before it looks for one, from anywhere.
+func WantsHelp(args []string) bool {
+	return len(args) > 0 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help")
+}
+
 // Doctor checks that the app still has what the generators rely on: the
 // markers, exactly once each; the pinned tools; the files the layout needs;
 // and that every controller and namespace is registered. One line per
 // check, exit 1 if any failed.
-func Doctor(out io.Writer) error {
+func Doctor(args []string, out io.Writer) error {
+	if WantsHelp(args) {
+		_, _ = fmt.Fprint(out, doctorUsage)
+		return nil
+	}
+	if len(args) > 0 {
+		return fmt.Errorf("doctor: takes no arguments (bogie doctor -h)")
+	}
 	root, err := appRoot(".")
 	if err != nil {
 		return err

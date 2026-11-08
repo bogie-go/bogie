@@ -250,7 +250,7 @@ func Update(args []string, out io.Writer) error {
 		return fmt.Errorf("app:update: %d conflict(s)", conflicts)
 	}
 	say("\n")
-	return Doctor(out)
+	return Doctor(nil, out)
 }
 
 // warnRetired says which files this version no longer generates but the app
