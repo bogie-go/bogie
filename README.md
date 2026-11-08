@@ -72,9 +72,9 @@ clone, `go install .`.
 bogie new blog                                  # an empty API service
 cd blog
 make up                                         # Postgres on :5440 via docker compose
-bogie g scaffold post title:string body:text    # migration, SQL, domain type, store, controller, wired
+bogie g scaffold post title:string body:text    # migration, SQL, model, store, controller, wired
 bogie db:prepare                                # create, migrate, seed
-bogie s                                         # serves on :8080; migrates at boot,
+bogie s                                         # bogie server: serves on :8080; migrates at boot,
                                                 #   rebuilds and restarts on save
 ```
 
@@ -129,6 +129,7 @@ bogie test
       create  db/migrate/20261003054047_create_posts.sql
       create  db/queries/posts.sql
       create  app/models/post.go
+      create  app/models/post_test.go
       create  db/adapter/posts.go
       create  db/adapter/posts_test.go
       create  test/factories/posts.go
@@ -144,6 +145,16 @@ bogie test
 `bogie d scaffold post` takes all of it out again, including the three
 registration lines. `bogie doctor` checks that every marker is intact and
 every controller is constructed and mounted.
+
+`bogie new` does not run `git init`. Once the app is in git, the commands that
+rewrite several existing files at once (`bogie g job` in an app made without
+`--jobs`, `bogie model:sync`, `bogie app:update`) refuse to run while the tree has
+uncommitted changes, so the change is one diff you can review or undo. Commit
+first:
+
+```sh
+git init && git add -A && git commit -m "bogie new blog"
+```
 
 ## What you get
 
