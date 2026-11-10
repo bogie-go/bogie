@@ -7,7 +7,7 @@ help: ## every task
 
 up: ## start postgres (compose) and wait until it is healthy
 	docker compose up -d --wait
-	@echo "ready: postgres on :5440"
+	@echo "ready: postgres on :$$(docker compose port db 5432 2>/dev/null | sed -n 's/.*:\([0-9][0-9]*\)$$/\1/p' | head -1)"
 
 down: ## stop it, keeping the data
 	docker compose down
