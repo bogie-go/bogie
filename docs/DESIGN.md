@@ -186,7 +186,7 @@ database. No fixtures directory: fixed data is seeds.
 | --- | --- | --- |
 | Where it runs | a developer's laptop | laptop **and** the deployed container |
 | Knows about | templates, the layout | config, database, the running app |
-| Commands | `new`, `g`, `d`, `doctor`, `app:update`, and the `db:*` / `credentials:*` tasks as proxies | `serve`, `worker`, `db …`, `migrate …` |
+| Commands | `new`, `g`, `d`, `doctor`, `app:update`, the `db:*` / `credentials:*` tasks as proxies, and `db:status` (read-only, in the tool) | `serve`, `worker`, `db …`, `migrate …` |
 
 The runtime commands cannot live only in `bogie`: on a deployed host there is no
 generator, but there must be a way to migrate and roll back. kchat already does
@@ -198,6 +198,17 @@ migrations and invite version skew.
 So `bogie db migrate` is a thin proxy for `go run . db migrate` inside the app, and
 `make db-migrate` calls the same thing. **Development runs the code production
 runs** (kchat Makefile, comment above `db-create`).
+
+`db:status` is the one database task the tool runs itself. It only reads: the
+host, port and database the server would use, the Postgres version that
+answered, the latest applied goose version, how many migration files are not
+applied, and how many tables exist. Putting that in the app would add a
+command to every binary for a question asked on a laptop. The tool opens a
+read-only pgx session and resolves the URL the way `config.Load` does
+(`<NAME>_ENV`, the credentials file, `DATABASE_URL` over the file, and test
+from `<NAME>_TEST_DATABASE_URL` only), so it cannot point somewhere `bogie
+server` would not. A generated app gains no import. The commands that change
+the database stay proxies.
 
 Seeds go through the binary too. kchat's `make db-seed` shells out to the goose
 CLI with a URL pulled from a second tool, so it is the one path that can drift
@@ -240,7 +251,7 @@ Commands, v1:
     bogie g authentication secret|token|api_key   # a middleware on a route group, with its config
     bogie d controller posts            # destroy what g created
     bogie server | worker | test | lint
-    bogie db:create | db:drop | db:prepare | db:reset | db:seed
+    bogie db:create | db:drop | db:prepare | db:reset | db:seed | db:status
     bogie db:migrate | db:migrate:status | db:rollback | db:migrate:redo | db:version
     bogie credentials:edit [-e production] | credentials:show
     bogie doctor                        # layout and markers intact? tools pinned?
