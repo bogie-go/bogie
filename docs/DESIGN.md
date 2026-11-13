@@ -859,6 +859,20 @@ Extraction, in order:
     with the worker role and River's dependencies for a problem that was
     really "no way back",
     not "the wrong default."
+6b. **Periodic jobs.** `bogie g job daily_digest --every "0 9 * * *"` registers
+    the job as a River `PeriodicJob` on that cron schedule, beside the worker
+    line, above the same `// bogie:jobs` marker. `jobs.Workers` returns the
+    slice and `app/application.go` sets `river.Config.PeriodicJobs`. The
+    schedule is robfig/cron's `ParseStandard` (five fields, `@daily`, or a
+    `CRON_TZ=` prefix), written into the job file as `NamePeriodic` and
+    appended from the registration line. `RunOnStart` is false: a new leader
+    does not enqueue one on election. Without `--every`, `g job` writes the
+    same worker and the same one line as before. `bogie d job` removes the
+    schedule line when it is there. River's periodic-job docs say insertion
+    is performed by the cluster's elected leader, one per database and schema,
+    so several workers do not each enqueue a copy; the schedule is in memory
+    on that leader, and a restart can skip a run. `--pretend` writes nothing,
+    including the cron module and the `--jobs` wiring a first job would add.
 7. **Later:** regenerate a clean app with the tool and diff it against kchat.
 
 **Done 2026-10-03 (M4).** `bogie new kchat --module=github.com/klangtech/kchat

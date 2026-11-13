@@ -1,0 +1,100 @@
+==> app/jobs/daily_digest.go
+package jobs
+
+import (
+	"context"
+	"log/slog"
+
+	"github.com/riverqueue/river"
+	"github.com/robfig/cron/v3"
+)
+
+// DailyDigestArgs is what a daily_digest job carries. It is stored as JSON in the job row,
+// so keep it to ids and small values; the worker loads what it needs.
+type DailyDigestArgs struct {
+	// ID string `json:"id"`
+}
+
+// Kind names the job in the database. Never change it once jobs are queued;
+// a queued job of the old kind would have no worker.
+func (DailyDigestArgs) Kind() string { return "daily_digest" }
+
+// DailyDigestWorker does the work. Enqueue one with:
+//
+//	app.Jobs.Insert(ctx, jobs.DailyDigestArgs{}, nil)
+//
+// River also enqueues one on the schedule in DailyDigestPeriodic.
+//
+// Dependencies go here as fields, declared as the smallest interface this
+// worker uses, next to the worker, and are passed on the registration line in jobs.go.
+type DailyDigestWorker struct {
+	river.WorkerDefaults[DailyDigestArgs]
+	Log *slog.Logger
+}
+
+// Work runs one job. Return an error to have River retry it with backoff;
+// return nil when it is done. ctx is cancelled when the worker drains.
+func (w *DailyDigestWorker) Work(ctx context.Context, job *river.Job[DailyDigestArgs]) error {
+	w.Log.InfoContext(ctx, "daily_digest: not implemented yet", "job", job.ID)
+	return nil
+}
+
+// DailyDigestPeriodic is the schedule registered in jobs.go. "0 9 * * *" is a
+// standard cron expression (minute hour day month weekday); with no CRON_TZ=
+// prefix it is the process's local time. RunOnStart is off, so a deploy or a
+// new leader does not enqueue one immediately.
+func DailyDigestPeriodic() *river.PeriodicJob {
+	schedule, err := cron.ParseStandard("0 9 * * *")
+	if err != nil {
+		// bogie g job only writes an expression ParseStandard accepts.
+		panic(err)
+	}
+	return river.NewPeriodicJob(
+		schedule,
+		func() (river.JobArgs, *river.InsertOpts) {
+			return DailyDigestArgs{}, nil
+		},
+		&river.PeriodicJobOpts{RunOnStart: false},
+	)
+}
+==> app/jobs/daily_digest_test.go
+package jobs_test
+
+import (
+	"context"
+	"io"
+	"log/slog"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/rivertype"
+
+	"example.com/blog/app/jobs"
+)
+
+var _ = Describe("DailyDigestWorker", func() {
+	var (
+		worker *jobs.DailyDigestWorker
+		job    *river.Job[jobs.DailyDigestArgs]
+	)
+
+	Describe("Work", func() {
+		Context("with a job and no dependencies", func() {
+			BeforeEach(func() {
+				worker = &jobs.DailyDigestWorker{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+				job = &river.Job[jobs.DailyDigestArgs]{JobRow: &rivertype.JobRow{ID: 1}, Args: jobs.DailyDigestArgs{}}
+			})
+
+			It("succeeds", func() {
+				Expect(worker.Work(context.Background(), job)).To(Succeed())
+			})
+		})
+	})
+})
+
+var _ = Describe("DailyDigestPeriodic", func() {
+	It("builds the periodic job", func() {
+		Expect(jobs.DailyDigestPeriodic()).NotTo(BeNil())
+	})
+})

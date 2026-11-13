@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/bogie-go/credentials v1.6.0
 	github.com/jackc/pgx/v5 v5.10.0
+	github.com/robfig/cron/v3 v3.0.1
 )
 
 require (
