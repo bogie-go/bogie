@@ -135,6 +135,24 @@ from `.kamal/secrets`, which reads `config/credentials/staging.key`.
 6. No `util/`, `helpers/` or `common/`. The package name is a required prefix
    at every call site, so it has to say what it provides.
 
+## Files the generators own
+
+Never edit these by hand: a generator will overwrite the change. Do this
+instead:
+
+- `db/sqlc/*` is written by sqlc. Change the SQL in `db/queries`, then run
+  `make sqlc`.
+- Any file whose header says "overwritten whole on the next run", such as a
+  model's `db/queries/<name>.sql` and `db/adapter/<name>.go`, is written by
+  `bogie g model` and `bogie model:sync`. Put your code in the `<name>_extra`
+  file beside it. To change a table, run `bogie g migration`, then
+  `bogie model:sync <model>`.
+- New migrations come from `bogie g migration <name> <column:type>...`; then
+  edit the file it writes. Never edit a migration that has already run.
+
+Everything else is yours to edit: models, controllers, views, tests,
+factories, and every `_extra` file.
+
 ## Recipes
 
 ### Add a resource
