@@ -61,6 +61,14 @@ Install: `go install github.com/bogie-go/bogie@latest` for the newest tag,
                                                       periodic job on that cron
                                                       schedule (RunOnStart off);
                                                       bogie d job removes it
+    bogie g policy post                           app/policies/post_policy.go: CanIndex,
+                                                      CanShow, CanCreate, CanUpdate, CanDestroy
+                                                      over an actor and *models.Post, a table
+                                                      spec, and a service that checks the policy.
+                                                      Defaults deny except what the actor owns
+    bogie g scaffold post title:string --policy      the same, wired: the controller calls the
+                                                      service and maps a denial to 403. Needs
+                                                      `g authentication token` first; adds user_id
     bogie g authentication secret|token|api_key       a middleware on a route group, its config
                                                       keys wired and a development secret written
                                                       to the credentials; api_key adds a table
@@ -75,7 +83,9 @@ Install: `go install github.com/bogie-go/bogie@latest` for the newest tag,
     bogie g seed demo_posts                           db/seeds/demo_posts.go, registered above
                                                       // bogie:seeds; db seed re-runs every seed,
                                                       so each one is written to run twice safely
-    bogie d <generator> NAME                          reverses any of the above
+    bogie d <generator> NAME                          reverses any of the above, including
+                                                      `d policy` (a policied scaffold's policy
+                                                      goes with `d scaffold`)
     bogie doctor                                      markers once each, tools pinned, layout
                                                       files, every controller and namespace
                                                       constructed and mounted

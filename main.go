@@ -20,7 +20,7 @@ Tasks use a colon (db:migrate); the rest are plain words.
   new NAME                 generate a new service in ./NAME
 
 Inside an app (found by its bogie.toml, from any subdirectory):
-  generate, g GENERATOR    scaffold | model | migration | controller | service | seed | job | authentication   (bogie g -h)
+  generate, g GENERATOR    scaffold | model | migration | controller | service | policy | seed | job | authentication   (bogie g -h)
   destroy, d GENERATOR     remove what generate made, registration included
   doctor                   markers, pinned tools, layout: all intact?
   model:sync [TABLE]       bring models, queries and store in line with the schema
