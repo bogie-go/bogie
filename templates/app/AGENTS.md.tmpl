@@ -151,7 +151,7 @@ instead:
   model's `db/queries/<name>.sql` and `db/adapter/<name>.go`, is written by
   `bogie g model` and `bogie model:sync`. Put your code in the `<name>_extra`
   file beside it. To change a table, run `bogie g migration`, then
-  `bogie model:sync <model>`.
+  `bogie model:sync [TABLE]`.
 - New migrations come from `bogie g migration <name> <column:type>...`; then
   edit the file it writes. Never edit a migration that has already run.
 
