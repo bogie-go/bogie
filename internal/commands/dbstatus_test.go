@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -241,8 +242,33 @@ func TestDBStatusOutsideAnApp(t *testing.T) {
 	}
 }
 
+// `bogie db:status --help` answers from anywhere: outside an app it must not
+// demand a bogie.toml, and inside one it must not inspect the database.
+func TestDBStatusHelpOutsideAndInsideAnApp(t *testing.T) {
+	outside := t.TempDir()
+	inside := t.TempDir()
+	if err := os.WriteFile(inside+"/"+Marker, []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{outside, inside} {
+		t.Chdir(dir)
+		for _, flag := range []string{"-h", "--help", "help"} {
+			var out bytes.Buffer
+			if err := DBStatus([]string{flag}, &out); err != nil {
+				t.Fatalf("db:status %s in %s: %v", flag, dir, err)
+			}
+			if !strings.HasPrefix(out.String(), "Usage: bogie db:status") {
+				t.Errorf("db:status %s in %s printed %q, want its usage", flag, dir, out.String())
+			}
+			if strings.Contains(out.String(), "host:") {
+				t.Errorf("db:status %s ran the inspection", flag)
+			}
+		}
+	}
+}
+
 func TestDBStatusRejectsArguments(t *testing.T) {
-	err := DBStatus([]string{"--help"}, ioDiscard(t))
+	err := DBStatus([]string{"extra"}, ioDiscard(t))
 	if err == nil || !strings.Contains(err.Error(), "takes no arguments") {
 		t.Fatalf("err = %v", err)
 	}
