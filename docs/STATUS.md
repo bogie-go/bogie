@@ -1,8 +1,9 @@
 # Status
 
 Where Bogie stands, for whoever picks it up next, on whatever machine. Updated
-2026-11-05, at v0.6.8. `docs/DESIGN.md` is the design and the
-reasoning; this file is the state.
+2026-11-13, at v0.7.0, with v1.0.0 prepared but not tagged (see "v1.0.0"
+below). `docs/DESIGN.md` is the design and the reasoning; this file is the
+state.
 
 ## Milestones
 
@@ -16,12 +17,14 @@ reasoning; this file is the state.
 | M5 publish: version from the git tag, first release, launch | **v0.1.0 tagged 2026-10-03** with `bin/release`. No Homebrew tap, decided the same day: `go install` is the one install. The launch essay remains |
 | M6 `app:update`: three-way merge against the version in `bogie.toml` | **done** 2026-10-03; tested across two of the day's commits |
 | `model:sync` and `:null`: follow a hand-written migration into the model, queries, store and factory | **done** 2026-10-29, v0.6.0 (2026-10-30), fixed in v0.6.1; DESIGN §5b |
+| Authorization, status and schedules: `g policy`, `g scaffold --policy`, the token `role` claim and `MintFor`, `db:status`, `g job --every` | **done**, v0.7.0 (2026-11-13) |
+| v1.0.0: the first stable release and the 1.x compatibility promise | **prepared** 2026-11-13, not tagged: #41, #42 and the release notes (`docs/release-notes/v1.0.0.md`) wait on the maintainer |
 
 ## What works today
 
 Install: `go install github.com/bogie-go/bogie@latest` for the newest tag,
 `@main` for main, `go install .` from a clone. First release: v0.1.0,
-2026-10-03; latest: v0.6.8, 2026-10-30.
+2026-10-03; latest: v0.7.0, 2026-11-13. v1.0.0 is prepared and not yet tagged.
 
     bogie new NAME [--module=PATH] [--id=bigint|uuid] [--jobs]
                                                  an empty service: it
@@ -32,7 +35,13 @@ Install: `go install github.com/bogie-go/bogie@latest` for the newest tag,
                                                  on save in development (Air, .air.toml);
                                                  production runs the compiled binary
     bogie db:prepare db:migrate db:rollback db:migrate:status db:migrate:redo
-          db:reset db:seed db:create db:drop db:version db:status
+          db:reset db:seed db:create db:drop db:version
+    bogie db:status [-h]                         read-only, in the tool itself: host,
+                                                 port, database, Postgres version, the
+                                                 latest migration and how many are
+                                                 pending, the table count; a failed
+                                                 connection keeps the driver's error
+                                                 and adds a one-line hint
     bogie credentials:edit [-e production] | credentials:show | credentials:get
     bogie g model comment body:text post:references   migration, queries, domain type,
                                                       store methods, store test; runs sqlc
@@ -86,7 +95,7 @@ Install: `go install github.com/bogie-go/bogie@latest` for the newest tag,
     bogie d <generator> NAME                          reverses any of the above, including
                                                       `d policy` (a policied scaffold's policy
                                                       goes with `d scaffold`)
-    bogie doctor                                      markers once each, tools pinned, layout
+    bogie doctor [-h]                                 markers once each, tools pinned, layout
                                                       files, every controller and namespace
                                                       constructed and mounted
     bogie app:update [--pretend]                      three-way merge to this Bogie's layout,
@@ -106,6 +115,27 @@ env-only fallback, a Dockerfile and Kamal 2 config (staging plus a
 production overlay, `.kamal/secrets` from the credentials), and no example
 resource (removed 2026-10-03; the generators are the shape to copy).
 
+## v1.0.0
+
+Prepared on 2026-11-13. It is not tagged, there is no GitHub release, and
+nothing is merged for it yet. What it is waiting on:
+
+- #41: `db:status -h` / `--help` / `help` print usage through `WantsHelp`,
+  the same way `doctor` does.
+- #42: the generated `AGENTS.md` says `model:sync [TABLE]`, not `<model>`.
+- The PR that adds this section and `docs/release-notes/v1.0.0.md`.
+
+`main` is still v0.7.0 (`d16ffec`), so these PRs are everything in 1.0.
+The release notes hold the 1.x compatibility promise (`MintFor`,
+`middlewares.Role`, the three-value `jobs.Workers`, `policies.Actor`,
+`policies.ErrDenied`, `g job --every` and its restart-skip behaviour). They
+also have the manual upgrade for an app whose token authentication predates
+v0.7.0, which `app:update` does not move onto `MintFor`, `Claims.Role` or
+`middlewares.Role`. Once the maintainer approves the tag, run a green
+`bin/ci` on `main`, create the tag, and use the notes file as the release
+body (`gh release create v1.0.0 --notes-file docs/release-notes/v1.0.0.md`).
+The bogie-go.com version-bump PR merges after the tag exists.
+
 ## Setting up a new machine
 
 1. Go 1.26 or newer (`mise use go@latest` or the installer). The tool itself
@@ -120,7 +150,7 @@ resource (removed 2026-10-03; the generators are the shape to copy).
 4. `gh` logged in, plus `gh extension install basecamp/gh-signoff`. Without
    it `bin/ci` still runs green and says the run was not recorded.
 5. `git clone git@github.com:bogie-go/bogie.git && cd bogie && go install . && bin/ci`.
-   Green in about a minute: it scaffolds two apps, one with `--jobs`, runs
+   Green in a few minutes: it scaffolds two apps, one with `--jobs`, runs
    every generator and destroy into them, and runs their pipelines.
 
 There is no hosted CI, by design. Run `bin/ci` before
@@ -212,19 +242,22 @@ pushing; on a clean tree a green run signs off the commit.
   and it then holds the port. DESIGN.md §12.13 has the failure rates, why
   `bogie server` is unaffected, the `exec` dead end, and the one idea worth
   trying next. Worth another pass with `bin/setup`.
+- `bin/ci` on macOS: the live-reload step uses GNU `sed -i` and `setsid`.
+  BSD sed and a missing `setsid` fail that step, so put GNU sed and a
+  `setsid` on PATH before running it on a Mac.
 - `bogie-go/credentials` changelog has no 1.4.0 entry; 1.5.0 is the path move.
-- Release, for M5: `bin/release v0.1.0` from a clean, pushed `main`. It runs
-  `bin/ci` (green signs off), tags, pushes the tag and creates the GitHub
-  release. The install is `go install github.com/bogie-go/bogie@v0.1.0`, and
-  only that: a tool for people about to write Go can ask for Go, so there is
+- Releases are cut by hand from a clean, pushed `main` with a green,
+  signed-off `bin/ci`: an annotated tag, pushed, then `gh release create`.
+  The `bin/release` script that earlier notes here describe is not in the
+  repository. The install is `go install github.com/bogie-go/bogie@vX.Y.Z`,
+  and only that: a tool for people about to write Go can ask for Go, so there is
   no Homebrew tap and nothing prebuilt (decided 2026-10-03). Until the tag,
   `@latest` installs the newest commit and reports it.
 - `bogie version` reads the build: the release flag, or the module version
   Go stamped, which is the tag for `go install @vX.Y.Z` and
   `v0.0.0-<date>-<commit>` (`+dirty` if uncommitted) for a build from a
   clone; the same string goes into every generated `bogie.toml` (done
-  2026-10-03). The first tag and the launch essay remain
-  for M5.
+  2026-10-03). The launch essay remains for M5.
 - kchat still imports `roonglit/credentials`; it can move whenever convenient.
 - `g controller` actions are 501 stubs with no dependencies; wiring a
   dependency into one is by hand (the comments above the `bogie:wire` marker
