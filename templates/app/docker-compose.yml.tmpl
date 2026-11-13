@@ -12,7 +12,9 @@
 #   config/credentials.yml.enc          database.url (bogie credentials:edit)
 #   app/services/database/database.go   bundledPort, which picks the hint,
 #                                       and the URL its test expects
-#   Makefile                            the "ready" line of make up
+#
+# make up reports the published port, so its ready line does not need a
+# matching edit.
 #
 # The database starts EMPTY on purpose: {{.Name}} owns its schema and applies
 # the migrations embedded in its own binary at boot (make db-prepare, or just
