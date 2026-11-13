@@ -36,6 +36,20 @@ const (
 // timeout.
 const statusTimeout = 15 * time.Second
 
+const dbStatusUsage = `Usage: bogie db:status
+       bogie db status
+
+Prints where the app's server would connect, and what is there: the host,
+port and database, the Postgres version, the latest applied goose migration
+and how many migration files are not applied yet, and how many tables exist.
+It only reads. A generated app gains no command and no import.
+
+On a connection failure it keeps the driver's error, adds a one-line hint,
+and exits non-zero.
+
+Run it from anywhere inside the app (found by its bogie.toml).
+`
+
 // DBStatus handles `bogie db:status` (and `bogie db status`).
 //
 // It prints where the app's server would connect, and what is there: the
@@ -44,8 +58,12 @@ const statusTimeout = 15 * time.Second
 // generated app gains no command and no import; the question is asked from a
 // laptop, and the binary in the container does not need it.
 func DBStatus(args []string, out io.Writer) error {
+	if WantsHelp(args) {
+		_, _ = fmt.Fprint(out, dbStatusUsage)
+		return nil
+	}
 	if len(args) > 0 {
-		return fmt.Errorf("db:status: takes no arguments")
+		return fmt.Errorf("db:status: takes no arguments (bogie db:status -h)")
 	}
 	root, err := appRoot(".")
 	if err != nil {
