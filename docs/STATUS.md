@@ -1,8 +1,7 @@
 # Status
 
 Where Bogie stands, for whoever picks it up next, on whatever machine. Updated
-2026-11-13, at v0.7.0, with v1.0.0 prepared but not tagged (see "v1.0.0"
-below). `docs/DESIGN.md` is the design and the reasoning; this file is the
+2026-11-14, at v1.0.0 (see "v1.0.0" below). `docs/DESIGN.md` is the design and the reasoning; this file is the
 state.
 
 ## Milestones
@@ -14,17 +13,17 @@ state.
 | M2 generators: `g`/`d` for migration, model, controller, service, job; markers; `doctor`; golden and marker-removal tests; `--jobs` with River | **done**; `g`/`d seed` added 2026-10-16, replacing versioned goose seeds with plain Go (DESIGN.md §4.1) |
 | M3 agent layer: fuller `AGENTS.md`, a test that catches an unregistered controller | **done** 2026-10-03: `g scaffold`, `doctor` as the registration check, and `AGENTS.md` with recipes for a dependency, a query, tests and troubleshooting |
 | M4 dogfood: regenerate kchat's skeleton and diff | **done** 2026-10-03; found the Dockerfile and Kamal config missing, added them |
-| M5 publish: version from the git tag, first release, launch | **v0.1.0 tagged 2026-10-03** with `bin/release`. No Homebrew tap, decided the same day: `go install` is the one install. The launch essay remains |
+| M5 publish: version from the git tag, first release, launch | **v0.1.0 tagged 2026-10-03**. No Homebrew tap, decided the same day: `go install` is the one install. The launch essay remains |
 | M6 `app:update`: three-way merge against the version in `bogie.toml` | **done** 2026-10-03; tested across two of the day's commits |
 | `model:sync` and `:null`: follow a hand-written migration into the model, queries, store and factory | **done** 2026-10-29, v0.6.0 (2026-10-30), fixed in v0.6.1; DESIGN §5b |
 | Authorization, status and schedules: `g policy`, `g scaffold --policy`, the token `role` claim and `MintFor`, `db:status`, `g job --every` | **done**, v0.7.0 (2026-11-13) |
-| v1.0.0: the first stable release and the 1.x compatibility promise | **prepared** 2026-11-13, not tagged: #41, #42 and the release notes (`docs/release-notes/v1.0.0.md`) wait on the maintainer |
+| v1.0.0: the first stable release and the 1.x compatibility promise | **v1.0.0 tagged 2026-11-14**: #41, #42 and #43 merged 2026-11-13; release notes in `docs/release-notes/v1.0.0.md` |
 
 ## What works today
 
 Install: `go install github.com/bogie-go/bogie@latest` for the newest tag,
 `@main` for main, `go install .` from a clone. First release: v0.1.0,
-2026-10-03; latest: v0.7.0, 2026-11-13. v1.0.0 is prepared and not yet tagged.
+2026-10-03; latest: v1.0.0, 2026-11-14.
 
     bogie new NAME [--module=PATH] [--id=bigint|uuid] [--jobs]
                                                  an empty service: it
@@ -117,24 +116,23 @@ resource (removed 2026-10-03; the generators are the shape to copy).
 
 ## v1.0.0
 
-Prepared on 2026-11-13. It is not tagged, there is no GitHub release, and
-nothing is merged for it yet. What it is waiting on:
+Tagged 2026-11-14, the first stable release, with a GitHub release whose
+body is `docs/release-notes/v1.0.0.md`. What it adds since v0.7.0, all
+merged on 2026-11-13:
 
 - #41: `db:status -h` / `--help` / `help` print usage through `WantsHelp`,
   the same way `doctor` does.
 - #42: the generated `AGENTS.md` says `model:sync [TABLE]`, not `<model>`.
-- The PR that adds this section and `docs/release-notes/v1.0.0.md`.
+- #43: this section and `docs/release-notes/v1.0.0.md`.
 
-`main` is still v0.7.0 (`d16ffec`), so these PRs are everything in 1.0.
 The release notes hold the 1.x compatibility promise (`MintFor`,
 `middlewares.Role`, the three-value `jobs.Workers`, `policies.Actor`,
 `policies.ErrDenied`, `g job --every` and its restart-skip behaviour). They
 also have the manual upgrade for an app whose token authentication predates
 v0.7.0, which `app:update` does not move onto `MintFor`, `Claims.Role` or
-`middlewares.Role`. Once the maintainer approves the tag, run a green
-`bin/ci` on `main`, create the tag, and use the notes file as the release
-body (`gh release create v1.0.0 --notes-file docs/release-notes/v1.0.0.md`).
-The bogie-go.com version-bump PR merges after the tag exists.
+`middlewares.Role`. Every 1.x release keeps that promise; a change that
+breaks it waits for 2.0. The bogie-go.com version-bump PR merges after the
+tag exists.
 
 ## Setting up a new machine
 
