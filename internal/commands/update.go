@@ -733,6 +733,9 @@ func wireJobs(root string, out io.Writer, conflicted map[string]bool) error {
 	report := func(a scaffold.Action) { say("%12s  %s\n", a.Op, a.Path) }
 	if conflicted["main.go"] || hasMarkers("main.go") {
 		fail(fmt.Errorf("main.go has conflicts, so %s was not added above // bogie:commands; resolve it and add that line", jobsCommand))
+	} else if src, err := os.ReadFile(filepath.Join(root, "main.go")); err == nil && workerCommand.Match(src) {
+		// Already wired, possibly as gofmt aligned it ("worker":  runWorker,),
+		// which markers.Insert would not recognise as the same line.
 	} else if err := wire(root, []generate.Wire{{File: "main.go", Marker: "commands", Line: jobsCommand}}, nil, false, report); err != nil {
 		fail(err)
 	}

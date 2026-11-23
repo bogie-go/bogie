@@ -257,3 +257,31 @@ func TestGenerateJobOnAHealthyJobsAppDoesNotRepair(t *testing.T) {
 		t.Errorf("unexpected repair:\n%s", out.String())
 	}
 }
+
+// A --jobs app with only jobs = false already has the gofmt-aligned
+// `"worker":  runWorker,`. Wiring must recognise it, not add a second key.
+func TestGenerateJobDoesNotDuplicateAlignedWorkerEntry(t *testing.T) {
+	app := newGitApp(t, true)
+	toml := readFile(t, app, Marker)
+	if !strings.Contains(toml, "jobs = true") {
+		t.Fatalf("fixture has no jobs = true:\n%s", toml)
+	}
+	writeFile(t, app, Marker, strings.Replace(toml, "jobs = true", "jobs = false", 1))
+
+	var out bytes.Buffer
+	if err := generateIn(app, []string{"job", "x"}, &out); err != nil {
+		t.Fatalf("g job: %v\n%s", err, out.String())
+	}
+	if n := len(workerCommand.FindAllString(readFile(t, app, "main.go"), -1)); n != 1 {
+		t.Errorf("main.go has %d worker entries, want 1", n)
+	}
+	if err := goCmd(app, "build", "./..."); err != nil {
+		t.Errorf("go build: %v", err)
+	}
+	if !strings.Contains(readFile(t, app, Marker), "jobs = true") {
+		t.Errorf("bogie.toml was not repaired to jobs = true")
+	}
+	if _, err := os.Stat(filepath.Join(app, "app", "jobs", "x.go")); err != nil {
+		t.Errorf("job file not written: %v", err)
+	}
+}
