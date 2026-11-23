@@ -658,6 +658,7 @@ func enableJobs(root string, out io.Writer) error {
 	}
 
 	conflicts := 0
+	conflicted := map[string]bool{}
 	for _, r := range results {
 		if r.op == opIdentical {
 			continue // most files: nothing --jobs touches
@@ -665,6 +666,7 @@ func enableJobs(root string, out io.Writer) error {
 		say("%12s  %s\n", r.op, r.path)
 		if r.op == opConflict {
 			conflicts++
+			conflicted[r.path] = true
 		}
 		if r.content == nil {
 			continue
@@ -681,44 +683,90 @@ func enableJobs(root string, out io.Writer) error {
 			return err
 		}
 	}
+	// The wiring runs whether or not something conflicted: a conflict in
+	// README.md must not leave the app without its worker command, because
+	// nothing afterwards (the next `g job`, doctor) would notice. Only a
+	// conflict in a file the wiring itself edits stops that file's step, and
+	// says so.
+	wireErr := wireJobs(root, out, conflicted)
 	if conflicts > 0 {
-		return fmt.Errorf("enable jobs: %d conflict(s); resolve them, then run bogie doctor and bin/ci", conflicts)
+		cerr := fmt.Errorf("enable jobs: %d conflict(s); resolve them, then run bogie doctor and bin/ci", conflicts)
+		return errors.Join(cerr, wireErr)
 	}
+	return wireErr
+}
 
-	// The two lines stripped out above go back in now, the same way `g
-	// controller` or `g authentication` would have added them: one marker
-	// insert, one import, into whatever is on disk now, next to anything
-	// another generator put there.
-	report := func(a scaffold.Action) { say("%12s  %s\n", a.Op, a.Path) }
-	if err := wire(root, []generate.Wire{{File: "main.go", Marker: "commands", Line: jobsCommand}}, nil, false, report); err != nil {
+// hasConflictMarkers reports whether src still holds a merge's conflict markers.
+func hasConflictMarkers(src []byte) bool {
+	for _, l := range strings.Split(string(src), "\n") {
+		if strings.HasPrefix(l, "<<<<<<< ") || strings.HasPrefix(l, ">>>>>>> ") {
+			return true
+		}
+	}
+	return false
+}
+
+// wireJobs does what a --jobs app needs that no template merge can: the worker
+// command in main.go, the app/jobs import in app/application.go, jobs = true
+// in bogie.toml, and go mod tidy. The two lines are inserted the way `g
+// controller` or `g authentication` would have added them, into whatever is on
+// disk now, next to anything another generator put there. Every step runs even
+// when an earlier one failed, and the errors come back joined. conflicted
+// names the files a merge left with conflict markers: those are never edited,
+// and the error names them, so a line that happens to be present inside a
+// conflict is not taken for wiring that worked.
+func wireJobs(root string, out io.Writer, conflicted map[string]bool) error {
+	say := func(format string, a ...any) { _, _ = fmt.Fprintf(out, format, a...) }
+	settings, err := readSettings(root)
+	if err != nil {
 		return fmt.Errorf("enable jobs: %w", err)
 	}
-	appGo := filepath.Join(root, "app", "application.go")
-	src, err := os.ReadFile(appGo)
-	if err != nil {
-		return err
+	jobsImport := settings.Module + "/app/jobs"
+	jobsCommand := `"worker": runWorker,`
+	var errs []error
+	fail := func(err error) { errs = append(errs, fmt.Errorf("enable jobs: %w", err)) }
+	hasMarkers := func(rel string) bool {
+		b, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+		return err == nil && hasConflictMarkers(b)
 	}
-	if out, changed, aerr := markers.AddImport(src, jobsImport); aerr != nil {
-		return fmt.Errorf("enable jobs: %w", aerr)
+
+	report := func(a scaffold.Action) { say("%12s  %s\n", a.Op, a.Path) }
+	if conflicted["main.go"] || hasMarkers("main.go") {
+		fail(fmt.Errorf("main.go has conflicts, so %s was not added above // bogie:commands; resolve it and add that line", jobsCommand))
+	} else if src, err := os.ReadFile(filepath.Join(root, "main.go")); err == nil && workerCommand.Match(src) {
+		// Already wired, possibly as gofmt aligned it ("worker":  runWorker,),
+		// which markers.Insert would not recognise as the same line.
+	} else if err := wire(root, []generate.Wire{{File: "main.go", Marker: "commands", Line: jobsCommand}}, nil, false, report); err != nil {
+		fail(err)
+	}
+
+	appGo := filepath.Join(root, "app", "application.go")
+	if conflicted["app/application.go"] || hasMarkers("app/application.go") {
+		fail(fmt.Errorf("app/application.go has conflicts, so the import %q was not added; resolve it and add that import", jobsImport))
+	} else if src, err := os.ReadFile(appGo); err != nil {
+		fail(err)
+	} else if out2, changed, aerr := markers.AddImport(src, jobsImport); aerr != nil {
+		fail(fmt.Errorf("app/application.go: %w", aerr))
 	} else if changed {
-		if out, err = markers.Format(out); err != nil {
-			return fmt.Errorf("enable jobs: %w", err)
+		if out2, err = markers.Format(out2); err != nil {
+			fail(fmt.Errorf("app/application.go: %w", err))
+		} else if err := os.WriteFile(appGo, out2, 0o644); err != nil {
+			fail(err)
+		} else {
+			say("%12s  app/application.go: import %q\n", "insert", jobsImport)
 		}
-		if err := os.WriteFile(appGo, out, 0o644); err != nil {
-			return err
-		}
-		say("%12s  app/application.go: import %q\n", "insert", jobsImport)
 	}
 
 	if err := rewriteJobs(root, true); err != nil {
-		return err
+		errs = append(errs, err)
+	} else {
+		say("%12s  %s: jobs = true\n", "updated", Marker)
 	}
-	say("%12s  %s: jobs = true\n", "updated", Marker)
 	say("%12s  go mod tidy\n", "run")
 	if err := goIn(root, out, "mod", "tidy"); err != nil {
-		return fmt.Errorf("enable jobs: go mod tidy: %w", err)
+		fail(fmt.Errorf("go mod tidy: %w", err))
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // goIn runs a go command in the app.

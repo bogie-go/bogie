@@ -91,6 +91,20 @@ func Doctor(args []string, out io.Writer) error {
 		check("marker bogie:"+m.marker+" in "+m.file, err)
 	}
 
+	// app/jobs/jobs.go without its wiring is a half-enabled app: `bogie g job`
+	// skips enabling once the file exists, so only this says what is missing.
+	if exists("app/jobs/jobs.go") == nil {
+		if s, err := readSettings(root); err == nil {
+			gaps := jobsWiringGaps(root, s.Module)
+			for _, g := range gaps {
+				check(g.name, fmt.Errorf("%s", g.fix))
+			}
+			if len(gaps) == 0 {
+				check("jobs wiring (main.go, app/application.go, bogie.toml)", nil)
+			}
+		}
+	}
+
 	gomod, _ := read("go.mod")
 	tools := []string{"github.com/pressly/goose/v3/cmd/goose", "github.com/sqlc-dev/sqlc/cmd/sqlc", "github.com/bogie-go/credentials/cmd/credentials"}
 	// Live reload is opt-out: the tool is expected only where its config is,
