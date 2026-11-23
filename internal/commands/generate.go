@@ -356,15 +356,33 @@ func generateIn(root string, args []string, out io.Writer) error {
 					return fmt.Errorf("generate job: %w", err)
 				}
 			}
-		} else if strings.TrimSpace(*every) != "" {
-			src, readErr := os.ReadFile(jobsGo)
-			if readErr != nil {
-				return readErr
+		} else {
+			if strings.TrimSpace(*every) != "" {
+				src, readErr := os.ReadFile(jobsGo)
+				if readErr != nil {
+					return readErr
+				}
+				// An app generated before periodic jobs has nowhere to append the
+				// schedule. Say so before any file is written.
+				if !strings.Contains(string(src), "var periodic") {
+					return fmt.Errorf("generate job: app/jobs/jobs.go has no periodic slice for --every to register into; run bogie app:update, then try again")
+				}
 			}
-			// An app generated before periodic jobs has nowhere to append the
-			// schedule. Say so before any file is written.
-			if !strings.Contains(string(src), "var periodic") {
-				return fmt.Errorf("generate job: app/jobs/jobs.go has no periodic slice for --every to register into; run bogie app:update, then try again")
+			// app/jobs exists, so enableJobs is skipped, but an earlier run may
+			// have stopped before wiring it (v1.0.0 did, on any conflict). Repair
+			// what is missing, then go on with the job.
+			if gaps := jobsWiringGaps(root, module); len(gaps) > 0 {
+				for _, g := range gaps {
+					say("%12s  %s: %s\n", "note", g.name, g.fix)
+				}
+				if *pretend {
+					say("%12s  the missing jobs wiring would be repaired first\n", "note")
+				} else {
+					say("%12s  repairing the missing jobs wiring\n", "note")
+					if err := wireJobs(root, out, nil); err != nil {
+						return fmt.Errorf("generate job: %w", err)
+					}
+				}
 			}
 		}
 		if jobsMissing {
